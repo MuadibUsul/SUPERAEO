@@ -1,0 +1,1639 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum KeywordType {
+  category
+  scenario
+  attribute
+  intent
+  competitor
+  risk
+}
+
+enum QueryType {
+  recommendation
+  comparison
+  alternative
+  pricing
+  use_case
+  risk
+  buyer_decision
+  education
+  best_tools
+  implementation
+}
+
+enum RunType {
+  baseline
+  retest
+}
+
+enum RunStatus {
+  draft
+  queued
+  running
+  completed
+  failed
+  partially_failed
+}
+
+enum Platform {
+  openai
+  openai_compatible
+  anthropic
+  gemini
+  perplexity
+}
+
+enum EntityType {
+  brand
+  competitor
+  product
+  source
+  concept
+}
+
+enum SubjectEntityType {
+  BRAND
+  PERSON
+  WEBSITE
+  PRODUCT
+}
+
+enum MentionType {
+  mentioned
+  recommended
+  cited
+  compared
+}
+
+enum Sentiment {
+  positive
+  neutral
+  negative
+  mixed
+  unknown
+}
+
+enum EdgeType {
+  co_occurs
+  semantically_close
+  cited_by
+  competes_with
+  risk_association
+}
+
+enum GapType {
+  semantic
+  entity
+  citation
+  content
+  technical
+  authority
+}
+
+enum GapSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum ActionType {
+  content
+  schema
+  citation
+  entity
+  technical
+  messaging
+}
+
+enum Priority {
+  P1
+  P2
+  P3
+}
+
+enum ActionStatus {
+  open
+  in_progress
+  done
+  dismissed
+}
+
+enum PromptStatus {
+  success
+  repaired
+  failed
+}
+
+enum ReportFormat {
+  html
+  pdf
+}
+
+enum ReportStatus {
+  draft
+  ready
+  failed
+}
+
+enum UserRole {
+  platform_owner
+  operator_admin
+  operator_viewer
+  customer_owner
+  customer_member
+  customer_viewer
+}
+
+enum OrganizationType {
+  internal
+  customer
+}
+
+enum AIProviderType {
+  openai_responses
+  openai_compatible
+  anthropic_messages
+  gemini_native
+  perplexity_sonar
+}
+
+enum AIUsageStatus {
+  success
+  failed
+}
+
+enum PromptTemplateStatus {
+  active
+  inactive
+}
+
+enum AlertType {
+  hallucination
+  cognitive_bias
+  competitor_jump
+  schema_missing
+  citation_loss
+  entity_confusion
+}
+
+enum AlertSeverity {
+  P1
+  P2
+  P3
+}
+
+enum AlertStatus {
+  open
+  acknowledged
+  resolved
+  dismissed
+}
+
+enum AnalysisJobType {
+  full_diagnosis
+  brand_probe_run
+  sampling_run
+  response_analysis
+  stability_analysis
+  semantic_coverage
+  graph_build
+  report_generation
+  semantic_nebula_build
+  long_tail_opportunity_generation
+  question_territory_build
+  opportunity_probe_sampling
+}
+
+enum AnalysisJobStatus {
+  queued
+  running
+  completed
+  failed
+  retrying
+}
+
+enum ObjectArtifactType {
+  ai_response
+  crawl_snapshot
+  analysis_artifact
+  report_export
+}
+
+enum PersonaType {
+  founder
+  ceo
+  cto
+  buyer
+  marketer
+  consumer
+  analyst
+}
+
+enum ContextMode {
+  cold_start
+  industry_context
+  competitive_context
+  preference_guided
+}
+
+enum QueryDepthLevel {
+  primary
+  sub_question
+  implicit
+  decision
+  risk
+  comparison
+  follow_up
+}
+
+enum RoutingTier {
+  low_cost_sampling
+  mid_tier_verification
+  high_fidelity_audit
+}
+
+enum ExecutionStrategy {
+  single_lane
+  sharded_parallel
+  adaptive_parallel
+}
+
+enum ProviderSelectionStrategy {
+  primary_only
+  round_robin
+  priority_spread
+}
+
+enum BrandProbeRunMode {
+  demo
+  standard
+  max500
+}
+
+enum BrandProbeExecutionMode {
+  single
+  micro_batch
+}
+
+enum BrandProbeStatus {
+  pending
+  queued
+  running
+  completed
+  failed
+  retrying
+  skipped
+}
+
+enum BrandProbeZone {
+  core_semantics
+  implicit_recommendation
+  competition
+  scenario_fit
+  audience_fit
+  risk_boundary
+  growth_opportunity
+  calibration
+}
+
+enum BrandProbeQuestionType {
+  explicit_association
+  implicit_recommendation
+  competitor_ranking
+  scenario_fit
+  audience_fit
+  risk_boundary
+  growth_opportunity
+  calibration
+}
+
+enum SemanticTemperature {
+  hot
+  warm
+  cold
+}
+
+enum ExtractedSignalType {
+  keyword
+  competitor
+  scenario
+  audience
+  risk
+  sentiment
+  recommendation
+  opportunity
+}
+
+model User {
+  id                 String               @id @default(cuid())
+  email              String               @unique
+  name               String?
+  passwordHash       String?              @map("password_hash")
+  role               UserRole             @default(customer_owner)
+  preferredLocale    String               @default("zh-CN") @map("preferred_locale")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  projects           Project[]
+  sessions           Session[]
+  memberships        OrganizationMember[]
+  aiProvidersCreated AIProvider[]         @relation("AIProviderCreatedBy")
+  aiUsageLogs        AIUsageLog[]
+  promptTemplates    PromptTemplate[]     @relation("PromptTemplateCreatedBy")
+  auditLogs          AuditLog[]           @relation("AuditActor")
+  localePreferences  LocalePreference[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Organization {
+  id                String               @id @default(cuid())
+  name              String
+  slug              String               @unique
+  type              OrganizationType     @default(customer)
+  defaultLocale     String               @default("zh-CN") @map("default_locale")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  members           OrganizationMember[]
+  projects          Project[]
+  aiUsageLogs       AIUsageLog[]
+  auditLogs         AuditLog[]
+  localePreferences LocalePreference[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  userId         String       @map("user_id")
+  role           UserRole     @default(customer_owner)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+model Project {
+  id                           String                        @id @default(cuid())
+  userId                       String                        @map("user_id")
+  organizationId               String?                       @map("organization_id")
+  name                         String
+  brandName                    String                        @map("brand_name")
+  domain                       String
+  industry                     String
+  targetMarket                 String                        @map("target_market")
+  language                     String                        @default("en")
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  updatedAt                    DateTime                      @updatedAt @map("updated_at")
+  user                         User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization                 Organization?                 @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  competitors                  Competitor[]
+  keywords                     SemanticKeyword[]
+  queries                      AeoQuery[]
+  runs                         SamplingRun[]
+  edges                        SemanticEdge[]
+  gaps                         InclusionGap[]
+  actionItems                  ActionItem[]
+  reports                      Report[]
+  promptRuns                   PromptRun[]
+  metrics                      MetricSnapshot[]
+  usageLogs                    AIUsageLog[]
+  alerts                       Alert[]
+  entityProfiles               EntityProfile[]
+  citationSources              CitationSource[]
+  querySamples                 QuerySample[]
+  stabilitySnapshots           StabilitySnapshot[]
+  confidenceIntervals          ConfidenceInterval[]
+  semanticCoverageSnapshots    SemanticCoverageSnapshot[]
+  websiteCrawlSnapshots        WebsiteCrawlSnapshot[]
+  analysisJobs                 AnalysisJob[]
+  objectArtifacts              ObjectArtifact[]
+  subjects                     ProjectSubject[]
+  semanticNebulaSnapshots      SemanticNebulaSnapshot[]
+  longTailOpportunitySnapshots LongTailOpportunitySnapshot[]
+  questionTerritorySnapshots   QuestionTerritorySnapshot[]
+  brandProbeRuns               BrandProbeRun[]
+  brandProbes                  BrandProbe[]
+  brandProbeBatches            BrandProbeBatch[]
+  brandProbeResponses          BrandProbeResponse[]
+  extractedSignals             ExtractedSignal[]
+  externalMetricSources        ExternalMetricSource[]
+  externalMetricPoints         ExternalMetricPoint[]
+  cognitionExperiments         CognitionExperiment[]
+
+  @@index([userId])
+  @@index([organizationId])
+  @@map("projects")
+}
+
+model ProjectSubject {
+  id                           String                        @id @default(cuid())
+  projectId                    String                        @map("project_id")
+  entityType                   SubjectEntityType             @map("entity_type")
+  displayName                  String                        @map("display_name")
+  canonicalName                String                        @map("canonical_name")
+  websiteUrl                   String?                       @map("website_url") @db.Text
+  market                       String?
+  language                     String                        @default("en")
+  profileJson                  Json?                         @map("profile_json")
+  isPrimary                    Boolean                       @default(true) @map("is_primary")
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  updatedAt                    DateTime                      @updatedAt @map("updated_at")
+  project                      Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keywords                     SemanticKeyword[]
+  queries                      AeoQuery[]
+  runs                         SamplingRun[]
+  promptRuns                   PromptRun[]
+  metrics                      MetricSnapshot[]
+  probeResults                 ProbeResult[]
+  semanticNebulaSnapshots      SemanticNebulaSnapshot[]
+  longTailOpportunitySnapshots LongTailOpportunitySnapshot[]
+  questionTerritorySnapshots   QuestionTerritorySnapshot[]
+  brandProbeRuns               BrandProbeRun[]
+  brandProbes                  BrandProbe[]
+  brandProbeResponses          BrandProbeResponse[]
+  extractedSignals             ExtractedSignal[]
+  cognitionExperiments         CognitionExperiment[]
+
+  @@unique([projectId, canonicalName, entityType])
+  @@index([projectId, isPrimary])
+  @@index([entityType])
+  @@map("project_subjects")
+}
+
+model Competitor {
+  id        String   @id @default(cuid())
+  projectId String   @map("project_id")
+  name      String
+  domain    String?
+  category  String   @default("direct")
+  createdAt DateTime @default(now()) @map("created_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@map("competitors")
+}
+
+model SemanticKeyword {
+  id           String          @id @default(cuid())
+  projectId    String          @map("project_id")
+  subjectId    String?         @map("subject_id")
+  keyword      String
+  keywordType  KeywordType     @map("keyword_type")
+  targetWeight Float           @map("target_weight")
+  reason       String?
+  confidence   Float?
+  createdAt    DateTime        @default(now()) @map("created_at")
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject      ProjectSubject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  queries      AeoQuery[]
+
+  @@unique([projectId, keyword])
+  @@index([projectId, keywordType])
+  @@index([subjectId, keywordType])
+  @@map("semantic_keywords")
+}
+
+model AeoQuery {
+  id                  String               @id @default(cuid())
+  projectId           String               @map("project_id")
+  subjectId           String?              @map("subject_id")
+  queryText           String               @map("query_text") @db.Text
+  queryType           QueryType            @map("query_type")
+  persona             String?
+  personaType         PersonaType?         @map("persona_type")
+  region              String?              @default("US")
+  contextMode         ContextMode          @default(cold_start) @map("context_mode")
+  queryDepthLevel     QueryDepthLevel      @default(primary) @map("query_depth_level")
+  intent              String?
+  targetKeywordId     String?              @map("target_keyword_id")
+  confidence          Float?
+  createdAt           DateTime             @default(now()) @map("created_at")
+  project             Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject             ProjectSubject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  targetKeyword       SemanticKeyword?     @relation(fields: [targetKeywordId], references: [id], onDelete: SetNull)
+  responses           AIResponse[]
+  samples             QuerySample[]
+  probeResults        ProbeResult[]
+  experimentQuestions ExperimentQuestion[]
+
+  @@index([projectId, queryType])
+  @@index([subjectId, queryType])
+  @@index([projectId, region])
+  @@index([projectId, personaType])
+  @@index([targetKeywordId])
+  @@map("queries")
+}
+
+model SamplingRun {
+  id                           String                        @id @default(cuid())
+  projectId                    String                        @map("project_id")
+  subjectId                    String?                       @map("subject_id")
+  runType                      RunType                       @map("run_type")
+  status                       RunStatus                     @default(draft)
+  platforms                    String[]                      @default([])
+  sampleCount                  Int                           @default(0) @map("sample_count")
+  sampleCountPerQuery          Int                           @default(1) @map("sample_count_per_query")
+  selectedQueryIds             String[]                      @default([]) @map("selected_query_ids")
+  samplingStrategy             Json?                         @map("sampling_strategy")
+  scheduledAt                  DateTime?                     @map("scheduled_at")
+  queueJobId                   String?                       @map("queue_job_id")
+  traceId                      String?                       @map("trace_id")
+  failureSummary               String?                       @map("failure_summary") @db.Text
+  startedAt                    DateTime?                     @map("started_at")
+  completedAt                  DateTime?                     @map("completed_at")
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  project                      Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject                      ProjectSubject?               @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  responses                    AIResponse[]
+  metrics                      MetricSnapshot[]
+  reports                      Report[]
+  samples                      QuerySample[]
+  stabilitySnapshots           StabilitySnapshot[]
+  confidenceIntervals          ConfidenceInterval[]
+  analysisJobs                 AnalysisJob[]
+  probeResults                 ProbeResult[]
+  semanticNebulaSnapshots      SemanticNebulaSnapshot[]
+  longTailOpportunitySnapshots LongTailOpportunitySnapshot[]
+  questionTerritorySnapshots   QuestionTerritorySnapshot[]
+  experimentWaves              ExperimentWave[]
+
+  @@index([projectId, runType, status])
+  @@index([subjectId, runType, status])
+  @@index([queueJobId])
+  @@map("sampling_runs")
+}
+
+model AIResponse {
+  id               String           @id @default(cuid())
+  runId            String           @map("run_id")
+  queryId          String           @map("query_id")
+  providerId       String?          @map("provider_id")
+  modelId          String?          @map("model_id")
+  platform         Platform
+  model            String
+  sampleIndex      Int              @default(0) @map("sample_index")
+  region           String?
+  persona          String?
+  objectKey        String?          @map("object_key")
+  rawResponse      String           @map("raw_response") @db.Text
+  normalizedAnswer String?          @map("normalized_answer") @db.Text
+  citations        Json?
+  createdAt        DateTime         @default(now()) @map("created_at")
+  run              SamplingRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  query            AeoQuery         @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  provider         AIProvider?      @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  aiModel          AIModel?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  analysis         AnswerAnalysis?
+  probeResults     ProbeResult[]
+  mentions         EntityMention[]
+  citationSources  CitationSource[]
+  samples          QuerySample[]
+  alerts           Alert[]
+
+  @@index([runId])
+  @@index([queryId])
+  @@index([providerId])
+  @@index([modelId])
+  @@index([runId, queryId, sampleIndex])
+  @@map("ai_responses")
+}
+
+model AnswerAnalysis {
+  id                     String     @id @default(cuid())
+  responseId             String     @unique @map("response_id")
+  brandMentioned         Boolean    @default(false) @map("brand_mentioned")
+  brandRecommended       Boolean    @default(false) @map("brand_recommended")
+  brandPosition          Int?       @map("brand_position")
+  brandDescription       String?    @map("brand_description") @db.Text
+  competitorsMentioned   Json?      @map("competitors_mentioned")
+  recommendationWinner   String?    @map("recommendation_winner")
+  mentionContext         String?    @map("mention_context") @db.Text
+  sentiment              Sentiment  @default(unknown)
+  matchedKeywords        Json?      @map("matched_keywords")
+  citationsUsed          Json?      @map("citations_used")
+  possibleHallucinations Json?      @map("possible_hallucinations")
+  confidence             Float      @default(0)
+  rawAnalysis            Json?      @map("raw_analysis")
+  createdAt              DateTime   @default(now()) @map("created_at")
+  response               AIResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@map("answer_analyses")
+}
+
+model EntityMention {
+  id          String      @id @default(cuid())
+  responseId  String      @map("response_id")
+  entityName  String      @map("entity_name")
+  entityType  EntityType  @map("entity_type")
+  mentionType MentionType @map("mention_type")
+  position    Int?
+  sentiment   Sentiment   @default(unknown)
+  confidence  Float       @default(0)
+  context     String?     @db.Text
+  response    AIResponse  @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([responseId])
+  @@index([entityName])
+  @@map("entity_mentions")
+}
+
+model SemanticEdge {
+  id         String   @id @default(cuid())
+  projectId  String   @map("project_id")
+  sourceNode String   @map("source_node")
+  sourceType String   @map("source_type")
+  targetNode String   @map("target_node")
+  targetType String   @map("target_type")
+  edgeType   EdgeType @map("edge_type")
+  weight     Float
+  confidence Float
+  evidence   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, edgeType])
+  @@map("semantic_edges")
+}
+
+model InclusionGap {
+  id                  String       @id @default(cuid())
+  projectId           String       @map("project_id")
+  gapType             GapType      @map("gap_type")
+  severity            GapSeverity
+  targetKeyword       String?      @map("target_keyword")
+  reason              String       @db.Text
+  evidence            Json?
+  competitorAdvantage String?      @map("competitor_advantage") @db.Text
+  suggestedAction     String?      @map("suggested_action") @db.Text
+  confidence          Float        @default(0)
+  createdAt           DateTime     @default(now()) @map("created_at")
+  project             Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actionItems         ActionItem[]
+
+  @@index([projectId, gapType, severity])
+  @@map("inclusion_gaps")
+}
+
+model ActionItem {
+  id                  String        @id @default(cuid())
+  projectId           String        @map("project_id")
+  gapId               String?       @map("gap_id")
+  actionType          ActionType    @map("action_type")
+  priority            Priority
+  targetKeyword       String?       @map("target_keyword")
+  title               String
+  description         String        @db.Text
+  whyThisMatters      String?       @map("why_this_matters") @db.Text
+  recommendedAsset    String?       @map("recommended_asset")
+  implementationNotes String?       @map("implementation_notes") @db.Text
+  expectedImpact      String?       @map("expected_impact") @db.Text
+  retestQueries       Json?         @map("retest_queries")
+  successMetric       String?       @map("success_metric")
+  evidence            Json?
+  status              ActionStatus  @default(open)
+  createdAt           DateTime      @default(now()) @map("created_at")
+  project             Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  gap                 InclusionGap? @relation(fields: [gapId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, priority, status])
+  @@map("action_items")
+}
+
+model Report {
+  id        String       @id @default(cuid())
+  projectId String       @map("project_id")
+  runId     String?      @map("run_id")
+  title     String
+  format    ReportFormat @default(html)
+  status    ReportStatus @default(draft)
+  snapshot  Json?
+  html      String?      @db.Text
+  fileUrl   String?      @map("file_url")
+  createdAt DateTime     @default(now()) @map("created_at")
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run       SamplingRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, runId])
+  @@map("reports")
+}
+
+model SemanticNebulaSnapshot {
+  id           String         @id @default(cuid())
+  projectId    String         @map("project_id")
+  subjectId    String         @map("subject_id")
+  runId        String?        @map("run_id")
+  scope        String
+  version      String         @default("2026-05-19.v1")
+  nodeJson     Json           @map("node_json")
+  edgeJson     Json           @map("edge_json")
+  summaryJson  Json?          @map("summary_json")
+  evidenceJson Json?          @map("evidence_json")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject      ProjectSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  run          SamplingRun?   @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, subjectId, scope, createdAt])
+  @@index([runId])
+  @@map("semantic_nebula_snapshots")
+}
+
+model LongTailOpportunitySnapshot {
+  id              String         @id @default(cuid())
+  projectId       String         @map("project_id")
+  subjectId       String         @map("subject_id")
+  runId           String?        @map("run_id")
+  version         String         @default("2026-05-19.v1")
+  opportunityJson Json           @map("opportunity_json")
+  summaryJson     Json?          @map("summary_json")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject         ProjectSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  run             SamplingRun?   @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, subjectId, createdAt])
+  @@index([runId])
+  @@map("long_tail_opportunity_snapshots")
+}
+
+model QuestionTerritorySnapshot {
+  id            String         @id @default(cuid())
+  projectId     String         @map("project_id")
+  subjectId     String         @map("subject_id")
+  runId         String?        @map("run_id")
+  version       String         @default("2026-05-19.v1")
+  territoryJson Json           @map("territory_json")
+  summaryJson   Json?          @map("summary_json")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject       ProjectSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  run           SamplingRun?   @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, subjectId, createdAt])
+  @@index([runId])
+  @@map("question_territory_snapshots")
+}
+
+model PromptRun {
+  id              String          @id @default(cuid())
+  projectId       String?         @map("project_id")
+  subjectId       String?         @map("subject_id")
+  providerId      String?         @map("provider_id")
+  promptName      String          @map("prompt_name")
+  promptVersion   String          @map("prompt_version")
+  model           String
+  input           Json
+  rawOutput       String?         @map("raw_output") @db.Text
+  parsedOutput    Json?           @map("parsed_output")
+  status          PromptStatus
+  error           String?         @db.Text
+  repairAttempted Boolean         @default(false) @map("repair_attempted")
+  usage           Json?
+  metadata        Json?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject         ProjectSubject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  provider        AIProvider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, promptName])
+  @@index([subjectId, promptName])
+  @@index([providerId])
+  @@map("prompt_runs")
+}
+
+model MetricSnapshot {
+  id                       String          @id @default(cuid())
+  projectId                String          @map("project_id")
+  subjectId                String?         @map("subject_id")
+  runId                    String          @map("run_id")
+  sampleCount              Int             @map("sample_count")
+  aiAnswerInclusionScore   Float           @map("ai_answer_inclusion_score")
+  aiVisibilityScore        Float?          @map("ai_visibility_score")
+  mentionRate              Float           @map("mention_rate")
+  recommendationShare      Float           @map("recommendation_share")
+  citationRate             Float           @map("citation_rate")
+  aiImpressionShare        Float?          @map("ai_impression_share")
+  entityVisibility         Float?          @map("entity_visibility")
+  semanticCoverage         Float?          @map("semantic_coverage")
+  semanticUniverseStrength Float           @map("semantic_universe_strength")
+  stabilityScore           Float           @map("stability_score")
+  stabilityIndex           Float?          @map("stability_index")
+  descriptionAccuracy      Float           @map("description_accuracy")
+  hallucinationRiskScore   Float?          @map("hallucination_risk_score")
+  competitorGap            Float?          @map("competitor_gap")
+  confidenceMetadata       Json?           @map("confidence_metadata")
+  metadata                 Json?
+  createdAt                DateTime        @default(now()) @map("created_at")
+  project                  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject                  ProjectSubject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  run                      SamplingRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, runId])
+  @@index([subjectId, runId])
+  @@map("metric_snapshots")
+}
+
+model AIProvider {
+  id                 String                @id @default(cuid())
+  name               String
+  providerType       AIProviderType        @map("provider_type")
+  baseUrl            String?               @map("base_url")
+  apiKeyEncrypted    String?               @map("api_key_encrypted") @db.Text
+  defaultModel       String                @map("default_model")
+  enabled            Boolean               @default(false)
+  supportsJsonSchema Boolean               @default(false) @map("supports_json_schema")
+  supportsCitations  Boolean               @default(false) @map("supports_citations")
+  supportsWebSearch  Boolean               @default(false) @map("supports_web_search")
+  supportsEmbeddings Boolean               @default(false) @map("supports_embeddings")
+  rateLimitPerMinute Int?                  @map("rate_limit_per_minute")
+  monthlyBudget      Float?                @map("monthly_budget")
+  createdById        String?               @map("created_by_id")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+  createdBy          User?                 @relation("AIProviderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  models             AIModel[]
+  usageLogs          AIUsageLog[]
+  promptRuns         PromptRun[]
+  responses          AIResponse[]
+  routingRules       ProviderRoutingRule[]
+
+  @@index([providerType, enabled])
+  @@map("ai_providers")
+}
+
+model AIModel {
+  id                 String                @id @default(cuid())
+  providerId         String                @map("provider_id")
+  name               String
+  displayName        String?               @map("display_name")
+  enabled            Boolean               @default(true)
+  supportsJsonSchema Boolean               @default(false) @map("supports_json_schema")
+  supportsCitations  Boolean               @default(false) @map("supports_citations")
+  supportsWebSearch  Boolean               @default(false) @map("supports_web_search")
+  supportsEmbeddings Boolean               @default(false) @map("supports_embeddings")
+  defaultForTasks    String[]              @default([]) @map("default_for_tasks")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+  provider           AIProvider            @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  usageLogs          AIUsageLog[]
+  responses          AIResponse[]
+  routingRules       ProviderRoutingRule[]
+
+  @@unique([providerId, name])
+  @@index([providerId, enabled])
+  @@map("ai_models")
+}
+
+model AIUsageLog {
+  id               String        @id @default(cuid())
+  providerId       String?       @map("provider_id")
+  modelId          String?       @map("model_id")
+  projectId        String?       @map("project_id")
+  organizationId   String?       @map("organization_id")
+  userId           String?       @map("user_id")
+  operation        String
+  status           AIUsageStatus
+  promptTokens     Int?          @map("prompt_tokens")
+  completionTokens Int?          @map("completion_tokens")
+  totalTokens      Int?          @map("total_tokens")
+  latencyMs        Int?          @map("latency_ms")
+  costUsd          Float?        @map("cost_usd")
+  error            String?       @db.Text
+  metadata         Json?
+  createdAt        DateTime      @default(now()) @map("created_at")
+  provider         AIProvider?   @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  model            AIModel?      @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  project          Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  organization     Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  user             User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([providerId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("ai_usage_logs")
+}
+
+model PromptTemplate {
+  id           String               @id @default(cuid())
+  name         String
+  task         String
+  version      String
+  locale       String               @default("en")
+  content      String               @db.Text
+  outputSchema Json?                @map("output_schema")
+  status       PromptTemplateStatus @default(active)
+  createdById  String?              @map("created_by_id")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  createdBy    User?                @relation("PromptTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([name, version, locale])
+  @@index([task, status])
+  @@map("prompt_templates")
+}
+
+model ProbeTemplate {
+  id               String            @id @default(cuid())
+  entityType       SubjectEntityType @map("entity_type")
+  probeFamily      String            @map("probe_family")
+  name             String
+  version          String
+  locale           String            @default("en")
+  promptTemplate   String            @map("prompt_template") @db.Text
+  outputSchemaJson Json?             @map("output_schema_json")
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  @@unique([entityType, probeFamily, version, locale])
+  @@index([entityType, isActive])
+  @@map("probe_templates")
+}
+
+model ProbeResult {
+  id             String         @id @default(cuid())
+  subjectId      String         @map("subject_id")
+  runId          String         @map("run_id")
+  responseId     String?        @map("response_id")
+  queryId        String?        @map("query_id")
+  probeFamily    String         @map("probe_family")
+  normalizedJson Json           @map("normalized_json")
+  scoreJson      Json?          @map("score_json")
+  evidenceJson   Json?          @map("evidence_json")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  subject        ProjectSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  run            SamplingRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  response       AIResponse?    @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  query          AeoQuery?      @relation(fields: [queryId], references: [id], onDelete: SetNull)
+
+  @@unique([responseId, probeFamily])
+  @@index([subjectId, probeFamily])
+  @@index([runId, probeFamily])
+  @@index([responseId])
+  @@index([queryId])
+  @@map("probe_results")
+}
+
+model BrandProbeRun {
+  id                        String                  @id @default(cuid())
+  projectId                 String                  @map("project_id")
+  subjectId                 String?                 @map("subject_id")
+  analysisJobId             String?                 @map("analysis_job_id")
+  mode                      BrandProbeRunMode       @default(standard)
+  executionMode             BrandProbeExecutionMode @default(micro_batch) @map("execution_mode")
+  targetProbeCount          Int                     @default(360) @map("target_probe_count")
+  targetThroughputPerMinute Int                     @default(500) @map("target_throughput_per_minute")
+  actualThroughputPerMinute Float                   @default(0) @map("actual_throughput_per_minute")
+  requestRateLimit          Int                     @default(120) @map("request_rate_limit")
+  currentRequestRateLimit   Int                     @default(120) @map("current_request_rate_limit")
+  maxConcurrency            Int                     @default(24) @map("max_concurrency")
+  currentConcurrency        Int                     @default(24) @map("current_concurrency")
+  microBatchSize            Int                     @default(5) @map("micro_batch_size")
+  currentBatchSize          Int                     @default(5) @map("current_batch_size")
+  tokensPerMinuteBudget     Int                     @default(600000) @map("tokens_per_minute_budget")
+  backpressureLevel         Int                     @default(0) @map("backpressure_level")
+  throttleReason            String?                 @map("throttle_reason") @db.Text
+  status                    BrandProbeStatus        @default(queued)
+  totalProbes               Int                     @default(0) @map("total_probes")
+  completedProbes           Int                     @default(0) @map("completed_probes")
+  failedProbes              Int                     @default(0) @map("failed_probes")
+  currentStage              String?                 @map("current_stage")
+  configJson                Json?                   @map("config_json")
+  schedulerStatsJson        Json?                   @map("scheduler_stats_json")
+  errorMessage              String?                 @map("error_message") @db.Text
+  startedAt                 DateTime?               @map("started_at")
+  finishedAt                DateTime?               @map("finished_at")
+  createdAt                 DateTime                @default(now()) @map("created_at")
+  updatedAt                 DateTime                @updatedAt @map("updated_at")
+  project                   Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject                   ProjectSubject?         @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  probes                    BrandProbe[]
+  batches                   BrandProbeBatch[]
+  responses                 BrandProbeResponse[]
+  signals                   ExtractedSignal[]
+
+  @@index([projectId, createdAt])
+  @@index([subjectId, createdAt])
+  @@index([status, createdAt])
+  @@index([analysisJobId])
+  @@map("brand_probe_runs")
+}
+
+model BrandProbe {
+  id                   String                 @id @default(cuid())
+  runId                String                 @map("run_id")
+  projectId            String                 @map("project_id")
+  subjectId            String?                @map("subject_id")
+  dimension            String
+  zone                 BrandProbeZone
+  questionType         BrandProbeQuestionType @map("question_type")
+  semanticTemperature  SemanticTemperature    @map("semantic_temperature")
+  weight               Float                  @default(1)
+  samplingWeight       Float                  @default(1) @map("sampling_weight")
+  measurementWeight    Float                  @default(1) @map("measurement_weight")
+  modelTemperature     Float                  @default(0.3) @map("model_temperature")
+  language             String                 @default("zh-CN")
+  prompt               String                 @db.Text
+  expectedOutputSchema Json                   @map("expected_output_schema")
+  variablesJson        Json?                  @map("variables_json")
+  qualityScore         Float                  @default(0) @map("quality_score")
+  status               BrandProbeStatus       @default(pending)
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+  run                  BrandProbeRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  project              Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject              ProjectSubject?        @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  responses            BrandProbeResponse[]
+  signals              ExtractedSignal[]
+
+  @@index([runId, status])
+  @@index([projectId, zone])
+  @@index([subjectId, zone])
+  @@map("brand_probes")
+}
+
+model BrandProbeBatch {
+  id                  String               @id @default(cuid())
+  runId               String               @map("run_id")
+  projectId           String               @map("project_id")
+  batchIndex          Int                  @default(0) @map("batch_index")
+  probeIds            String[]             @default([]) @map("probe_ids")
+  batchSize           Int                  @default(5) @map("batch_size")
+  status              BrandProbeStatus     @default(pending)
+  retryCount          Int                  @default(0) @map("retry_count")
+  estimatedTokens     Int                  @default(0) @map("estimated_tokens")
+  actualTokens        Int                  @default(0) @map("actual_tokens")
+  scheduledAt         DateTime?            @map("scheduled_at")
+  startedAt           DateTime?            @map("started_at")
+  completedAt         DateTime?            @map("completed_at")
+  latencyMs           Int?                 @map("latency_ms")
+  degradedFromBatchId String?              @map("degraded_from_batch_id")
+  splitReason         String?              @map("split_reason") @db.Text
+  errorMessage        String?              @map("error_message") @db.Text
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  run                 BrandProbeRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  project             Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responses           BrandProbeResponse[]
+
+  @@index([runId, status])
+  @@index([projectId, createdAt])
+  @@map("brand_probe_batches")
+}
+
+model BrandProbeResponse {
+  id                String            @id @default(cuid())
+  runId             String            @map("run_id")
+  batchId           String?           @map("batch_id")
+  probeId           String            @map("probe_id")
+  projectId         String            @map("project_id")
+  subjectId         String?           @map("subject_id")
+  providerId        String?           @map("provider_id")
+  model             String
+  modelVersion      String?           @map("model_version")
+  prompt            String            @db.Text
+  rawResponse       String?           @map("raw_response") @db.Text
+  parsedJson        Json?             @map("parsed_json")
+  inputTokens       Int?              @map("input_tokens")
+  outputTokens      Int?              @map("output_tokens")
+  totalTokens       Int?              @map("total_tokens")
+  cachedInputTokens Int?              @map("cached_input_tokens")
+  reasoningTokens   Int?              @map("reasoning_tokens")
+  costEstimate      Float?            @map("cost_estimate")
+  latencyMs         Int?              @map("latency_ms")
+  retryCount        Int               @default(0) @map("retry_count")
+  errorMessage      String?           @map("error_message") @db.Text
+  createdAt         DateTime          @default(now()) @map("created_at")
+  run               BrandProbeRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  batch             BrandProbeBatch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  probe             BrandProbe        @relation(fields: [probeId], references: [id], onDelete: Cascade)
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject           ProjectSubject?   @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  signals           ExtractedSignal[]
+
+  @@index([runId, createdAt])
+  @@index([probeId])
+  @@index([batchId])
+  @@index([projectId, createdAt])
+  @@map("brand_probe_responses")
+}
+
+model ExtractedSignal {
+  id              String              @id @default(cuid())
+  runId           String              @map("run_id")
+  responseId      String              @map("response_id")
+  projectId       String              @map("project_id")
+  subjectId       String?             @map("subject_id")
+  probeId         String              @map("probe_id")
+  signalType      ExtractedSignalType @map("signal_type")
+  rawValue        String              @map("raw_value") @db.Text
+  normalizedValue String              @map("normalized_value") @db.Text
+  score           Float               @default(0)
+  confidence      Float               @default(0)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  run             BrandProbeRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  response        BrandProbeResponse  @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject         ProjectSubject?     @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  probe           BrandProbe          @relation(fields: [probeId], references: [id], onDelete: Cascade)
+
+  @@index([runId, signalType])
+  @@index([responseId])
+  @@index([projectId, signalType])
+  @@map("extracted_signals")
+}
+
+model AuditLog {
+  id             String        @id @default(cuid())
+  actorUserId    String?       @map("actor_user_id")
+  organizationId String?       @map("organization_id")
+  action         String
+  targetType     String        @map("target_type")
+  targetId       String?       @map("target_id")
+  metadata       Json?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  actor          User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("audit_logs")
+}
+
+model TraceEvent {
+  id             String   @id @default(cuid())
+  traceId        String   @map("trace_id")
+  spanId         String   @map("span_id")
+  parentSpanId   String?  @map("parent_span_id")
+  severity       String
+  eventType      String   @map("event_type")
+  subsystem      String
+  operation      String
+  status         String?
+  message        String?  @db.Text
+  errorCode      String?  @map("error_code")
+  errorMessage   String?  @map("error_message") @db.Text
+  durationMs     Int?     @map("duration_ms")
+  httpMethod     String?  @map("http_method")
+  httpPath       String?  @map("http_path")
+  httpStatus     Int?     @map("http_status")
+  userId         String?  @map("user_id")
+  organizationId String?  @map("organization_id")
+  projectId      String?  @map("project_id")
+  analysisJobId  String?  @map("analysis_job_id")
+  runId          String?  @map("run_id")
+  promptRunId    String?  @map("prompt_run_id")
+  aiUsageLogId   String?  @map("ai_usage_log_id")
+  objectType     String?  @map("object_type")
+  objectId       String?  @map("object_id")
+  metadataJson   Json?    @map("metadata_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([traceId, createdAt])
+  @@index([severity, createdAt])
+  @@index([projectId, createdAt])
+  @@index([operation, createdAt])
+  @@index([analysisJobId, createdAt])
+  @@map("trace_events")
+}
+
+model LocalePreference {
+  id             String        @id @default(cuid())
+  userId         String?       @map("user_id")
+  organizationId String?       @map("organization_id")
+  locale         String
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@map("locale_preferences")
+}
+
+model Alert {
+  id                   String        @id @default(cuid())
+  projectId            String        @map("project_id")
+  responseId           String?       @map("response_id")
+  alertType            AlertType     @map("alert_type")
+  severity             AlertSeverity
+  status               AlertStatus   @default(open)
+  title                String
+  message              String        @db.Text
+  evidence             Json?
+  correctionSuggestion String?       @map("correction_suggestion") @db.Text
+  confidence           Float         @default(0)
+  acknowledgedAt       DateTime?     @map("acknowledged_at")
+  resolvedAt           DateTime?     @map("resolved_at")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  project              Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  response             AIResponse?   @relation(fields: [responseId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status, severity])
+  @@index([responseId])
+  @@map("alerts")
+}
+
+model EntityProfile {
+  id               String   @id @default(cuid())
+  projectId        String   @map("project_id")
+  entityName       String   @map("entity_name")
+  entityType       String   @default("Company") @map("entity_type")
+  aiDefinition     String?  @map("ai_definition") @db.Text
+  authorityScore   Float    @default(0) @map("authority_score")
+  consistencyScore Float    @default(0) @map("consistency_score")
+  centralityScore  Float    @default(0) @map("centrality_score")
+  cognitiveBias    Json?    @map("cognitive_bias")
+  sourceEvidence   Json?    @map("source_evidence")
+  graphNodeKey     String?  @map("graph_node_key")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, entityName])
+  @@index([projectId, entityType])
+  @@map("entity_profiles")
+}
+
+model CitationSource {
+  id              String      @id @default(cuid())
+  projectId       String      @map("project_id")
+  responseId      String?     @map("response_id")
+  sourceUrl       String?     @map("source_url") @db.Text
+  sourceDomain    String?     @map("source_domain")
+  sourceTitle     String?     @map("source_title")
+  citationRank    Int?        @map("citation_rank")
+  citationContext String?     @map("citation_context") @db.Text
+  supportsBrand   Boolean     @default(false) @map("supports_brand")
+  confidence      Float       @default(0)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  response        AIResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, sourceDomain])
+  @@index([responseId])
+  @@map("citation_sources")
+}
+
+model QuerySample {
+  id          String      @id @default(cuid())
+  projectId   String      @map("project_id")
+  runId       String      @map("run_id")
+  queryId     String      @map("query_id")
+  responseId  String?     @map("response_id")
+  sampleIndex Int         @map("sample_index")
+  persona     String?
+  region      String?
+  contextMode ContextMode @default(cold_start) @map("context_mode")
+  status      String      @default("queued")
+  error       String?     @db.Text
+  createdAt   DateTime    @default(now()) @map("created_at")
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run         SamplingRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  query       AeoQuery    @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  response    AIResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, queryId, sampleIndex])
+  @@index([projectId, runId])
+  @@map("query_samples")
+}
+
+model StabilitySnapshot {
+  id                String       @id @default(cuid())
+  projectId         String       @map("project_id")
+  runId             String?      @map("run_id")
+  metricName        String       @map("metric_name")
+  sampleCount       Int          @map("sample_count")
+  mean              Float        @default(0)
+  variance          Float        @default(0)
+  standardDeviation Float        @default(0) @map("standard_deviation")
+  entropy           Float        @default(0)
+  stabilityIndex    Float        @default(0) @map("stability_index")
+  metadata          Json?
+  createdAt         DateTime     @default(now()) @map("created_at")
+  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run               SamplingRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, runId])
+  @@map("stability_snapshots")
+}
+
+model ConfidenceInterval {
+  id              String       @id @default(cuid())
+  projectId       String       @map("project_id")
+  runId           String?      @map("run_id")
+  metricName      String       @map("metric_name")
+  estimate        Float
+  lowerBound      Float        @map("lower_bound")
+  upperBound      Float        @map("upper_bound")
+  confidenceLevel Float        @default(0.95) @map("confidence_level")
+  sampleCount     Int          @map("sample_count")
+  method          String       @default("wilson")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run             SamplingRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, runId, metricName])
+  @@map("confidence_intervals")
+}
+
+model SemanticCoverageSnapshot {
+  id                  String   @id @default(cuid())
+  projectId           String   @map("project_id")
+  topicBreadth        Float    @default(0) @map("topic_breadth")
+  topicDepth          Float    @default(0) @map("topic_depth")
+  intentCoverage      Float    @default(0) @map("intent_coverage")
+  vocabularyDiversity Float    @default(0) @map("vocabulary_diversity")
+  overallCoverage     Float    @default(0) @map("overall_coverage")
+  missingConcepts     Json?    @map("missing_concepts")
+  competitorGaps      Json?    @map("competitor_gaps")
+  evidence            Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("semantic_coverage_snapshots")
+}
+
+model WebsiteCrawlSnapshot {
+  id          String   @id @default(cuid())
+  projectId   String   @map("project_id")
+  url         String   @db.Text
+  status      String   @default("queued")
+  contentHash String?  @map("content_hash")
+  objectKey   String?  @map("object_key")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("website_crawl_snapshots")
+}
+
+model AnalysisJob {
+  id          String            @id @default(cuid())
+  projectId   String?           @map("project_id")
+  runId       String?           @map("run_id")
+  jobType     AnalysisJobType   @map("job_type")
+  queueName   String            @map("queue_name")
+  queueJobId  String?           @map("queue_job_id")
+  traceId     String            @map("trace_id")
+  status      AnalysisJobStatus @default(queued)
+  payload     Json
+  result      Json?
+  error       String?           @db.Text
+  attempts    Int               @default(0)
+  startedAt   DateTime?         @map("started_at")
+  completedAt DateTime?         @map("completed_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  project     Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run         SamplingRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([queueName, queueJobId])
+  @@index([traceId])
+  @@map("analysis_jobs")
+}
+
+model ObjectArtifact {
+  id           String             @id @default(cuid())
+  projectId    String?            @map("project_id")
+  artifactType ObjectArtifactType @map("artifact_type")
+  bucket       String?
+  objectKey    String             @map("object_key")
+  contentType  String?            @map("content_type")
+  byteSize     Int?               @map("byte_size")
+  checksum     String?
+  metadata     Json?
+  createdAt    DateTime           @default(now()) @map("created_at")
+  project      Project?           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, artifactType])
+  @@map("object_artifacts")
+}
+
+model ProviderRoutingRule {
+  id         String      @id @default(cuid())
+  task       String
+  tier       RoutingTier
+  providerId String      @map("provider_id")
+  modelId    String?     @map("model_id")
+  enabled    Boolean     @default(true)
+  priority   Int         @default(100)
+  maxCostUsd Float?      @map("max_cost_usd")
+  metadata   Json?
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  provider   AIProvider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  model      AIModel?    @relation(fields: [modelId], references: [id], onDelete: SetNull)
+
+  @@index([task, enabled, priority])
+  @@map("provider_routing_rules")
+}
+
+model TaskExecutionPolicy {
+  id                   String                    @id @default(cuid())
+  task                 String                    @unique
+  tier                 RoutingTier               @default(mid_tier_verification)
+  enabled              Boolean                   @default(true)
+  executionStrategy    ExecutionStrategy         @default(single_lane) @map("execution_strategy")
+  providerSelection    ProviderSelectionStrategy @default(primary_only) @map("provider_selection")
+  laneCount            Int                       @default(1) @map("lane_count")
+  minLaneCount         Int                       @default(1) @map("min_lane_count")
+  maxLaneCount         Int                       @default(4) @map("max_lane_count")
+  targetLatencySeconds Int                       @default(120) @map("target_latency_seconds")
+  timeoutSeconds       Int                       @default(90) @map("timeout_seconds")
+  metadata             Json?
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+
+  @@index([enabled, task])
+  @@map("task_execution_policies")
+}
+
+// ============================================================================
+// Proof layer: connect AI-visibility to real outcomes, and prove that an
+// intervention (not model drift) caused a change via a treatment/control design.
+// ============================================================================
+
+enum ExternalSourceType {
+  ga4
+  csv_upload
+  webhook
+  manual
+}
+
+enum ExperimentStatus {
+  draft
+  running
+  measuring
+  concluded
+  archived
+}
+
+enum ExperimentArm {
+  treatment
+  control
+}
+
+enum ExperimentWaveType {
+  baseline
+  retest
+}
+
+/// A connected source of real business outcomes (AI-referral sessions, leads,
+/// signups, revenue) used to correlate against AI-visibility over time.
+model ExternalMetricSource {
+  id           String                @id @default(cuid())
+  projectId    String                @map("project_id")
+  sourceType   ExternalSourceType    @map("source_type")
+  name         String
+  config       Json?
+  status       String                @default("connected")
+  lastSyncedAt DateTime?             @map("last_synced_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  project      Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  points       ExternalMetricPoint[]
+
+  @@index([projectId, sourceType])
+  @@map("external_metric_sources")
+}
+
+/// A single daily outcome value (e.g. ai_referral_sessions on a date).
+model ExternalMetricPoint {
+  id        String               @id @default(cuid())
+  projectId String               @map("project_id")
+  sourceId  String               @map("source_id")
+  metricKey String               @map("metric_key")
+  date      DateTime             @db.Date
+  value     Float
+  metadata  Json?
+  createdAt DateTime             @default(now()) @map("created_at")
+  project   Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source    ExternalMetricSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, metricKey, date])
+  @@index([projectId, metricKey, date])
+  @@map("external_metric_points")
+}
+
+/// A controlled experiment: a set of question clusters split into a treatment
+/// arm (content interventions applied) and a control arm (left untouched), so
+/// model drift can be netted out via difference-in-differences.
+model CognitionExperiment {
+  id          String               @id @default(cuid())
+  projectId   String               @map("project_id")
+  subjectId   String?              @map("subject_id")
+  name        String
+  hypothesis  String?              @db.Text
+  metricKey   String               @default("mention_rate") @map("metric_key")
+  status      ExperimentStatus     @default(draft)
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject     ProjectSubject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  assignments ExperimentQuestion[]
+  waves       ExperimentWave[]
+  results     ExperimentResult[]
+
+  @@index([projectId, status])
+  @@map("cognition_experiments")
+}
+
+/// Assigns a query to the treatment or control arm of an experiment.
+model ExperimentQuestion {
+  id           String              @id @default(cuid())
+  experimentId String              @map("experiment_id")
+  queryId      String              @map("query_id")
+  arm          ExperimentArm
+  createdAt    DateTime            @default(now()) @map("created_at")
+  experiment   CognitionExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  query        AeoQuery            @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@unique([experimentId, queryId])
+  @@index([experimentId, arm])
+  @@map("experiment_questions")
+}
+
+/// A measurement wave (baseline before the intervention, retest after).
+model ExperimentWave {
+  id           String                  @id @default(cuid())
+  experimentId String                  @map("experiment_id")
+  waveType     ExperimentWaveType      @map("wave_type")
+  label        String?
+  runId        String?                 @map("run_id")
+  measuredAt   DateTime                @default(now()) @map("measured_at")
+  experiment   CognitionExperiment     @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  run          SamplingRun?            @relation(fields: [runId], references: [id], onDelete: SetNull)
+  observations ExperimentObservation[]
+
+  @@index([experimentId, waveType])
+  @@map("experiment_waves")
+}
+
+/// Aggregated success/sample counts for one arm in one wave.
+model ExperimentObservation {
+  id        String         @id @default(cuid())
+  waveId    String         @map("wave_id")
+  arm       ExperimentArm
+  samples   Int
+  successes Int
+  createdAt DateTime       @default(now()) @map("created_at")
+  wave      ExperimentWave @relation(fields: [waveId], references: [id], onDelete: Cascade)
+
+  @@unique([waveId, arm])
+  @@map("experiment_observations")
+}
+
+/// The computed difference-in-differences result: net lift with model drift
+/// (the control delta) removed, plus a significance test.
+model ExperimentResult {
+  id                String              @id @default(cuid())
+  experimentId      String              @map("experiment_id")
+  metricKey         String              @map("metric_key")
+  treatmentPreRate  Float               @map("treatment_pre_rate")
+  treatmentPostRate Float               @map("treatment_post_rate")
+  controlPreRate    Float               @map("control_pre_rate")
+  controlPostRate   Float               @map("control_post_rate")
+  treatmentDelta    Float               @map("treatment_delta")
+  controlDelta      Float               @map("control_delta")
+  netLift           Float               @map("net_lift")
+  zScore            Float               @map("z_score")
+  pValue            Float               @map("p_value")
+  significant       Boolean
+  computedAt        DateTime            @default(now()) @map("computed_at")
+  experiment        CognitionExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId, computedAt])
+  @@map("experiment_results")
+}

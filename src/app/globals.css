@@ -1,26 +1,282 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-heading: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* Cosmic accent zones — shared by UI + nebula clusters */
+  --color-gold: var(--gold);
+  --color-cyan: var(--cyan);
+  --color-violet: var(--violet);
+  --color-rose: var(--rose);
+  --color-emerald: var(--emerald);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ----------------------------------------------------------------------------
+   Light theme — clean premium surface for the operator console / marketing.
+---------------------------------------------------------------------------- */
+:root {
+  --background: oklch(0.985 0.003 240);
+  --foreground: oklch(0.18 0.02 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 264);
+  --primary: oklch(0.55 0.16 268);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.006 264);
+  --secondary-foreground: oklch(0.24 0.02 264);
+  --muted: oklch(0.96 0.006 264);
+  --muted-foreground: oklch(0.52 0.02 264);
+  --accent: oklch(0.95 0.012 264);
+  --accent-foreground: oklch(0.24 0.02 264);
+  --destructive: oklch(0.58 0.22 25);
+  --border: oklch(0.9 0.008 264);
+  --input: oklch(0.9 0.008 264);
+  --ring: oklch(0.62 0.14 264);
+  --chart-1: oklch(0.7 0.15 200);
+  --chart-2: oklch(0.72 0.15 145);
+  --chart-3: oklch(0.74 0.15 85);
+  --chart-4: oklch(0.62 0.2 25);
+  --chart-5: oklch(0.6 0.2 300);
+  --radius: 0.75rem;
+
+  --gold: oklch(0.83 0.15 85);
+  --cyan: oklch(0.78 0.13 205);
+  --violet: oklch(0.7 0.17 295);
+  --rose: oklch(0.7 0.18 12);
+  --emerald: oklch(0.74 0.15 162);
+
+  --sidebar: oklch(0.99 0.002 240);
+  --sidebar-foreground: oklch(0.18 0.02 264);
+  --sidebar-primary: oklch(0.55 0.16 268);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.95 0.012 264);
+  --sidebar-accent-foreground: oklch(0.24 0.02 264);
+  --sidebar-border: oklch(0.9 0.008 264);
+  --sidebar-ring: oklch(0.62 0.14 264);
+}
+
+/* ----------------------------------------------------------------------------
+   Dark theme — the deep-space "Cosmic" surface that defines the product.
+   Surfaces are translucent washes so they read as glass over the star field.
+---------------------------------------------------------------------------- */
+.dark {
+  --background: oklch(0.13 0.028 264);
+  --foreground: oklch(0.97 0.01 250);
+  --card: oklch(0.95 0.02 255 / 5%);
+  --card-foreground: oklch(0.97 0.01 250);
+  --popover: oklch(0.17 0.03 264);
+  --popover-foreground: oklch(0.97 0.01 250);
+  --primary: oklch(0.85 0.15 85);
+  --primary-foreground: oklch(0.22 0.05 70);
+  --secondary: oklch(0.95 0.02 255 / 9%);
+  --secondary-foreground: oklch(0.97 0.01 250);
+  --muted: oklch(0.95 0.02 255 / 6%);
+  --muted-foreground: oklch(0.74 0.03 255);
+  --accent: oklch(0.95 0.02 255 / 10%);
+  --accent-foreground: oklch(0.99 0.005 250);
+  --destructive: oklch(0.7 0.19 18);
+  --border: oklch(0.92 0.04 255 / 11%);
+  --input: oklch(0.92 0.04 255 / 15%);
+  --ring: oklch(0.8 0.12 200);
+  --chart-1: oklch(0.82 0.13 205);
+  --chart-2: oklch(0.82 0.15 162);
+  --chart-3: oklch(0.85 0.15 85);
+  --chart-4: oklch(0.72 0.18 12);
+  --chart-5: oklch(0.74 0.16 295);
+
+  --gold: oklch(0.85 0.15 85);
+  --cyan: oklch(0.82 0.13 205);
+  --violet: oklch(0.76 0.16 295);
+  --rose: oklch(0.74 0.18 12);
+  --emerald: oklch(0.82 0.15 162);
+
+  --sidebar: oklch(0.15 0.03 264 / 80%);
+  --sidebar-foreground: oklch(0.97 0.01 250);
+  --sidebar-primary: oklch(0.85 0.15 85);
+  --sidebar-primary-foreground: oklch(0.22 0.05 70);
+  --sidebar-accent: oklch(0.95 0.02 255 / 10%);
+  --sidebar-accent-foreground: oklch(0.99 0.005 250);
+  --sidebar-border: oklch(0.92 0.04 255 / 11%);
+  --sidebar-ring: oklch(0.8 0.12 200);
+}
+
+@layer utilities {
+  /* The signature deep-space backdrop: nebula glows over a navy void +
+     a faint coordinate grid. Use on full-bleed shells. */
+  .cosmic-bg {
+    background-color: oklch(0.11 0.026 264);
+    background-image:
+      radial-gradient(circle at 18% 8%, oklch(0.82 0.13 205 / 14%), transparent 36%),
+      radial-gradient(circle at 84% 12%, oklch(0.85 0.15 85 / 13%), transparent 38%),
+      radial-gradient(circle at 78% 86%, oklch(0.76 0.16 295 / 12%), transparent 40%),
+      radial-gradient(circle at 12% 92%, oklch(0.74 0.18 12 / 8%), transparent 38%),
+      linear-gradient(180deg, oklch(0.12 0.03 264) 0%, oklch(0.1 0.024 262) 100%);
+  }
+
+  .cosmic-grid {
+    background-image:
+      linear-gradient(oklch(0.92 0.04 255 / 3.5%) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(0.92 0.04 255 / 3.5%) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(circle at 50% 30%, black, transparent 78%);
+    mask-image: radial-gradient(circle at 50% 30%, black, transparent 78%);
+  }
+
+  .starfield {
+    background-image:
+      radial-gradient(circle, oklch(0.95 0.03 220 / 55%) 0 1px, transparent 1.6px),
+      radial-gradient(circle, oklch(0.92 0.04 255 / 28%) 0 1px, transparent 1.4px);
+    background-size: 96px 96px, 142px 142px;
+    background-position: 0 0, 40px 70px;
+  }
+
+  /* Glass surfaces */
+  .panel {
+    border: 1px solid var(--border);
+    background:
+      linear-gradient(180deg, oklch(0.95 0.02 255 / 6%), oklch(0.95 0.02 255 / 2.5%));
+    box-shadow: 0 24px 80px -32px oklch(0.05 0.04 264 / 70%);
+    backdrop-filter: blur(16px);
+    border-radius: var(--radius-xl);
+  }
+  .panel-strong {
+    border: 1px solid oklch(0.92 0.04 255 / 16%);
+    background:
+      radial-gradient(circle at 0% 0%, oklch(0.85 0.15 85 / 10%), transparent 42%),
+      radial-gradient(circle at 100% 0%, oklch(0.82 0.13 205 / 8%), transparent 44%),
+      linear-gradient(180deg, oklch(0.95 0.02 255 / 7%), oklch(0.95 0.02 255 / 3%));
+    box-shadow: 0 40px 130px -40px oklch(0.04 0.04 264 / 80%);
+    backdrop-filter: blur(20px);
+    border-radius: var(--radius-2xl);
+  }
+  .panel-inset {
+    border: 1px solid oklch(0.92 0.04 255 / 8%);
+    background: oklch(0.08 0.02 264 / 35%);
+    border-radius: var(--radius-lg);
+  }
+
+  /* Accent glows */
+  .glow-gold { box-shadow: 0 0 0 1px oklch(0.85 0.15 85 / 22%), 0 18px 60px -18px oklch(0.85 0.15 85 / 45%); }
+  .glow-cyan { box-shadow: 0 0 0 1px oklch(0.82 0.13 205 / 22%), 0 18px 60px -18px oklch(0.82 0.13 205 / 45%); }
+  .glow-violet { box-shadow: 0 0 0 1px oklch(0.76 0.16 295 / 22%), 0 18px 60px -18px oklch(0.76 0.16 295 / 45%); }
+
+  /* Gradient text for hero headlines */
+  .text-aurora {
+    background-image: linear-gradient(
+      100deg,
+      oklch(0.92 0.05 250) 0%,
+      oklch(0.85 0.15 85) 34%,
+      oklch(0.82 0.13 205) 66%,
+      oklch(0.78 0.16 295) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Text tiers over dark surfaces */
+  .text-dim { color: oklch(0.97 0.01 250 / 68%); }
+  .text-faint { color: oklch(0.97 0.01 250 / 46%); }
+
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .animate-float {
+    animation: cosmic-float 9s ease-in-out infinite;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@keyframes cosmic-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  html {
+    @apply font-sans;
+    scroll-behavior: smooth;
+  }
+
+  /* In the cosmic app, default shadcn Cards become glass automatically. */
+  .dark [data-slot="card"] {
+    backdrop-filter: blur(14px);
+    box-shadow: 0 24px 70px -38px oklch(0.04 0.04 264 / 80%);
+  }
+
+  ::selection {
+    background: oklch(0.85 0.15 85 / 30%);
+    color: oklch(0.99 0.01 90);
+  }
+
+  /* Premium thin scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.7 0.03 255 / 28%) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background: oklch(0.7 0.03 255 / 24%);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: oklch(0.75 0.04 255 / 38%); background-clip: padding-box; }
 }

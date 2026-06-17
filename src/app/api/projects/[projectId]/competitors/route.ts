@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/server/auth/session";
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { getProject } from "@/server/data/projects";
+import { withApiTrace } from "@/server/observability/api-wrapper";
 import { normalizeDomain } from "@/server/utils/domain";
 import { createCompetitorSchema } from "@/server/validation/projects";
 
@@ -10,7 +11,7 @@ type CompetitorContext = {
   params: Promise<{ projectId: string }>;
 };
 
-export async function GET(_request: Request, { params }: CompetitorContext) {
+export const GET = withApiTrace<CompetitorContext>({ subsystem: "project", operation: "projects.competitors.list" }, async function GET(_request: Request, { params }: CompetitorContext) {
   const auth = await requireApiSession();
 
   if (!auth.ok) {
@@ -37,9 +38,9 @@ export async function GET(_request: Request, { params }: CompetitorContext) {
   });
 
   return NextResponse.json({ competitors });
-}
+});
 
-export async function POST(request: Request, { params }: CompetitorContext) {
+export const POST = withApiTrace<CompetitorContext>({ subsystem: "project", operation: "projects.competitors.create" }, async function POST(request: Request, { params }: CompetitorContext) {
   const auth = await requireApiSession();
 
   if (!auth.ok) {
@@ -82,4 +83,4 @@ export async function POST(request: Request, { params }: CompetitorContext) {
   });
 
   return NextResponse.json({ competitor }, { status: 201 });
-}
+});

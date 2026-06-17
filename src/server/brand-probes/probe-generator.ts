@@ -35,6 +35,7 @@ export function generateBrandProbes(input: {
   const quotas = zoneQuotas[input.config.mode];
   const brand = input.subject?.displayName || input.project.brandName;
   const language = input.subject?.language || input.project.language || "zh-CN";
+  const entityType = input.subject?.entityType ?? "BRAND";
   const probes: GeneratedProbe[] = [];
 
   for (const [zone, count] of Object.entries(quotas) as [ProbeZone, number][]) {
@@ -46,6 +47,7 @@ export function generateBrandProbes(input: {
         pool: input.seedPool,
         zone,
         questionType,
+        entityType,
         index,
       });
       const qualityScore = scoreProbeQuality({

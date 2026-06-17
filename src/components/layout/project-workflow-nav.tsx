@@ -3,7 +3,7 @@
 import type { ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, LayoutDashboard, Settings2, Sparkles, Target, Archive } from "lucide-react";
+import { FileText, FlaskConical, LayoutDashboard, Settings2, Sparkles, Target, Archive } from "lucide-react";
 
 import { AuditStatusPanel } from "@/components/diagnosis/audit-status-panel";
 import { getDictionary } from "@/i18n/dictionaries";
@@ -13,7 +13,7 @@ type LocaleKey = "zh-CN" | "en";
 
 type MainNavItem = {
   segment: string;
-  labelKey: "dashboard" | "semanticNebula" | "opportunities" | "reports" | "evidence" | "settings";
+  labelKey: "dashboard" | "semanticNebula" | "opportunities" | "reports" | "evidence" | "proof" | "settings";
   icon: ComponentType<{ className?: string }>;
 };
 
@@ -21,6 +21,7 @@ const mainNav: MainNavItem[] = [
   { segment: "dashboard", labelKey: "dashboard", icon: LayoutDashboard },
   { segment: "semantic-nebula", labelKey: "semanticNebula", icon: Sparkles },
   { segment: "opportunities", labelKey: "opportunities", icon: Target },
+  { segment: "proof", labelKey: "proof", icon: FlaskConical },
   { segment: "reports", labelKey: "reports", icon: FileText },
   { segment: "evidence", labelKey: "evidence", icon: Archive },
   { segment: "settings", labelKey: "settings", icon: Settings2 },

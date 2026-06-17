@@ -32,11 +32,12 @@ async function main() {
 
   const internalOrg = await prisma.organization.upsert({
     where: { slug: "aeo-operations" },
-    update: {},
+    update: { plan: "scale" },
     create: {
       name: "AEO Operations",
       slug: "aeo-operations",
       type: "internal",
+      plan: "scale",
       defaultLocale: "zh-CN",
     },
   });
@@ -74,11 +75,13 @@ async function main() {
 
   const customerOrg = await prisma.organization.upsert({
     where: { slug: "demo-customer" },
-    update: {},
+    update: { plan: "pro", planRenewsAt: new Date(Date.now() + 24 * 86400000) },
     create: {
       name: "Demo Customer",
       slug: "demo-customer",
       type: "customer",
+      plan: "pro",
+      planRenewsAt: new Date(Date.now() + 24 * 86400000),
       defaultLocale: "zh-CN",
     },
   });

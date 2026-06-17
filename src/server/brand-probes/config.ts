@@ -12,7 +12,7 @@ function floatEnv(name: string, fallback: number) {
 
 function modeEnv(name: string, fallback: ProbeRunMode): ProbeRunMode {
   const value = process.env[name];
-  return value === "demo" || value === "standard" || value === "max500" ? value : fallback;
+  return value === "demo" || value === "standard" || value === "max500" || value === "max1000" ? value : fallback;
 }
 
 function executionModeEnv(name: string, fallback: ProbeExecutionMode): ProbeExecutionMode {
@@ -38,7 +38,7 @@ export function getProbeRunConfig(overrides: Partial<ProbeRunConfig> = {}): Prob
     maxRetries: intEnv("PROBE_MAX_RETRIES", 3),
     singleMaxOutputTokens: intEnv("PROBE_SINGLE_MAX_OUTPUT_TOKENS", 300),
     batchMaxOutputTokens: intEnv("PROBE_BATCH_MAX_OUTPUT_TOKENS", 1200),
-    defaultModel: process.env.PROBE_DEFAULT_MODEL || "gpt-5",
+    defaultModel: process.env.PROBE_DEFAULT_MODEL || "deepseek-chat",
     modelTemperature: floatEnv("PROBE_TEMPERATURE", 0.3),
   };
 
@@ -82,5 +82,20 @@ export const zoneQuotas = {
     risk_boundary: 40,
     growth_opportunity: 30,
     calibration: 20,
+  },
+  // ~1000 probes balancing 重点 (priority) / 广度 (breadth) / 深度 (depth) so the
+  // run paints a full panorama of the model's black box, not a deep re-sample of
+  // a few questions. Priority zones (implicit recommendation, competition) keep
+  // the largest share; breadth zones (scenario, audience) are widened; depth is
+  // added per-question via depth levels in the generator.
+  max1000: {
+    core_semantics: 110,
+    implicit_recommendation: 200,
+    competition: 200,
+    scenario_fit: 170,
+    audience_fit: 120,
+    risk_boundary: 80,
+    growth_opportunity: 80,
+    calibration: 40,
   },
 } as const;

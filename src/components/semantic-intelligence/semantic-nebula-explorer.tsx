@@ -368,7 +368,7 @@ function RealSemanticNebulaCanvas({
   return (
     <div
       ref={shellRef}
-      className="relative min-h-[560px] overflow-hidden rounded-2xl border border-border bg-[oklch(0.08_0.02_264)] shadow-[0_40px_130px_-40px_oklch(0.04_0.04_264/80%)] md:min-h-[680px]"
+      className="relative min-h-[560px] overflow-hidden rounded-2xl border border-border bg-[oklch(0.04_0.006_264)] shadow-[0_40px_130px_-44px_oklch(0.02_0.01_264/90%)] md:min-h-[680px]"
     >
       <canvas
         ref={canvasRef}
@@ -537,23 +537,21 @@ function drawBackground(
   time: number,
 ) {
   const bg = context.createLinearGradient(0, 0, width, height);
-  bg.addColorStop(0, "#01020a");
-  bg.addColorStop(0.34, "#061426");
-  bg.addColorStop(0.68, "#090712");
-  bg.addColorStop(1, "#02030b");
+  bg.addColorStop(0, "#020207");
+  bg.addColorStop(0.5, "#05070e");
+  bg.addColorStop(1, "#010104");
   context.fillStyle = bg;
   context.fillRect(0, 0, width, height);
 
-  drawGlow(context, center.x, center.y, Math.min(width, height) * 0.68, `rgba(255,164,52,${0.16 + Math.sin(time * 0.7) * 0.02})`);
-  drawGlow(context, width * 0.18, height * 0.18, Math.min(width, height) * 0.3, "rgba(34,211,238,0.14)");
-  drawGlow(context, width * 0.82, height * 0.28, Math.min(width, height) * 0.34, "rgba(96,165,250,0.13)");
-  drawGlow(context, width * 0.22, height * 0.82, Math.min(width, height) * 0.32, "rgba(236,72,153,0.1)");
-  drawGlow(context, width * 0.78, height * 0.78, Math.min(width, height) * 0.34, "rgba(167,139,250,0.12)");
+  // Restrained: a faint warm focal wash on the subject core + one cool accent.
+  drawGlow(context, center.x, center.y, Math.min(width, height) * 0.6, `rgba(210,150,70,${0.07 + Math.sin(time * 0.7) * 0.012})`);
+  drawGlow(context, width * 0.18, height * 0.18, Math.min(width, height) * 0.28, "rgba(34,180,220,0.05)");
+  drawGlow(context, width * 0.82, height * 0.8, Math.min(width, height) * 0.3, "rgba(120,110,200,0.045)");
 
-  const vignette = context.createRadialGradient(center.x, center.y, 0, center.x, center.y, Math.max(width, height) * 0.74);
+  const vignette = context.createRadialGradient(center.x, center.y, 0, center.x, center.y, Math.max(width, height) * 0.72);
   vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(0.72, "rgba(0,0,0,0.16)");
-  vignette.addColorStop(1, "rgba(0,0,0,0.62)");
+  vignette.addColorStop(0.64, "rgba(0,0,0,0.28)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.8)");
   context.fillStyle = vignette;
   context.fillRect(0, 0, width, height);
 }

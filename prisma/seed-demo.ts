@@ -11,6 +11,7 @@
 import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { differenceInDifferences } from "../src/server/analysis/causal-statistics";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
@@ -172,6 +173,9 @@ async function main() {
   await prisma.citationSource.deleteMany({ where: { projectId: PROJECT_ID } });
   await prisma.semanticCoverageSnapshot.deleteMany({ where: { projectId: PROJECT_ID } });
   await prisma.entityProfile.deleteMany({ where: { projectId: PROJECT_ID } });
+  await prisma.cognitionExperiment.deleteMany({ where: { projectId: PROJECT_ID } }); // cascades waves/observations/results
+  await prisma.externalMetricSource.deleteMany({ where: { projectId: PROJECT_ID } }); // cascades points
+  await prisma.metricSnapshot.deleteMany({ where: { projectId: PROJECT_ID } });
   await prisma.samplingRun.deleteMany({ where: { projectId: PROJECT_ID } }); // cascades responses + analyses
   await prisma.aeoQuery.deleteMany({ where: { projectId: PROJECT_ID } });
   await prisma.analysisJob.deleteMany({ where: { projectId: PROJECT_ID } });
@@ -310,6 +314,42 @@ async function main() {
       },
     });
   }
+
+  // An OLDER OVERALL snapshot so cognition-drift has something to diff against:
+  // latest has two associations the old run lacked (emerged), the old run had a
+  // risk term that has since faded, and Profound's gravity has receded.
+  const olderOverall = overallNodes
+    .filter((node) => node.term !== "evidence-backed audit" && node.term !== "citation tracking")
+    .map((node) => (node.term === "Profound" ? { ...node, semanticGravity: 96 } : node));
+  olderOverall.push(
+    buildNode(
+      {
+        term: "unproven results",
+        termType: "RISK",
+        polarity: "NEGATIVE",
+        gravity: 58,
+        confidence: 60,
+        context: { riskContext: true },
+        excerpt: "Earlier answers questioned whether the results were proven.",
+        question: "Does it actually work?",
+      },
+      99,
+    ),
+  );
+  await prisma.semanticNebulaSnapshot.create({
+    data: {
+      projectId: PROJECT_ID,
+      subjectId,
+      runId: run.id,
+      scope: "OVERALL",
+      version: "2026-06-08.v2",
+      nodeJson: olderOverall,
+      edgeJson: buildEdges(olderOverall),
+      summaryJson: buildSummary("OVERALL", olderOverall),
+      evidenceJson: {},
+      createdAt: new Date(Date.now() - 14 * 86400000),
+    },
+  });
 
   // ---- Long-tail opportunities --------------------------------------------
   const opportunities = [
@@ -540,9 +580,118 @@ async function main() {
     },
   });
 
+  // ---- Proof layer: controlled experiment (difference-in-differences) ------
+  const experiment = await prisma.cognitionExperiment.create({
+    data: {
+      projectId: PROJECT_ID,
+      subjectId,
+      name: "Methodology & evidence page intervention",
+      hypothesis:
+        "Publishing a transparent methodology page and a sample evidence export will increase how often AI recommends us for transparency questions — beyond background model drift.",
+      metricKey: "mention_rate",
+      status: "concluded",
+    },
+  });
+  // Split the question set into treatment (intervention applied) and control.
+  for (let i = 0; i < queries.length; i += 1) {
+    await prisma.experimentQuestion.create({
+      data: { experimentId: experiment.id, queryId: queries[i].id, arm: i % 2 === 0 ? "treatment" : "control" },
+    });
+  }
+  // Baseline: both arms equal (~40%). Retest: treatment jumps to 75%, control
+  // drifts to 50% (the model improved for everyone) → net lift 0.25, drift 0.10.
+  const baselineWave = await prisma.experimentWave.create({
+    data: {
+      experimentId: experiment.id,
+      waveType: "baseline",
+      label: "Baseline (pre-intervention)",
+      runId: run.id,
+      measuredAt: new Date(Date.now() - 21 * 86400000),
+      observations: {
+        create: [
+          { arm: "treatment", samples: 80, successes: 32 },
+          { arm: "control", samples: 80, successes: 32 },
+        ],
+      },
+    },
+  });
+  const retestWave = await prisma.experimentWave.create({
+    data: {
+      experimentId: experiment.id,
+      waveType: "retest",
+      label: "Retest (post-intervention, 3 weeks later)",
+      measuredAt: new Date(Date.now() - 2 * 86400000),
+      observations: {
+        create: [
+          { arm: "treatment", samples: 80, successes: 60 },
+          { arm: "control", samples: 80, successes: 40 },
+        ],
+      },
+    },
+  });
+  void baselineWave;
+  void retestWave;
+  const did = differenceInDifferences({
+    treatmentPre: { successes: 32, samples: 80 },
+    treatmentPost: { successes: 60, samples: 80 },
+    controlPre: { successes: 32, samples: 80 },
+    controlPost: { successes: 40, samples: 80 },
+  });
+  await prisma.experimentResult.create({
+    data: {
+      experimentId: experiment.id,
+      metricKey: experiment.metricKey,
+      treatmentPreRate: did.treatmentPreRate,
+      treatmentPostRate: did.treatmentPostRate,
+      controlPreRate: did.controlPreRate,
+      controlPostRate: did.controlPostRate,
+      treatmentDelta: did.treatmentDelta,
+      controlDelta: did.controlDelta,
+      netLift: did.netLift,
+      zScore: did.z,
+      pValue: did.pValue,
+      significant: did.significant,
+    },
+  });
+
+  // ---- Proof layer: real-outcome correlation (GA4-style series) ------------
+  const source = await prisma.externalMetricSource.create({
+    data: { projectId: PROJECT_ID, sourceType: "ga4", name: "Google Analytics 4 (AI referrals)", status: "connected", lastSyncedAt: new Date() },
+  });
+  const DAYS = 14;
+  for (let d = 0; d < DAYS; d += 1) {
+    const date = new Date(Date.UTC(2026, 5, 1 + d)); // 2026-06-01 .. 2026-06-14
+    // Visibility climbs over the window; the outcome tracks visibility from ~2
+    // days earlier (cognition leads referral traffic).
+    const visibility = clamp01(0.42 + d * 0.03 + Math.sin(d * 1.1) * 0.02);
+    const laggedVisibility = clamp01(0.42 + Math.max(0, d - 2) * 0.03 + Math.sin(Math.max(0, d - 2) * 1.1) * 0.02);
+    const sessions = Math.round(180 + laggedVisibility * 900 + Math.sin(d) * 12);
+    await prisma.metricSnapshot.create({
+      data: {
+        projectId: PROJECT_ID,
+        subjectId,
+        runId: run.id,
+        sampleCount: SAMPLE_TOTAL,
+        aiAnswerInclusionScore: visibility,
+        aiVisibilityScore: visibility,
+        mentionRate: visibility,
+        recommendationShare: clamp01(visibility * 0.6),
+        citationRate: clamp01(visibility * 0.4),
+        semanticUniverseStrength: clamp01(0.5 + d * 0.02),
+        stabilityScore: 0.8,
+        descriptionAccuracy: 0.78,
+        createdAt: date,
+      },
+    });
+    await prisma.externalMetricPoint.create({
+      data: { projectId: PROJECT_ID, sourceId: source.id, metricKey: "ai_referral_sessions", date, value: sessions },
+    });
+  }
+
   console.log(
     `Demo snapshots seeded: ${SAMPLE_TOTAL} samples (mentioned=${mentionedCount}, recommended=${recommendedCount}, cited=${citedCount}), ` +
-      `${overallNodes.length} nebula terms, ${opportunities.length} opportunities.`,
+      `${overallNodes.length} nebula terms, ${opportunities.length} opportunities. ` +
+      `Proof: experiment netLift=${(did.netLift * 100).toFixed(1)}pts p=${did.pValue.toFixed(4)} sig=${did.significant}, ${DAYS}d correlation series.`,
   );
 }
 

@@ -42,26 +42,25 @@ export function SiteHeader({
           <span className={cn(isCosmic && "text-aurora")}>CIP</span>
         </Link>
 
-        {!isCosmic ? (
-          <nav className="hidden items-center gap-5 text-sm text-muted-foreground md:flex">
-            <Link href={`/${locale}/product`} className="hover:text-foreground">
-              {dictionary.nav.product}
-            </Link>
-            <Link href={`/${locale}/use-cases`} className="hover:text-foreground">
-              {dictionary.nav.useCases}
-            </Link>
-            <Link href={`/${alternateLocale}`} className="hover:text-foreground">
-              {alternateLocale === "zh-CN" ? "中文" : "English"}
-            </Link>
-          </nav>
-        ) : null}
+        <nav className="hidden items-center gap-5 text-sm text-muted-foreground md:flex">
+          <Link href={`/${locale}/product`} className="transition-colors hover:text-foreground">
+            {dictionary.nav.product}
+          </Link>
+          <Link href={`/${locale}/use-cases`} className="transition-colors hover:text-foreground">
+            {dictionary.nav.useCases}
+          </Link>
+          <Link href={`/${locale}/pricing`} className="transition-colors hover:text-foreground">
+            {dictionary.nav.pricing}
+          </Link>
+          <Link href={`/${alternateLocale}`} className="transition-colors hover:text-foreground">
+            {alternateLocale === "zh-CN" ? "中文" : "English"}
+          </Link>
+        </nav>
 
         <div className="flex items-center gap-2">
-          {!isCosmic ? (
-            <Button asChild variant="ghost" className="hidden sm:inline-flex">
-              <Link href={`/${locale}/login`}>{dictionary.nav.login}</Link>
-            </Button>
-          ) : null}
+          <Button asChild variant="ghost" className="hidden sm:inline-flex">
+            <Link href={`/${locale}/login`}>{dictionary.nav.login}</Link>
+          </Button>
           {showPrimaryCta ? (
             <Button asChild size="lg" className={cn(isCosmic && "glow-gold")}>
               <Link href={`/${locale}/start`}>

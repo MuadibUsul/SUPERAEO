@@ -21,19 +21,19 @@ export default async function ProductPage({ params }: PageProps) {
   const copy = dictionary.marketingPages.product;
 
   return (
-    <div className="min-h-screen bg-[#030614] text-white">
+    <div className="dark cosmic-bg min-h-screen text-foreground">
+      <div className="pointer-events-none fixed inset-0 -z-10 starfield opacity-60" aria-hidden />
       <SiteHeader locale={locale} variant="cosmic" />
       <main className="relative isolate">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_18%,rgba(251,191,36,0.16),transparent_24%),radial-gradient(circle_at_78%_26%,rgba(34,211,238,0.14),transparent_26%),linear-gradient(180deg,#030614_0%,#070b18_100%)]" />
         <section className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-6xl items-center px-4 py-12 sm:px-6 lg:px-8">
           <div className="grid w-full gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-[30px] border border-white/10 bg-white/[0.045] p-8 shadow-[0_40px_140px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:p-10">
-              <Badge className="border-amber-200/20 bg-amber-200/10 text-amber-100" variant="outline">
+            <div className="panel-strong p-8 sm:p-10">
+              <Badge variant="outline" className="border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]">
                 {copy.badge}
               </Badge>
-              <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-normal text-white sm:text-5xl">{copy.title}</h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/64">{copy.body}</p>
-              <Button asChild className="mt-8 bg-amber-100 text-slate-950 hover:bg-amber-50">
+              <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">{copy.title}</h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-dim">{copy.body}</p>
+              <Button asChild size="lg" className="mt-8 glow-gold">
                 <Link href={`/${locale}/start`}>
                   {dictionary.nav.start}
                   <ArrowRight className="h-4 w-4" />
@@ -45,17 +45,14 @@ export default async function ProductPage({ params }: PageProps) {
               {copy.cards.map((item, index) => {
                 const Icon = icons[index] ?? ShieldCheck;
                 return (
-                  <Card
-                    key={item.title}
-                    className="border-white/10 bg-white/[0.045] text-white shadow-[0_24px_80px_rgba(0,0,0,0.2)]"
-                  >
+                  <Card key={item.title}>
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-lg text-white">
-                        <Icon className="h-5 w-5 text-amber-200" />
+                      <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+                        <Icon className="h-5 w-5 text-[oklch(0.85_0.15_85)]" />
                         {item.title}
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="text-sm leading-6 text-white/62">{item.body}</CardContent>
+                    <CardContent className="text-sm leading-6 text-dim">{item.body}</CardContent>
                   </Card>
                 );
               })}

@@ -158,6 +158,12 @@ enum OrganizationType {
   customer
 }
 
+enum OrganizationPlan {
+  free
+  pro
+  scale
+}
+
 enum AIProviderType {
   openai_responses
   openai_compatible
@@ -277,6 +283,7 @@ enum BrandProbeRunMode {
   demo
   standard
   max500
+  max1000
 }
 
 enum BrandProbeExecutionMode {
@@ -371,6 +378,8 @@ model Organization {
   name              String
   slug              String               @unique
   type              OrganizationType     @default(customer)
+  plan              OrganizationPlan     @default(free)
+  planRenewsAt      DateTime?            @map("plan_renews_at")
   defaultLocale     String               @default("zh-CN") @map("default_locale")
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")

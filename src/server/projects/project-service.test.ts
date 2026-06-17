@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildAuditNamePreview, getComparisonCategory } from "@/components/project/project-form-helpers";
+import { buildAuditNamePreview, getComparisonCategory, parseComparisonNames } from "@/components/project/project-form-helpers";
 import { generateDefaultProjectName } from "@/server/projects/project-service";
 
 test("generates localized default audit names when project name is blank", () => {
@@ -34,5 +34,12 @@ test("previews audit names without requiring customer input", () => {
   assert.equal(
     buildAuditNamePreview({ subjectName: "Jane Lin", fallbackSubject: "Entity name", language: "en" }),
     "Jane Lin AI Cognition Audit",
+  );
+});
+
+test("parses comparison names from common customer separators", () => {
+  assert.deepEqual(
+    parseComparisonNames("OpenAI, Perplexity\nGemini\uFF0CClaude\u3001openai; Copilot\uFF1BKimi"),
+    ["OpenAI", "Perplexity", "Gemini", "Claude", "Copilot", "Kimi"],
   );
 });

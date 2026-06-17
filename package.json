@@ -13,6 +13,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:demo": "tsx prisma/seed-demo.ts",
+    "check:api-trace": "tsx scripts/check-api-trace.ts",
     "validate:local": "tsx scripts/validate-local.ts",
     "probe:load-sim": "tsx scripts/probe-run-load-sim.ts",
     "worker": "tsx scripts/worker.ts"

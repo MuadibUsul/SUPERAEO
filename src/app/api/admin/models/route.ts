@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 
 import { requireAdminApiSession } from "@/server/auth/session";
 import { getPrisma } from "@/server/db";
+import { withApiTrace } from "@/server/observability/api-wrapper";
 import { createAIModelSchema } from "@/server/validation/admin";
 
-export async function GET() {
+export const GET = withApiTrace({ subsystem: "admin", operation: "admin.models.list" }, async function GET() {
   const auth = await requireAdminApiSession();
 
   if (!auth.ok) {
@@ -21,9 +22,9 @@ export async function GET() {
   });
 
   return NextResponse.json({ models });
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withApiTrace({ subsystem: "admin", operation: "admin.models.create" }, async function POST(request: Request) {
   const auth = await requireAdminApiSession({ write: true });
 
   if (!auth.ok) {
@@ -56,4 +57,4 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ model }, { status: 201 });
-}
+});

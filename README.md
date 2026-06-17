@@ -27,6 +27,8 @@ npm run worker
 
 Open [http://localhost:3000](http://localhost:3000).
 
+Run `npm run dev` and `npm run worker` in separate terminals when `REDIS_URL` is configured. In local development, Start Diagnosis can fall back to an in-process background run if Redis exists but the worker is not alive; production requires a real worker process.
+
 Validate the local stack after the dev server and worker are running:
 
 ```bash
@@ -58,3 +60,9 @@ Runbooks:
 ## Product Boundary
 
 The platform observes sampled AI answers. It does not claim access to hidden model weights, private memory, or internal model state.
+
+## Background Worker
+
+`npm run worker` starts the BullMQ worker for sampling and semantic intelligence queues. The worker writes a Redis heartbeat at `cip:worker:heartbeat` every 10 seconds with a 30 second TTL. Operator Admin -> System Health shows worker up/down, last heartbeat, and queue depths.
+
+In production, run the worker as a supervised process that shares `DATABASE_URL`, `REDIS_URL`, and `ENCRYPTION_KEY` with the web app. Acceptable options include a separate container/service, PM2 (`pm2 start npm --name cip-worker -- run worker`), or a systemd unit with restart enabled.

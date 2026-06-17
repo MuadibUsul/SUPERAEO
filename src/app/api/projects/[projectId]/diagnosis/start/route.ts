@@ -9,7 +9,8 @@ import { runFullDiagnosis } from "@/server/diagnosis/diagnosis-service";
 import { normalizeError } from "@/server/observability/errors";
 import { withJobTrace } from "@/server/observability/job-wrapper";
 import { withApiTrace } from "@/server/observability/api-wrapper";
-import { enqueueAnalysisJob, getQueueNames, isRedisConfigured } from "@/server/queue/client";
+import { enqueueAnalysisJob, getQueue, getQueueNames, isKnownQueueName, isRedisConfigured } from "@/server/queue/client";
+import { getWorkerHealth } from "@/server/queue/worker-health";
 
 type Context = {
   params: Promise<{ projectId: string }>;
@@ -40,6 +41,9 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
     );
   }
 
+  const redisConfigured = isRedisConfigured();
+  const workerHealth = redisConfigured ? await getWorkerHealth() : null;
+  const shouldRunInline = !redisConfigured || (workerHealth?.alive === false && process.env.NODE_ENV !== "production");
   const prisma = getPrisma();
   const activeJob = await prisma.analysisJob.findFirst({
     where: { projectId, jobType: "full_diagnosis", status: { in: ["queued", "running", "retrying"] } },
@@ -47,7 +51,30 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
   });
 
   if (activeJob) {
-    return NextResponse.json({ job: activeJob, queued: activeJob.status !== "completed" }, { status: 202 });
+    const activeJobInlineFallback = shouldRunInline && activeJob.status === "queued";
+    if (activeJobInlineFallback) {
+      await removeQueuedRedisJob(activeJob);
+      void runLocalDiagnosisJob({
+        analysisJobId: activeJob.id,
+        projectId,
+        requestedByUserId: auth.session.user.id,
+        traceId: activeJob.traceId,
+      });
+    }
+
+    return NextResponse.json(
+      {
+        job: activeJob,
+        queued: activeJob.status !== "completed",
+        workerAlive: workerHealth?.alive ?? false,
+        executionMode: activeJobInlineFallback
+          ? "local_background"
+          : redisConfigured && workerHealth?.alive === false
+            ? "queued_no_worker"
+            : "redis_queue",
+      },
+      { status: 202 },
+    );
   }
 
   const traceId = randomUUID();
@@ -61,9 +88,10 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
       requestedByUserId: auth.session.user.id,
       traceId,
     },
+    enqueueToRedis: !shouldRunInline,
   });
 
-  if (!isRedisConfigured()) {
+  if (shouldRunInline) {
     void runLocalDiagnosisJob({
       analysisJobId: job.analysisJob.id,
       projectId,
@@ -77,11 +105,35 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
       job: job.analysisJob,
       queued: true,
       redisQueued: job.redisQueued,
-      executionMode: isRedisConfigured() ? "redis_queue" : "local_background",
+      workerAlive: workerHealth?.alive ?? false,
+      executionMode: shouldRunInline
+        ? "local_background"
+        : redisConfigured && workerHealth?.alive === false
+          ? "queued_no_worker"
+          : "redis_queue",
     },
     { status: 202 },
   );
 });
+
+async function removeQueuedRedisJob(job: { queueName: string; queueJobId: string | null }) {
+  if (!job.queueJobId || !isKnownQueueName(job.queueName)) return false;
+
+  try {
+    const bullJob = await getQueue(job.queueName).getJob(job.queueJobId);
+    if (!bullJob) return false;
+
+    const state = await bullJob.getState();
+    if (state === "waiting" || state === "delayed" || state === "prioritized" || state === "waiting-children") {
+      await bullJob.remove();
+      return true;
+    }
+  } catch (error) {
+    console.error("Failed to remove queued Redis diagnosis job before local fallback", error);
+  }
+
+  return false;
+}
 
 function mergeResult(current: unknown, patch: Record<string, unknown>) {
   return {

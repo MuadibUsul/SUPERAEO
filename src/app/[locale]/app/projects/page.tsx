@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusCallout } from "@/components/ui/status-callout";
-import { normalizeLocale } from "@/i18n/config";
+import { normalizeLocale, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { requirePageSession } from "@/server/auth/session";
 import { listProjects } from "@/server/data/projects";
+import { formatLimit, getPlanCopy } from "@/server/billing/plans";
+import { getOrganizationUsage, type OrganizationUsage } from "@/server/billing/usage-service";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,9 @@ const projectListCopy = {
     comparisonSet: "比较对象",
     openBrief: "打开认知简报",
     databaseUnavailable: "数据库不可用",
+    planLabel: "当前套餐",
+    renews: (n: number) => `${n} 天后续费`,
+    manage: "查看定价",
   },
   en: {
     badge: "Audit workspace",
@@ -39,6 +44,9 @@ const projectListCopy = {
     comparisonSet: "Comparison set",
     openBrief: "Open cognition brief",
     databaseUnavailable: "Database unavailable",
+    planLabel: "Current plan",
+    renews: (n: number) => `Renews in ${n} days`,
+    manage: "View pricing",
   },
 } as const;
 
@@ -50,20 +58,23 @@ export default async function ProjectsPage({ params }: PageProps) {
   const session = await requirePageSession(locale);
   const state = await listProjects(session);
   const projects = state.status === "ready" ? state.data : [];
+  const organizationId = session.user.memberships[0]?.organizationId ?? null;
+  const usage = organizationId ? await getOrganizationUsage(organizationId) : null;
+  const renewDays = usage?.planRenewsInDays ?? null;
 
   return (
-    <div className="space-y-6 text-white">
-      <div className="rounded-lg border border-white/10 bg-white/[0.045] p-5 shadow-[0_30px_120px_rgba(0,0,0,0.24)] backdrop-blur">
+    <div className="space-y-6">
+      <div className="panel-strong p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <Badge className="border-amber-200/20 bg-amber-200/10 text-amber-100" variant="outline">
-              <Sparkles className="mr-1 h-3.5 w-3.5" />
+            <Badge variant="outline" className="gap-1.5 border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]">
+              <Sparkles className="h-3.5 w-3.5" />
               {copy.badge}
             </Badge>
-            <h1 className="mt-4 text-3xl font-semibold tracking-normal">{dictionary.app.projects}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">{copy.description}</p>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">{dictionary.app.projects}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-dim">{copy.description}</p>
           </div>
-          <Button asChild className="bg-amber-100 text-slate-950 hover:bg-amber-50">
+          <Button asChild size="lg" className="glow-gold">
             <Link href={`/${locale}/app/projects/new`}>
               <Plus className="h-4 w-4" />
               {dictionary.app.newProject}
@@ -71,6 +82,8 @@ export default async function ProjectsPage({ params }: PageProps) {
           </Button>
         </div>
       </div>
+
+      {usage ? <PlanUsageStrip usage={usage} renewDays={renewDays} locale={locale} copy={copy} /> : null}
 
       {state.status !== "ready" ? <StatusCallout title={copy.databaseUnavailable} message={state.message} /> : null}
 
@@ -92,22 +105,20 @@ export default async function ProjectsPage({ params }: PageProps) {
       {projects.length > 0 ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {projects.map((project) => (
-            <Card key={project.id} className="border-white/10 bg-white/[0.045] text-white">
+            <Card key={project.id}>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <CardTitle>{project.name}</CardTitle>
-                    <p className="mt-1 font-mono text-xs text-white/40">{project.domain}</p>
+                    <p className="mt-1 font-mono text-xs text-faint">{project.domain}</p>
                   </div>
-                  <Badge className="border-white/10 bg-white/8 text-white/62" variant="outline">
-                    {project.subjects[0]?.entityType ?? "BRAND"}
-                  </Badge>
+                  <Badge variant="outline">{project.subjects[0]?.entityType ?? "BRAND"}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <p className="text-sm font-medium">{project.brandName}</p>
-                  <p className="mt-1 text-sm text-white/54">{project.industry}</p>
+                  <p className="text-sm font-medium text-foreground">{project.brandName}</p>
+                  <p className="mt-1 text-sm text-dim">{project.industry}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3 text-sm">
                   <ProjectCount label={copy.questionMap} value={project._count.queries} />
@@ -116,11 +127,7 @@ export default async function ProjectsPage({ params }: PageProps) {
                 </div>
               </CardContent>
               <CardFooter>
-                <Button
-                  asChild
-                  variant="outline"
-                  className="w-full border-white/15 bg-white/6 text-white hover:bg-white/12 hover:text-white"
-                >
+                <Button asChild variant="outline" className="w-full">
                   <Link href={`/${locale}/app/projects/${project.id}/dashboard`}>
                     {copy.openBrief}
                     <ArrowRight className="h-4 w-4" />
@@ -135,11 +142,64 @@ export default async function ProjectsPage({ params }: PageProps) {
   );
 }
 
+function PlanUsageStrip({
+  usage,
+  renewDays,
+  locale,
+  copy,
+}: {
+  usage: OrganizationUsage;
+  renewDays: number | null;
+  locale: Locale;
+  copy: (typeof projectListCopy)[Locale];
+}) {
+  const planCopy = getPlanCopy(locale);
+  const planName = planCopy[usage.plan];
+
+  return (
+    <div className="panel flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex items-center gap-3">
+        <span className="rounded-lg bg-[oklch(0.85_0.15_85/14%)] px-3 py-1.5 text-sm font-semibold text-[oklch(0.85_0.15_85)]">
+          {planName}
+        </span>
+        <div>
+          <div className="text-xs text-faint">{copy.planLabel}</div>
+          {renewDays !== null ? <div className="text-sm text-dim">{copy.renews(renewDays)}</div> : null}
+        </div>
+      </div>
+
+      <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-4 lg:max-w-2xl">
+        {usage.metrics.map((metric) => {
+          const pct = Math.min(100, Math.round((metric.used / Math.max(1, metric.limit)) * 100));
+          const tone = metric.exceeded ? "0.74 0.18 12" : pct >= 80 ? "0.85 0.15 85" : "0.82 0.15 162";
+          return (
+            <div key={metric.key}>
+              <div className="flex items-baseline justify-between gap-1 text-xs">
+                <span className="text-faint">{planCopy.limitLabels[metric.key]}</span>
+                <span className="font-mono text-dim">
+                  {metric.used}/{formatLimit(metric.limit, locale)}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[oklch(0.92_0.04_255/10%)]">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `oklch(${tone})` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <Button asChild variant="outline" size="sm" className="shrink-0">
+        <Link href={`/${locale}/pricing`}>{copy.manage}</Link>
+      </Button>
+    </div>
+  );
+}
+
 function ProjectCount({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-white/10 bg-black/18 px-3 py-2">
-      <div className="font-mono text-lg font-semibold">{value}</div>
-      <div className="text-xs text-white/42">{label}</div>
+    <div className="panel-inset px-3 py-2">
+      <div className="font-mono text-lg font-semibold text-foreground">{value}</div>
+      <div className="text-xs text-faint">{label}</div>
     </div>
   );
 }

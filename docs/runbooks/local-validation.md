@@ -40,6 +40,8 @@ Start the worker in another terminal:
 npm run worker
 ```
 
+If the worker is not running, Start Diagnosis can still fall back to an in-process run in development when Redis is configured. The UI will show a delayed-processing state only when an enqueued job has no live worker.
+
 ## Validate The Stack
 
 Run:
@@ -60,6 +62,7 @@ The command checks:
 - operator login
 - operator admin page
 - admin system health
+- worker up/down and queue depth visibility in admin system health
 
 Warnings for Qdrant, Neo4j, object storage, or cognitive service are acceptable for core local validation unless the feature being tested depends on them.
 
@@ -104,6 +107,7 @@ If queue jobs do not run:
 - confirm `REDIS_URL` exists in `.env`
 - run `redis-cli ping`
 - confirm `npm run worker` prints both worker ready messages
+- open Operator Admin -> System Health and verify the Worker row is Up with a fresh heartbeat
 
 If Prisma import fails:
 

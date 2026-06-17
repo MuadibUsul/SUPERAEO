@@ -33,6 +33,41 @@ export type DemoNebulaNode = {
   evidence: DemoNebulaEvidence[];
 };
 
+/**
+ * A broad vocabulary used to fill the background of the nebula with real words,
+ * so it reads as a vast field of language inside the model — not decorative dots.
+ * Words repeat across the volume; that is fine and intentional (a latent space
+ * has many related concepts).
+ */
+export const nebulaVocabulary: Record<MarketingLocale, string[]> = {
+  "zh-CN": [
+    "低糖", "气泡", "清爽", "可乐", "咖啡因", "补水", "电解质", "零卡", "柑橘", "莓果",
+    "薄荷", "草本", "甜味", "回甘", "口感", "碳酸", "可回收", "易拉罐", "玻璃瓶", "便利店",
+    "自动贩卖机", "订阅", "送礼", "夏天", "音乐节", "露营", "公路旅行", "健身", "运动后", "轻断食",
+    "生酮", "代谢", "能量", "专注", "放松", "睡眠", "情绪", "肠道健康", "益生菌", "维生素",
+    "抗氧化", "天然", "有机", "纯素", "无麸质", "无添加", "防腐剂", "钠含量", "糖税", "营销",
+    "包装", "品牌", "网红", "开箱", "病毒传播", "Z世代", "千禧一代", "怀旧", "高端", "平价",
+    "性价比", "稀缺", "限定款", "联名", "季节限定", "抹茶", "乌龙", "柚子", "荔枝", "蜜桃",
+    "西柚", "黄瓜", "生姜", "香草", "焦糖", "多巴胺", "渴望", "无负担", "平衡", "仪式感",
+    "冰镇", "随身", "午休", "自习", "电影夜", "野餐", "早午餐", "无酒精", "代驾", "解腻",
+    "排毒", "替代", "挑战者", "黑马", "主流", "小众", "发现", "推荐", "对比", "评测",
+    "信任", "真实", "透明", "供应链", "可持续", "口碑", "复购", "首选", "认知", "联想",
+  ],
+  en: [
+    "low-sugar", "sparkling", "refreshing", "cola", "caffeine", "hydration", "electrolytes", "zero-calorie", "citrus", "berry",
+    "mint", "herbal", "sweetness", "aftertaste", "mouthfeel", "carbonation", "recyclable", "aluminum can", "glass bottle", "convenience store",
+    "vending machine", "subscription", "gifting", "summer", "festival", "camping", "road trip", "fitness", "post-workout", "fasting",
+    "keto", "metabolism", "energy", "focus", "calm", "sleep", "mood", "gut health", "probiotics", "vitamin",
+    "antioxidant", "natural", "organic", "vegan", "gluten-free", "additive-free", "preservative", "sodium", "sugar tax", "marketing",
+    "packaging", "branding", "influencer", "unboxing", "viral", "Gen Z", "millennial", "nostalgia", "premium", "affordable",
+    "value", "scarcity", "limited edition", "collaboration", "seasonal", "matcha", "oolong", "yuzu", "lychee", "peach",
+    "grapefruit", "cucumber", "ginger", "vanilla", "caramel", "dopamine", "craving", "guilt-free", "balance", "ritual",
+    "chilled", "on-the-go", "lunch break", "study session", "movie night", "picnic", "brunch", "mocktail", "designated driver", "detox",
+    "alternative", "challenger", "underdog", "mainstream", "niche", "discovery", "recommendation", "comparison", "review", "trust",
+    "authenticity", "transparency", "supply chain", "sustainability", "word of mouth", "repurchase", "first choice", "association", "recall", "intent",
+  ],
+};
+
 export const demoNebulaEntity = {
   id: "sample-challenger-beverage",
   name: {

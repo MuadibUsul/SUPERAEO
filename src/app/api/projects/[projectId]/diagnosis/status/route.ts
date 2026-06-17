@@ -4,6 +4,7 @@ import { requireApiSession } from "@/server/auth/session";
 import { getProject } from "@/server/data/projects";
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { withApiTrace } from "@/server/observability/api-wrapper";
+import { getWorkerHealth } from "@/server/queue/worker-health";
 
 type Context = {
   params: Promise<{ projectId: string }>;
@@ -24,7 +25,7 @@ export const GET = withApiTrace<Context>({ subsystem: "diagnosis", operation: "d
   }
 
   const prisma = getPrisma();
-  const [job, latestRun, latestReport] = await Promise.all([
+  const [job, latestRun, latestReport, workerHealth] = await Promise.all([
     prisma.analysisJob.findFirst({
       where: { projectId, jobType: "full_diagnosis" },
       orderBy: { createdAt: "desc" },
@@ -39,7 +40,8 @@ export const GET = withApiTrace<Context>({ subsystem: "diagnosis", operation: "d
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true, createdAt: true },
     }),
+    getWorkerHealth(),
   ]);
 
-  return NextResponse.json({ job, latestRun, latestReport });
+  return NextResponse.json({ job, latestRun, latestReport, workerAlive: workerHealth.alive });
 });

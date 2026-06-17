@@ -106,11 +106,11 @@
    Surfaces are translucent washes so they read as glass over the star field.
 ---------------------------------------------------------------------------- */
 .dark {
-  --background: oklch(0.13 0.028 264);
-  --foreground: oklch(0.97 0.01 250);
-  --card: oklch(0.95 0.02 255 / 5%);
-  --card-foreground: oklch(0.97 0.01 250);
-  --popover: oklch(0.17 0.03 264);
+  --background: oklch(0.08 0.008 264);
+  --foreground: oklch(0.97 0.008 250);
+  --card: oklch(0.96 0.012 255 / 4%);
+  --card-foreground: oklch(0.97 0.008 250);
+  --popover: oklch(0.12 0.012 264);
   --popover-foreground: oklch(0.97 0.01 250);
   --primary: oklch(0.85 0.15 85);
   --primary-foreground: oklch(0.22 0.05 70);
@@ -150,13 +150,11 @@
   /* The signature deep-space backdrop: nebula glows over a navy void +
      a faint coordinate grid. Use on full-bleed shells. */
   .cosmic-bg {
-    background-color: oklch(0.11 0.026 264);
+    background-color: oklch(0.045 0.006 264);
     background-image:
-      radial-gradient(circle at 18% 8%, oklch(0.82 0.13 205 / 14%), transparent 36%),
-      radial-gradient(circle at 84% 12%, oklch(0.85 0.15 85 / 13%), transparent 38%),
-      radial-gradient(circle at 78% 86%, oklch(0.76 0.16 295 / 12%), transparent 40%),
-      radial-gradient(circle at 12% 92%, oklch(0.74 0.18 12 / 8%), transparent 38%),
-      linear-gradient(180deg, oklch(0.12 0.03 264) 0%, oklch(0.1 0.024 262) 100%);
+      radial-gradient(circle at 50% -8%, oklch(0.82 0.13 205 / 7%), transparent 46%),
+      radial-gradient(circle at 88% 6%, oklch(0.85 0.15 85 / 4%), transparent 40%),
+      linear-gradient(180deg, oklch(0.07 0.008 264) 0%, oklch(0.04 0.005 264) 100%);
   }
 
   .cosmic-grid {
@@ -170,10 +168,10 @@
 
   .starfield {
     background-image:
-      radial-gradient(circle, oklch(0.95 0.03 220 / 55%) 0 1px, transparent 1.6px),
-      radial-gradient(circle, oklch(0.92 0.04 255 / 28%) 0 1px, transparent 1.4px);
-    background-size: 96px 96px, 142px 142px;
-    background-position: 0 0, 40px 70px;
+      radial-gradient(circle, oklch(0.95 0.02 220 / 34%) 0 1px, transparent 1.6px),
+      radial-gradient(circle, oklch(0.92 0.03 255 / 16%) 0 1px, transparent 1.4px);
+    background-size: 120px 120px, 168px 168px;
+    background-position: 0 0, 54px 84px;
   }
 
   /* Glass surfaces */
@@ -186,12 +184,12 @@
     border-radius: var(--radius-xl);
   }
   .panel-strong {
-    border: 1px solid oklch(0.92 0.04 255 / 16%);
+    border: 1px solid oklch(0.92 0.04 255 / 13%);
     background:
-      radial-gradient(circle at 0% 0%, oklch(0.85 0.15 85 / 10%), transparent 42%),
-      radial-gradient(circle at 100% 0%, oklch(0.82 0.13 205 / 8%), transparent 44%),
-      linear-gradient(180deg, oklch(0.95 0.02 255 / 7%), oklch(0.95 0.02 255 / 3%));
-    box-shadow: 0 40px 130px -40px oklch(0.04 0.04 264 / 80%);
+      radial-gradient(circle at 0% 0%, oklch(0.85 0.15 85 / 6%), transparent 44%),
+      radial-gradient(circle at 100% 0%, oklch(0.82 0.13 205 / 5%), transparent 46%),
+      linear-gradient(180deg, oklch(0.96 0.012 255 / 5%), oklch(0.96 0.012 255 / 2%));
+    box-shadow: 0 40px 130px -44px oklch(0.02 0.01 264 / 90%);
     backdrop-filter: blur(20px);
     border-radius: var(--radius-2xl);
   }
@@ -234,11 +232,20 @@
   .animate-float {
     animation: cosmic-float 9s ease-in-out infinite;
   }
+
+  .animate-fade-in {
+    animation: cosmic-fade-in 0.4s ease both;
+  }
 }
 
 @keyframes cosmic-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
+}
+
+@keyframes cosmic-fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @layer base {

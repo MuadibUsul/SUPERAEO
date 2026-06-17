@@ -43,10 +43,21 @@ Confirm:
 
 - `REDIS_URL` is configured
 - worker process is deployed separately from the web process
+- worker process is supervised and auto-restarts on crash or host restart
 - queue health endpoint reports Redis reachable
+- Operator Admin -> System Health reports Worker up with a recent heartbeat
+- queue depths are visible in Operator Admin -> System Health
 - failed jobs can be inspected in Operator Admin
 
 Production should not rely on local background execution for long-running diagnosis work.
+
+Example supervised worker options:
+
+```powershell
+pm2 start npm --name cip-worker -- run worker
+```
+
+Or run the worker as a separate container/service or systemd unit. It must receive the same `DATABASE_URL`, `REDIS_URL`, and `ENCRYPTION_KEY` as the web process.
 
 ### AI Providers
 
@@ -74,6 +85,7 @@ Confirm:
 - `TraceEvent` writes successfully
 - API errors return `traceId`
 - queue jobs record stage history
+- worker heartbeat key `cip:worker:heartbeat` refreshes at least every 30 seconds
 - PromptRun and AIUsageLog are populated for AI calls
 
 ### Optional Services

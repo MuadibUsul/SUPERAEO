@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/server/auth/session";
 import { getProject } from "@/server/data/projects";
 import { buildCipMetricBundle } from "@/server/metrics/cip-metrics";
+import { withApiTrace } from "@/server/observability/api-wrapper";
 
 type Context = {
   params: Promise<{ projectId: string }>;
 };
 
-export async function GET(_request: Request, { params }: Context) {
+export const GET = withApiTrace<Context>({ subsystem: "project", operation: "projects.metrics.get" }, async function GET(_request: Request, { params }: Context) {
   const auth = await requireApiSession();
   if (!auth.ok) return auth.response;
 
@@ -19,5 +20,4 @@ export async function GET(_request: Request, { params }: Context) {
   }
 
   return NextResponse.json(await buildCipMetricBundle(projectId));
-}
-
+});

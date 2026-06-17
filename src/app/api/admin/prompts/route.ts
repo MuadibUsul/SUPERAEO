@@ -3,9 +3,10 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { requireAdminApiSession } from "@/server/auth/session";
 import { getPrisma } from "@/server/db";
+import { withApiTrace } from "@/server/observability/api-wrapper";
 import { createPromptTemplateSchema } from "@/server/validation/admin";
 
-export async function GET() {
+export const GET = withApiTrace({ subsystem: "admin", operation: "admin.prompts.list" }, async function GET() {
   const auth = await requireAdminApiSession();
 
   if (!auth.ok) {
@@ -22,9 +23,9 @@ export async function GET() {
   });
 
   return NextResponse.json({ prompts });
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withApiTrace({ subsystem: "admin", operation: "admin.prompts.create" }, async function POST(request: Request) {
   const auth = await requireAdminApiSession({ write: true });
 
   if (!auth.ok) {
@@ -59,4 +60,4 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ prompt }, { status: 201 });
-}
+});

@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/server/auth/session";
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { getProject } from "@/server/data/projects";
+import { withApiTrace } from "@/server/observability/api-wrapper";
 
 type CompetitorItemContext = {
   params: Promise<{ projectId: string; competitorId: string }>;
 };
 
-export async function DELETE(
+export const DELETE = withApiTrace<CompetitorItemContext>({ subsystem: "project", operation: "projects.competitors.delete" }, async function DELETE(
   _request: Request,
   { params }: CompetitorItemContext,
 ) {
@@ -40,4 +41,4 @@ export async function DELETE(
   });
 
   return NextResponse.json({ ok: true });
-}
+});

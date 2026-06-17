@@ -13,7 +13,34 @@ const QUEUE_NAMES = {
   semanticIntelligence: "semantic.intelligence",
 } as const;
 
+const QUEUE_REDIS_OPTIONS = {
+  connectTimeout: 1000,
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 1,
+};
+
+const HEALTH_REDIS_OPTIONS = {
+  connectTimeout: 1000,
+  enableOfflineQueue: false,
+  lazyConnect: true,
+  maxRetriesPerRequest: 1,
+  retryStrategy: () => null,
+};
+
 type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
+export type { QueueName };
+
+export type QueueDepth = {
+  queueName: QueueName;
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+  paused: number;
+  prioritized: number;
+  waitingChildren: number;
+};
 
 let redisConnection: IORedis | null = null;
 const queues = new Map<QueueName, Queue>();
@@ -26,14 +53,19 @@ export function isRedisConfigured() {
   return Boolean(process.env.REDIS_URL);
 }
 
+export function isKnownQueueName(name: string): name is QueueName {
+  return Object.values(QUEUE_NAMES).includes(name as QueueName);
+}
+
 function getRedisConnection() {
   if (!isRedisConfigured()) {
     throw new Error("REDIS_URL is not configured.");
   }
 
   if (!redisConnection) {
-    redisConnection = new IORedis(process.env.REDIS_URL!, {
-      maxRetriesPerRequest: null,
+    redisConnection = new IORedis(process.env.REDIS_URL!, QUEUE_REDIS_OPTIONS);
+    redisConnection.on("error", (error) => {
+      console.error("Queue Redis connection error", error);
     });
   }
 
@@ -78,10 +110,11 @@ export async function enqueueAnalysisJob(input: {
   runId?: string;
   payload: Prisma.InputJsonValue;
   traceId: string;
+  enqueueToRedis?: boolean;
 }) {
   let queueJobId: string | undefined;
 
-  if (isRedisConfigured()) {
+  if (isRedisConfigured() && input.enqueueToRedis !== false) {
     const job = await getQueue(input.queueName).add(input.jobType, input.payload);
     queueJobId = job.id;
   }
@@ -126,13 +159,93 @@ export async function checkQueueHealth() {
     return { ok: false, message: "REDIS_URL is not configured. Jobs will stay in database queue state." };
   }
 
+  const connection = new IORedis(process.env.REDIS_URL!, HEALTH_REDIS_OPTIONS);
+  connection.on("error", () => undefined);
+
   try {
-    await getRedisConnection().ping();
+    await connection.connect();
+    await connection.ping();
     return { ok: true, message: "Redis reachable." };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Redis health check failed.",
+      message: redisHealthErrorMessage(error),
     };
+  } finally {
+    connection.disconnect(false);
   }
+}
+
+export async function getQueueDepths(): Promise<QueueDepth[]> {
+  if (!isRedisConfigured()) {
+    return [];
+  }
+
+  const health = await checkQueueHealth();
+  if (!health.ok) return [];
+
+  return Promise.all(
+    Object.values(QUEUE_NAMES).map(async (queueName) => {
+      try {
+        const counts = await getQueue(queueName).getJobCounts(
+          "waiting",
+          "active",
+          "delayed",
+          "failed",
+          "completed",
+          "paused",
+          "prioritized",
+          "waiting-children",
+        );
+
+        return {
+          queueName,
+          waiting: counts.waiting ?? 0,
+          active: counts.active ?? 0,
+          delayed: counts.delayed ?? 0,
+          failed: counts.failed ?? 0,
+          completed: counts.completed ?? 0,
+          paused: counts.paused ?? 0,
+          prioritized: counts.prioritized ?? 0,
+          waitingChildren: counts["waiting-children"] ?? 0,
+        };
+      } catch (error) {
+        console.error(`Failed to read queue depth for ${queueName}`, error);
+        return {
+          queueName,
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          failed: 0,
+          completed: 0,
+          paused: 0,
+          prioritized: 0,
+          waitingChildren: 0,
+        };
+      }
+    }),
+  );
+}
+
+export async function closeQueueConnections() {
+  await Promise.allSettled([...queues.values()].map((queue) => queue.close()));
+  queues.clear();
+
+  if (redisConnection) {
+    const connection = redisConnection;
+    redisConnection = null;
+    await connection.quit().catch(() => connection.disconnect(false));
+  }
+}
+
+function redisHealthErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Redis health check failed.";
+  }
+
+  if (error.message === "Connection is closed." || error.message.includes("ECONNREFUSED")) {
+    return "Redis is not reachable.";
+  }
+
+  return error.message;
 }

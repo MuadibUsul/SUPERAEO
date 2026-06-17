@@ -6,6 +6,8 @@ import { listProjects } from "@/server/data/projects";
 import { withApiTrace } from "@/server/observability/api-wrapper";
 import { createProjectForSession } from "@/server/projects/project-service";
 import { createProjectSchema } from "@/server/validation/projects";
+import { canCreateProject, quotaMessage } from "@/server/billing/usage-service";
+import { normalizeLocale } from "@/i18n/config";
 
 export const GET = withApiTrace({ subsystem: "project", operation: "projects.list" }, async function GET() {
   const auth = await requireApiSession();
@@ -51,6 +53,19 @@ export const POST = withApiTrace({ subsystem: "project", operation: "projects.cr
       { error: "Invalid project payload.", details: parsed.error.flatten() },
       { status: 400 },
     );
+  }
+
+  // Enforce the organization's plan quota before creating another project.
+  const organizationId = auth.session.user.memberships[0]?.organizationId;
+  if (organizationId) {
+    const quota = await canCreateProject(organizationId);
+    if (!quota.allowed) {
+      const locale = normalizeLocale(auth.session.user.preferredLocale ?? "en");
+      return NextResponse.json(
+        { error: quotaMessage(quota, locale), code: "PLAN_LIMIT_REACHED", limit: quota.limit, used: quota.used },
+        { status: 402 },
+      );
+    }
   }
 
   const result = await createProjectForSession(parsed.data, auth.session);

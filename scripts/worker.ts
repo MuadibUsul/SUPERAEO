@@ -10,7 +10,18 @@ import { normalizeError } from "@/server/observability/errors";
 import { recordTraceEvent } from "@/server/observability/event-log";
 import { withJobTrace } from "@/server/observability/job-wrapper";
 import { generateLongTailOpportunitySnapshot, buildQuestionTerritorySnapshot } from "@/server/opportunity/opportunity-service";
-import { getQueueNames, isRedisConfigured } from "@/server/queue/client";
+import {
+  closeQueueConnections,
+  getQueue,
+  getQueueNames,
+  isKnownQueueName,
+  isRedisConfigured,
+} from "@/server/queue/client";
+import {
+  clearWorkerHeartbeat,
+  closeWorkerHealthConnection,
+  recordWorkerHeartbeat,
+} from "@/server/queue/worker-health";
 import { executeSamplingRun } from "@/server/sampling/execute-run";
 import { buildSemanticNebulaSnapshots } from "@/server/semantic-nebula/nebula-service";
 
@@ -19,8 +30,16 @@ if (!isRedisConfigured()) {
   process.exit(1);
 }
 
+const WORKER_ID = process.env.CIP_WORKER_ID ?? `cip-worker-${process.pid}`;
+const WORKER_QUEUES = [getQueueNames().samplingRun, getQueueNames().semanticIntelligence];
+const HEARTBEAT_INTERVAL_MS = 10_000;
+const STALE_RUNNING_JOB_MS = Number(process.env.WORKER_STALE_RUNNING_JOB_MS ?? 30 * 60 * 1000);
+
 const connection = new IORedis(process.env.REDIS_URL!, {
   maxRetriesPerRequest: null,
+});
+connection.on("error", (error) => {
+  console.error("Worker Redis connection error", error);
 });
 
 const samplingWorker = new Worker(
@@ -207,10 +226,27 @@ const semanticWorker = new Worker(
   { connection },
 );
 
-samplingWorker.on("ready", () => console.log("CIP sampling worker ready."));
-semanticWorker.on("ready", () => console.log("CIP semantic intelligence worker ready."));
+samplingWorker.on("ready", () => {
+  console.log("CIP sampling worker ready.");
+  void writeHeartbeat();
+});
+semanticWorker.on("ready", () => {
+  console.log("CIP semantic intelligence worker ready.");
+  void writeHeartbeat();
+});
 samplingWorker.on("failed", (job, error) => console.error(`Job ${job?.id} failed`, error));
 semanticWorker.on("failed", (job, error) => console.error(`Job ${job?.id} failed`, error));
+
+let heartbeatInterval: NodeJS.Timeout | null = null;
+let shuttingDown = false;
+
+void reconcileStaleRunningJobs().catch((error) => {
+  console.error("Failed to reconcile stale running jobs", error);
+});
+startHeartbeat();
+
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));
 
 function mergeResult(current: unknown, patch: Record<string, unknown>) {
   return {
@@ -239,4 +275,121 @@ function summarizeWorkerOutput(result: unknown) {
 
 function idOf(value: unknown) {
   return value && typeof value === "object" && "id" in value ? String(value.id) : undefined;
+}
+
+function startHeartbeat() {
+  void writeHeartbeat();
+  heartbeatInterval = setInterval(() => void writeHeartbeat(), HEARTBEAT_INTERVAL_MS);
+  heartbeatInterval.unref?.();
+}
+
+async function writeHeartbeat() {
+  await recordWorkerHeartbeat({
+    workerId: WORKER_ID,
+    queues: WORKER_QUEUES,
+    pid: process.pid,
+    version: process.env.npm_package_version,
+  }).catch((error) => {
+    console.error("Failed to record worker heartbeat", error);
+  });
+}
+
+async function reconcileStaleRunningJobs() {
+  const prisma = getPrisma();
+  const cutoff = new Date(Date.now() - STALE_RUNNING_JOB_MS);
+  const staleJobs = await prisma.analysisJob.findMany({
+    where: {
+      status: "running",
+      startedAt: { lt: cutoff },
+    },
+    orderBy: { startedAt: "asc" },
+    take: 100,
+  });
+
+  if (staleJobs.length === 0) return;
+
+  let reconciled = 0;
+  for (const job of staleJobs) {
+    let nextStatus: "queued" | "failed" | null = null;
+    let message = "";
+
+    if (job.queueJobId && isKnownQueueName(job.queueName)) {
+      const bullJob = await getQueue(job.queueName).getJob(job.queueJobId);
+      if (!bullJob) {
+        nextStatus = "failed";
+        message = "Worker restarted while this job was running and the BullMQ job no longer exists.";
+      } else {
+        const state = await bullJob.getState();
+        if (state === "waiting" || state === "delayed" || state === "prioritized" || state === "waiting-children") {
+          nextStatus = "queued";
+          message = "Worker restarted; BullMQ returned this job to the queue.";
+        } else if (state === "failed") {
+          nextStatus = "failed";
+          message = "BullMQ marked this job failed while the worker was offline.";
+        }
+      }
+    } else {
+      nextStatus = "failed";
+      message = "Worker restarted while this job was running and no BullMQ job id was available.";
+    }
+
+    if (!nextStatus) continue;
+
+    const data: Prisma.AnalysisJobUpdateInput =
+      nextStatus === "queued"
+        ? { status: "queued", startedAt: null, error: message }
+        : { status: "failed", completedAt: new Date(), error: `${message} Trace ID: ${job.traceId}` };
+
+    await prisma.analysisJob.update({
+      where: { id: job.id },
+      data,
+    });
+    await recordTraceEvent({
+      traceId: job.traceId,
+      severity: nextStatus === "failed" ? "error" : "warn",
+      eventType: "worker.job.reconciled",
+      subsystem: "worker",
+      operation: job.jobType,
+      status: nextStatus,
+      message,
+      projectId: job.projectId ?? undefined,
+      runId: job.runId ?? undefined,
+      analysisJobId: job.id,
+      objectType: "AnalysisJob",
+      objectId: job.id,
+      metadata: {
+        queueName: job.queueName,
+        queueJobId: job.queueJobId,
+        staleAfterMs: STALE_RUNNING_JOB_MS,
+      },
+    });
+    reconciled += 1;
+  }
+
+  if (reconciled > 0) {
+    console.warn(`Reconciled ${reconciled} stale running job(s).`);
+  }
+}
+
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Received ${signal}; shutting down CIP worker.`);
+
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+
+  try {
+    await clearWorkerHeartbeat();
+    await Promise.allSettled([samplingWorker.close(), semanticWorker.close()]);
+    await closeQueueConnections();
+    await closeWorkerHealthConnection();
+    await connection.quit().catch(() => connection.disconnect(false));
+    process.exit(0);
+  } catch (error) {
+    console.error("Worker shutdown failed", error);
+    process.exit(1);
+  }
 }

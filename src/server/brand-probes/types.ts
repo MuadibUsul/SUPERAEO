@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const probeRunModes = ["demo", "standard", "max500"] as const;
+export const probeRunModes = ["demo", "standard", "max500", "max1000"] as const;
+export const probeDepthLevels = ["primary", "rationale", "decision", "comparison"] as const;
 export const probeExecutionModes = ["single", "micro_batch"] as const;
 export const probeZones = [
   "core_semantics",
@@ -25,6 +26,7 @@ export const probeQuestionTypes = [
 export const semanticTemperatures = ["hot", "warm", "cold"] as const;
 
 export type ProbeRunMode = (typeof probeRunModes)[number];
+export type ProbeDepthLevel = (typeof probeDepthLevels)[number];
 export type ProbeExecutionMode = (typeof probeExecutionModes)[number];
 export type ProbeZone = (typeof probeZones)[number];
 export type ProbeQuestionType = (typeof probeQuestionTypes)[number];

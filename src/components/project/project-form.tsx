@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { buildAuditNamePreview, getComparisonCategory } from "@/components/project/project-form-helpers";
+import { buildAuditNamePreview, detectAuditLanguage, getComparisonCategory, parseComparisonNames } from "@/components/project/project-form-helpers";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { cn } from "@/lib/utils";
@@ -37,10 +37,18 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
   const [industry, setIndustry] = useState("");
   const [targetMarket, setTargetMarket] = useState("");
   const [desiredUnderstanding, setDesiredUnderstanding] = useState("");
-  const [language, setLanguage] = useState(safeLocale === "zh-CN" ? "zh-CN" : "en");
+  // Audit language follows what the user types (auto-detected) until they
+  // explicitly override it.
+  const [languageOverride, setLanguageOverride] = useState<string | null>(null);
   const [competitors, setCompetitors] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const detectedLanguage = useMemo(
+    () => detectAuditLanguage([subjectName, industry, targetMarket, desiredUnderstanding].join(" "), safeLocale),
+    [subjectName, industry, targetMarket, desiredUnderstanding, safeLocale],
+  );
+  const language = languageOverride ?? detectedLanguage;
 
   const contextConfig = getEntityContextConfig(safeLocale, entityType, copy);
   const requiresWebsite = entityType === "WEBSITE";
@@ -64,6 +72,12 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
     setFormError(null);
     setIsSubmitting(true);
 
+    const comparisonInputs = parseComparisonNames(competitors).map((name) => ({
+      name,
+      domain: "",
+      category: comparisonCategory,
+    }));
+
     const response = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -74,11 +88,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
         websiteUrl: domain.trim(),
         category: industry.trim(),
         market: targetMarket.trim() || desiredUnderstanding.trim() || industry.trim(),
-        comparisons: competitors
-          .split(/[,锛屻€乗n]/u)
-          .map((name) => name.trim())
-          .filter(Boolean)
-          .map((name) => ({ name, domain: "", category: comparisonCategory })),
+        comparisons: comparisonInputs,
 
         // Legacy aliases accepted by older API consumers.
         brandName: subjectName.trim(),
@@ -87,11 +97,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
         targetMarket: targetMarket.trim() || desiredUnderstanding.trim() || industry.trim(),
         desiredUnderstanding: desiredUnderstanding.trim(),
         language,
-        competitors: competitors
-          .split(/[,，、\n]/u)
-          .map((name) => name.trim())
-          .filter(Boolean)
-          .map((name) => ({ name, domain: "", category: comparisonCategory })),
+        competitors: comparisonInputs,
       }),
     });
     const payload = await response.json().catch(() => null);
@@ -199,7 +205,30 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
                 />
               </Field>
               <Field label={copy.language}>
-                <Input value={language} onChange={(event) => setLanguage(event.target.value)} placeholder="en" />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={language}
+                    onChange={(event) => setLanguageOverride(event.target.value)}
+                    placeholder="en"
+                  />
+                  {languageOverride === null ? (
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[oklch(0.82_0.13_205/25%)] bg-[oklch(0.82_0.13_205/10%)] px-2.5 py-1.5 text-xs text-[oklch(0.82_0.13_205)]">
+                      <span className="size-1.5 rounded-full bg-[oklch(0.82_0.13_205)]" />
+                      {safeLocale === "zh-CN" ? "自动检测" : "Auto"}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setLanguageOverride(null)}
+                      className="shrink-0 rounded-full border border-border bg-secondary px-2.5 py-1.5 text-xs text-dim transition-colors hover:text-foreground"
+                    >
+                      {safeLocale === "zh-CN" ? "恢复自动" : "Reset to auto"}
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-faint">
+                  {safeLocale === "zh-CN" ? "根据你填写的内容自动检测，可手动修改。" : "Detected from what you type — edit to override."}
+                </p>
               </Field>
             </div>
             <Field label={contextConfig.audienceLabel}>

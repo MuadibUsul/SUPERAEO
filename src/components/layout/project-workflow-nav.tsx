@@ -92,8 +92,8 @@ export function ProjectWorkflowNav({
               key={hub.key}
               href={href}
               className={cn(
-                "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground",
-                isActive && "bg-accent text-foreground",
+                "inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                isActive && "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
               )}
             >
               <Icon className={cn("h-4 w-4", isActive && "text-primary")} />

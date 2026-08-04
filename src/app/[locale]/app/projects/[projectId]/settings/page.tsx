@@ -99,8 +99,13 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function labelFor(segment: string, app: Record<string, string>) {
-  if (segment === "semantic-coverage") return app.coverage;
-  if (segment === "question-territory") return app.questionTerritory;
-  return app[segment] ?? segment;
+function labelFor(segment: string, app: Record<string, unknown>) {
+  const key =
+    segment === "semantic-coverage"
+      ? "coverage"
+      : segment === "question-territory"
+        ? "questionTerritory"
+        : segment;
+  const value = app[key];
+  return typeof value === "string" ? value : segment;
 }

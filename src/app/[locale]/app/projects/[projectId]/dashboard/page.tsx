@@ -61,8 +61,8 @@ export default async function DashboardPage({ params }: PageProps) {
         <StatusCallout title={copy.notEnoughEvidence} message={copy.pendingSummary} />
       ) : null}
 
-      <section className="panel-strong relative overflow-hidden p-7">
-        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <section className="panel-strong p-6 md:p-7">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-4xl">
             <Badge
               variant="outline"
@@ -71,18 +71,18 @@ export default async function DashboardPage({ params }: PageProps) {
               <Sparkles className="h-3 w-3" />
               {brief.summary.eyebrow}
             </Badge>
-            <h2 className="mt-4 text-2xl font-semibold leading-tight tracking-tight text-foreground md:text-4xl">
+            <h2 className="mt-4 text-2xl font-semibold leading-[1.2] tracking-tight text-balance text-foreground md:text-[1.9rem]">
               {brief.summary.headline}
             </h2>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-dim">{brief.summary.subline}</p>
           </div>
-          <div className="shrink-0 rounded-2xl border border-border bg-background/30 px-5 py-4 text-right backdrop-blur">
-            <div className="eyebrow text-primary">{brief.summary.evidenceLevel}</div>
-            <div className="mt-2 text-sm text-faint">{copy.eyebrow}</div>
+          <div className="shrink-0 rounded-xl border border-border bg-muted px-5 py-4 text-right">
+            <div className="eyebrow text-primary">{copy.eyebrow}</div>
+            <div className="mt-1 text-xl font-semibold tracking-tight text-foreground">{brief.summary.evidenceLevel}</div>
           </div>
         </div>
 
-        <div className="relative mt-6 flex flex-wrap gap-2">
+        <div className="mt-6 flex flex-wrap gap-2">
           <Button asChild size="lg">
             <Link href={`/${locale}/app/projects/${projectId}/semantic-nebula`}>
               {copy.exploreNebula}

@@ -40,259 +40,190 @@
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
 
-  /* Accent zones — shared by UI + nebula clusters */
+  /* Accent zones — used by the semantic nebula data-viz clusters */
   --color-gold: var(--gold);
   --color-cyan: var(--cyan);
   --color-violet: var(--violet);
   --color-rose: var(--rose);
   --color-emerald: var(--emerald);
 
-  /* Semantic status colors */
+  /* Semantic status colors — meaning only, never the accent */
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  --radius-sm: calc(var(--radius) * 0.7);
+  --radius-md: calc(var(--radius) * 0.85);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: calc(var(--radius) * 1.3);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 2.4);
 }
 
 /* ----------------------------------------------------------------------------
-   Light theme — the default surface. Minimal, ink-on-paper, one restrained
-   indigo accent; semantic status colors carry all score/risk meaning.
+   Minimal SaaS design system (Linear/Vercel-leaning).
+   Light: ink-on-paper, chosen cool-biased neutrals, one restrained indigo
+   accent. Semantic status colors (success/warning/danger) carry all
+   score/risk meaning and are kept separate from the accent.
 ---------------------------------------------------------------------------- */
 :root {
-  --background: oklch(0.99 0.002 250);
-  --foreground: oklch(0.21 0.015 264);
+  --background: oklch(0.99 0.002 265);
+  --foreground: oklch(0.22 0.012 264);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.015 264);
+  --card-foreground: oklch(0.22 0.012 264);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.015 264);
-  --primary: oklch(0.51 0.19 268);
+  --popover-foreground: oklch(0.22 0.012 264);
+  --primary: oklch(0.51 0.2 274);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.965 0.004 260);
-  --secondary-foreground: oklch(0.26 0.015 264);
-  --muted: oklch(0.965 0.004 260);
-  --muted-foreground: oklch(0.5 0.015 264);
-  --accent: oklch(0.955 0.008 262);
-  --accent-foreground: oklch(0.26 0.015 264);
-  --destructive: oklch(0.55 0.2 22);
-  --border: oklch(0.92 0.006 260);
-  --input: oklch(0.9 0.008 260);
-  --ring: oklch(0.51 0.19 268 / 45%);
+  --secondary: oklch(0.968 0.003 264);
+  --secondary-foreground: oklch(0.28 0.012 264);
+  --muted: oklch(0.968 0.003 264);
+  --muted-foreground: oklch(0.52 0.012 264);
+  --accent: oklch(0.955 0.006 274);
+  --accent-foreground: oklch(0.3 0.03 274);
+  --destructive: oklch(0.57 0.21 24);
+  --border: oklch(0.922 0.004 264);
+  --border-strong: oklch(0.88 0.006 264);
+  --input: oklch(0.9 0.006 264);
+  --ring: oklch(0.51 0.2 274 / 45%);
   --chart-1: oklch(0.55 0.11 220);
   --chart-2: oklch(0.55 0.14 162);
   --chart-3: oklch(0.62 0.13 80);
-  --chart-4: oklch(0.55 0.2 22);
-  --chart-5: oklch(0.52 0.17 292);
+  --chart-4: oklch(0.57 0.21 24);
+  --chart-5: oklch(0.52 0.2 292);
   --radius: 0.625rem;
 
   /* Semantic status — referenced from style={{}} as var(--success) etc. */
-  --success: oklch(0.55 0.14 162);
-  --warning: oklch(0.62 0.13 75);
-  --danger: oklch(0.55 0.2 22);
+  --success: oklch(0.55 0.14 158);
+  --warning: oklch(0.62 0.13 72);
+  --danger: oklch(0.57 0.21 24);
 
-  /* Accent zones tuned for contrast on white */
+  /* Accent zones tuned for contrast on white (nebula viz) */
   --gold: oklch(0.62 0.13 80);
   --cyan: oklch(0.55 0.11 220);
-  --violet: oklch(0.52 0.17 292);
-  --rose: oklch(0.55 0.19 18);
-  --emerald: oklch(0.55 0.14 162);
+  --violet: oklch(0.52 0.2 292);
+  --rose: oklch(0.57 0.2 18);
+  --emerald: oklch(0.55 0.14 158);
 
-  --sidebar: oklch(0.985 0.003 250);
-  --sidebar-foreground: oklch(0.21 0.015 264);
-  --sidebar-primary: oklch(0.51 0.19 268);
+  --sidebar: oklch(0.988 0.002 265);
+  --sidebar-foreground: oklch(0.22 0.012 264);
+  --sidebar-primary: oklch(0.51 0.2 274);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.955 0.008 262);
-  --sidebar-accent-foreground: oklch(0.26 0.015 264);
-  --sidebar-border: oklch(0.92 0.006 260);
-  --sidebar-ring: oklch(0.51 0.19 268 / 45%);
+  --sidebar-accent: oklch(0.955 0.006 274);
+  --sidebar-accent-foreground: oklch(0.3 0.03 274);
+  --sidebar-border: oklch(0.922 0.004 264);
+  --sidebar-ring: oklch(0.51 0.2 274 / 45%);
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px oklch(0.2 0.02 264 / 5%), 0 1px 3px oklch(0.2 0.02 264 / 4%);
+  --shadow-md: 0 1px 3px oklch(0.2 0.02 264 / 6%), 0 8px 24px -12px oklch(0.2 0.02 264 / 12%);
 }
 
 /* ----------------------------------------------------------------------------
-   Dark theme — the deep-space "Cosmic" surface that defines the product.
-   Surfaces are translucent washes so they read as glass over the star field.
+   Dark theme — a neutral near-black ground (deliberately NOT a blue/cosmic
+   surface). Solid surfaces, hairline borders, one brightened indigo accent.
 ---------------------------------------------------------------------------- */
 .dark {
-  --background: oklch(0.08 0.008 264);
-  --foreground: oklch(0.97 0.008 250);
-  --card: oklch(0.96 0.012 255 / 4%);
-  --card-foreground: oklch(0.97 0.008 250);
-  --popover: oklch(0.12 0.012 264);
-  --popover-foreground: oklch(0.97 0.01 250);
-  --primary: oklch(0.85 0.15 85);
-  --primary-foreground: oklch(0.22 0.05 70);
-  --secondary: oklch(0.95 0.02 255 / 9%);
-  --secondary-foreground: oklch(0.97 0.01 250);
-  --muted: oklch(0.95 0.02 255 / 6%);
-  --muted-foreground: oklch(0.74 0.03 255);
-  --accent: oklch(0.95 0.02 255 / 10%);
-  --accent-foreground: oklch(0.99 0.005 250);
-  --destructive: oklch(0.7 0.19 18);
-  --border: oklch(0.92 0.04 255 / 11%);
-  --input: oklch(0.92 0.04 255 / 15%);
-  --ring: oklch(0.8 0.12 200);
-  --chart-1: oklch(0.82 0.13 205);
-  --chart-2: oklch(0.82 0.15 162);
-  --chart-3: oklch(0.85 0.15 85);
-  --chart-4: oklch(0.72 0.18 12);
-  --chart-5: oklch(0.74 0.16 295);
+  --background: oklch(0.135 0.004 265);
+  --foreground: oklch(0.96 0.003 265);
+  --card: oklch(0.175 0.004 265);
+  --card-foreground: oklch(0.96 0.003 265);
+  --popover: oklch(0.185 0.004 265);
+  --popover-foreground: oklch(0.96 0.003 265);
+  --primary: oklch(0.68 0.16 280);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.21 0.005 265);
+  --secondary-foreground: oklch(0.96 0.003 265);
+  --muted: oklch(0.21 0.005 265);
+  --muted-foreground: oklch(0.7 0.012 265);
+  --accent: oklch(0.24 0.008 274);
+  --accent-foreground: oklch(0.97 0.003 265);
+  --destructive: oklch(0.7 0.17 22);
+  --border: oklch(0.27 0.006 265);
+  --border-strong: oklch(0.34 0.007 265);
+  --input: oklch(0.3 0.006 265);
+  --ring: oklch(0.68 0.16 280 / 55%);
+  --chart-1: oklch(0.7 0.12 220);
+  --chart-2: oklch(0.72 0.15 160);
+  --chart-3: oklch(0.78 0.13 78);
+  --chart-4: oklch(0.72 0.17 22);
+  --chart-5: oklch(0.7 0.16 292);
 
-  --gold: oklch(0.85 0.15 85);
-  --cyan: oklch(0.82 0.13 205);
-  --violet: oklch(0.76 0.16 295);
-  --rose: oklch(0.74 0.18 12);
-  --emerald: oklch(0.82 0.15 162);
+  --success: oklch(0.75 0.17 158);
+  --warning: oklch(0.79 0.13 72);
+  --danger: oklch(0.72 0.17 22);
 
-  --success: oklch(0.82 0.15 162);
-  --warning: oklch(0.85 0.15 85);
-  --danger: oklch(0.74 0.18 12);
+  --gold: oklch(0.78 0.13 78);
+  --cyan: oklch(0.7 0.12 220);
+  --violet: oklch(0.7 0.16 292);
+  --rose: oklch(0.72 0.17 18);
+  --emerald: oklch(0.72 0.15 160);
 
-  --sidebar: oklch(0.15 0.03 264 / 80%);
-  --sidebar-foreground: oklch(0.97 0.01 250);
-  --sidebar-primary: oklch(0.85 0.15 85);
-  --sidebar-primary-foreground: oklch(0.22 0.05 70);
-  --sidebar-accent: oklch(0.95 0.02 255 / 10%);
-  --sidebar-accent-foreground: oklch(0.99 0.005 250);
-  --sidebar-border: oklch(0.92 0.04 255 / 11%);
-  --sidebar-ring: oklch(0.8 0.12 200);
+  --sidebar: oklch(0.16 0.004 265);
+  --sidebar-foreground: oklch(0.96 0.003 265);
+  --sidebar-primary: oklch(0.68 0.16 280);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.24 0.008 274);
+  --sidebar-accent-foreground: oklch(0.97 0.003 265);
+  --sidebar-border: oklch(0.27 0.006 265);
+  --sidebar-ring: oklch(0.68 0.16 280 / 55%);
 }
 
 @layer utilities {
-  /* Light default: a clean paper surface. The cosmic nebula version lives
-     under .dark for the marketing pages that pin themselves dark. */
-  .cosmic-bg {
-    background-color: var(--background);
-  }
-  .dark .cosmic-bg {
-    background-color: oklch(0.045 0.006 264);
-    background-image:
-      radial-gradient(circle at 50% -8%, oklch(0.82 0.13 205 / 7%), transparent 46%),
-      radial-gradient(circle at 88% 6%, oklch(0.85 0.15 85 / 4%), transparent 40%),
-      linear-gradient(180deg, oklch(0.07 0.008 264) 0%, oklch(0.04 0.005 264) 100%);
-  }
-
-  .cosmic-grid {
-    background-image: none;
-  }
-  .dark .cosmic-grid {
-    background-image:
-      linear-gradient(oklch(0.92 0.04 255 / 3.5%) 1px, transparent 1px),
-      linear-gradient(90deg, oklch(0.92 0.04 255 / 3.5%) 1px, transparent 1px);
-    background-size: 56px 56px;
-    -webkit-mask-image: radial-gradient(circle at 50% 30%, black, transparent 78%);
-    mask-image: radial-gradient(circle at 50% 30%, black, transparent 78%);
-  }
-
-  .starfield {
-    background-image: none;
-  }
-  .dark .starfield {
-    background-image:
-      radial-gradient(circle, oklch(0.95 0.02 220 / 34%) 0 1px, transparent 1.6px),
-      radial-gradient(circle, oklch(0.92 0.03 255 / 16%) 0 1px, transparent 1.4px);
-    background-size: 120px 120px, 168px 168px;
-    background-position: 0 0, 54px 84px;
-  }
-
-  /* Surfaces — light: white card, hairline border, soft shadow. */
+  /* Surfaces. These utility names are used across ~18 files; they now render
+     one consistent card language in both themes — no glass, no glow. */
   .panel {
     border: 1px solid var(--border);
     background: var(--card);
-    box-shadow:
-      0 1px 2px oklch(0.2 0.02 264 / 5%),
-      0 1px 3px oklch(0.2 0.02 264 / 4%);
-    border-radius: var(--radius-xl);
-  }
-  .dark .panel {
-    background:
-      linear-gradient(180deg, oklch(0.95 0.02 255 / 6%), oklch(0.95 0.02 255 / 2.5%));
-    box-shadow: 0 24px 80px -32px oklch(0.05 0.04 264 / 70%);
-    backdrop-filter: blur(16px);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
   }
   .panel-strong {
     border: 1px solid var(--border);
     background: var(--card);
-    box-shadow:
-      0 1px 3px oklch(0.2 0.02 264 / 6%),
-      0 8px 24px -12px oklch(0.2 0.02 264 / 10%);
-    border-radius: var(--radius-2xl);
-  }
-  .dark .panel-strong {
-    border: 1px solid oklch(0.92 0.04 255 / 13%);
-    background:
-      radial-gradient(circle at 0% 0%, oklch(0.85 0.15 85 / 6%), transparent 44%),
-      radial-gradient(circle at 100% 0%, oklch(0.82 0.13 205 / 5%), transparent 46%),
-      linear-gradient(180deg, oklch(0.96 0.012 255 / 5%), oklch(0.96 0.012 255 / 2%));
-    box-shadow: 0 40px 130px -44px oklch(0.02 0.01 264 / 90%);
-    backdrop-filter: blur(20px);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-md);
   }
   .panel-inset {
-    border: 1px solid transparent;
+    border: 1px solid var(--border);
     background: var(--muted);
-    border-radius: var(--radius-lg);
-  }
-  .dark .panel-inset {
-    border: 1px solid oklch(0.92 0.04 255 / 8%);
-    background: oklch(0.08 0.02 264 / 35%);
+    border-radius: var(--radius-md);
+    box-shadow: none;
   }
 
-  /* Accent glows — none on light; halo kept for the dark marketing surface. */
+  /* Cosmic decorations retired — kept as no-ops so existing markup is safe. */
+  .cosmic-bg { background-color: var(--background); }
+  .cosmic-grid { background-image: none; }
+  .starfield { background-image: none; }
   .glow-gold, .glow-cyan, .glow-violet { box-shadow: none; }
-  .dark .glow-gold { box-shadow: 0 0 0 1px oklch(0.85 0.15 85 / 22%), 0 18px 60px -18px oklch(0.85 0.15 85 / 45%); }
-  .dark .glow-cyan { box-shadow: 0 0 0 1px oklch(0.82 0.13 205 / 22%), 0 18px 60px -18px oklch(0.82 0.13 205 / 45%); }
-  .dark .glow-violet { box-shadow: 0 0 0 1px oklch(0.76 0.16 295 / 22%), 0 18px 60px -18px oklch(0.76 0.16 295 / 45%); }
 
-  /* Hero headline text — plain ink on light, aurora gradient on dark. */
-  .text-aurora {
-    color: var(--foreground);
-  }
-  .dark .text-aurora {
-    background-image: linear-gradient(
-      100deg,
-      oklch(0.92 0.05 250) 0%,
-      oklch(0.85 0.15 85) 34%,
-      oklch(0.82 0.13 205) 66%,
-      oklch(0.78 0.16 295) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
+  /* Headline text — plain ink, no gradient. */
+  .text-aurora { color: var(--foreground); }
 
   /* Text tiers */
   .text-dim { color: var(--muted-foreground); }
-  .dark .text-dim { color: oklch(0.97 0.01 250 / 68%); }
-  .text-faint { color: oklch(0.6 0.01 264); }
-  .dark .text-faint { color: oklch(0.97 0.01 250 / 46%); }
+  .text-faint { color: color-mix(in oklch, var(--muted-foreground) 78%, transparent); }
 
   .eyebrow {
     text-transform: uppercase;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.12em;
     font-size: 0.6875rem;
     font-weight: 600;
+    color: var(--muted-foreground);
   }
 
-  .animate-float {
-    animation: cosmic-float 9s ease-in-out infinite;
-  }
-
-  .animate-fade-in {
-    animation: cosmic-fade-in 0.4s ease both;
-  }
+  .animate-float { animation: none; }
+  .animate-fade-in { animation: saas-fade-in 0.35s cubic-bezier(0.2, 0.6, 0.2, 1) both; }
 }
 
-@keyframes cosmic-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+.dark {
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 40%);
+  --shadow-md: 0 1px 3px oklch(0 0 0 / 50%), 0 12px 32px -16px oklch(0 0 0 / 70%);
 }
 
-@keyframes cosmic-fade-in {
-  from { opacity: 0; transform: translateY(3px); }
+@keyframes saas-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -304,34 +235,29 @@
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    letter-spacing: -0.006em;
   }
   html {
     @apply font-sans;
     scroll-behavior: smooth;
   }
 
-  /* In the cosmic app, default shadcn Cards become glass automatically. */
-  .dark [data-slot="card"] {
-    backdrop-filter: blur(14px);
-    box-shadow: 0 24px 70px -38px oklch(0.04 0.04 264 / 80%);
-  }
-
   ::selection {
-    background: oklch(0.51 0.19 268 / 18%);
+    background: oklch(0.51 0.2 274 / 20%);
     color: var(--foreground);
   }
   .dark ::selection {
-    background: oklch(0.85 0.15 85 / 30%);
-    color: oklch(0.99 0.01 90);
+    background: oklch(0.68 0.16 280 / 30%);
+    color: oklch(0.99 0 0);
   }
 
-  /* Premium thin scrollbars */
+  /* Thin, neutral scrollbars */
   * {
     scrollbar-width: thin;
     scrollbar-color: oklch(0.45 0.01 264 / 25%) transparent;
   }
   .dark * {
-    scrollbar-color: oklch(0.7 0.03 255 / 28%) transparent;
+    scrollbar-color: oklch(0.7 0.01 265 / 24%) transparent;
   }
   *::-webkit-scrollbar { width: 10px; height: 10px; }
   *::-webkit-scrollbar-thumb {
@@ -342,8 +268,8 @@
   }
   *::-webkit-scrollbar-thumb:hover { background: oklch(0.45 0.01 264 / 35%); background-clip: padding-box; }
   .dark *::-webkit-scrollbar-thumb {
-    background: oklch(0.7 0.03 255 / 24%);
+    background: oklch(0.7 0.01 265 / 22%);
     background-clip: padding-box;
   }
-  .dark *::-webkit-scrollbar-thumb:hover { background: oklch(0.75 0.04 255 / 38%); background-clip: padding-box; }
+  .dark *::-webkit-scrollbar-thumb:hover { background: oklch(0.75 0.01 265 / 36%); background-clip: padding-box; }
 }

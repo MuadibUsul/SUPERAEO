@@ -10,6 +10,15 @@ test("builds a cognition brief from nebula, opportunity, and report data", () =>
     metrics: {
       runId: "run-1",
       sampleCount: 24,
+      entityMetrics: {
+        factualAccuracy: 0,
+        featureAccuracy: 0,
+        authority: 0,
+        identityConfusionRisk: 0,
+        parameterErrorRate: 0,
+        accuracyScore: 0,
+      },
+      modelBreakdown: [],
       metrics: {
         aiVisibilityScore: 0.61,
         citationRate: 0.4,
@@ -71,6 +80,15 @@ test("returns explainable empty states when evidence is missing", () => {
     metrics: {
       runId: null,
       sampleCount: 0,
+      entityMetrics: {
+        factualAccuracy: 0,
+        featureAccuracy: 0,
+        authority: 0,
+        identityConfusionRisk: 0,
+        parameterErrorRate: 0,
+        accuracyScore: 0,
+      },
+      modelBreakdown: [],
       metrics: {
         aiVisibilityScore: 0,
         citationRate: 0,

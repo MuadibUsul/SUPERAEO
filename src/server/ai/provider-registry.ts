@@ -4,6 +4,14 @@ import { getPrisma } from "@/server/db";
 import { decryptSecret } from "@/server/security/encryption";
 import type { AIJsonInput, AITextInput, AITextResult, ProviderRuntime } from "@/server/ai/types";
 import { getDefaultEnabledProvider, validateProviderCompatibility } from "@/server/ai/provider-config";
+import { asArray, asRecord } from "@/server/utils/coerce";
+import {
+  anthropicText,
+  chatCompletionText,
+  geminiText,
+  openAIResponseText,
+  usageFromOpenAI,
+} from "@/server/ai/provider-parsers";
 
 type ProviderContext = {
   provider: AIProvider;
@@ -13,54 +21,6 @@ type ProviderContext = {
 
 function trimSlash(value: string) {
   return value.replace(/\/+$/, "");
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function openAIResponseText(raw: unknown) {
-  const body = asRecord(raw);
-  const output = asArray(body.output);
-  const firstOutput = asRecord(output[0]);
-  const content = asArray(firstOutput.content);
-  const firstContent = asRecord(content[0]);
-  return String(body.output_text ?? firstContent.text ?? "");
-}
-
-function chatCompletionText(raw: unknown) {
-  const choices = asArray(asRecord(raw).choices);
-  const firstChoice = asRecord(choices[0]);
-  return String(asRecord(firstChoice.message).content ?? "");
-}
-
-function anthropicText(raw: unknown) {
-  return asArray(asRecord(raw).content)
-    .map((part) => asRecord(part).text)
-    .filter(Boolean)
-    .join("\n");
-}
-
-function geminiText(raw: unknown) {
-  const candidates = asArray(asRecord(raw).candidates);
-  const candidate = asRecord(candidates[0]);
-  const parts = asArray(asRecord(asRecord(candidate.content)).parts);
-  return String(asRecord(parts[0]).text ?? "");
-}
-
-function usageFromOpenAI(raw: unknown) {
-  const usage = asRecord(asRecord(raw).usage);
-  return usage
-    ? {
-        promptTokens: Number(usage.input_tokens ?? usage.prompt_tokens ?? 0) || undefined,
-        completionTokens: Number(usage.output_tokens ?? usage.completion_tokens ?? 0) || undefined,
-        totalTokens: Number(usage.total_tokens ?? 0) || undefined,
-      }
-    : undefined;
 }
 
 async function postJson(url: string, apiKey: string, body: unknown, headers?: HeadersInit) {

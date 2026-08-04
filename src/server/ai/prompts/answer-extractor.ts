@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { SubjectContext } from "@/server/projects/subject-service";
 
-export const answerExtractorPromptVersion = "2026-06-11.v1";
+export const answerExtractorPromptVersion = "2026-06-21.v2";
 
 const sentimentSchema = z.enum(["positive", "neutral", "negative", "mixed", "unknown"]);
 
@@ -22,6 +22,24 @@ const riskSchema = z.object({
   reason: z.string(),
   evidence: z.string().nullable(),
   confidence: z.number().min(0).max(1),
+});
+
+const entityAccuracySchema = z.object({
+  factualAccuracy: z.number().min(0).max(1).default(0.5),
+  featureAccuracy: z.number().min(0).max(1).default(0.5),
+  identityConfusionRisk: z.number().min(0).max(1).default(0),
+  parameterErrorRate: z.number().min(0).max(1).default(0),
+  confidence: z.number().min(0).max(1).default(0.5),
+  errorClaims: z
+    .array(
+      z.object({
+        claim: z.string(),
+        errorType: z.enum(["factual_error", "identity_confusion", "feature_error", "parameter_error", "unsupported_claim"]),
+        reason: z.string(),
+        confidence: z.number().min(0).max(1),
+      }),
+    )
+    .default([]),
 });
 
 export const answerExtractorOutputSchema = z.object({
@@ -52,6 +70,14 @@ export const answerExtractorOutputSchema = z.object({
     consistencyScore: z.number().min(0).max(1),
     centralityScore: z.number().min(0).max(1),
     cognitiveBias: z.array(z.string()).default([]),
+  }),
+  entityAccuracy: entityAccuracySchema.default({
+    factualAccuracy: 0.5,
+    featureAccuracy: 0.5,
+    identityConfusionRisk: 0,
+    parameterErrorRate: 0,
+    confidence: 0.5,
+    errorClaims: [],
   }),
   confidence: z.number().min(0).max(1),
 });
@@ -88,7 +114,14 @@ export function buildAnswerExtractorPrompt(input: {
       "Raw citations:",
       JSON.stringify(input.citations ?? null),
       "",
-      "Return JSON with keys: targetMentioned, targetRecommended, targetPosition, targetDescription, mentionedEntities, recommendationWinner, mentionContext, sentiment, matchedKeywords, citations, risks, entityProfile, confidence.",
+      "Score entityAccuracy from only the observable answer and the subject context:",
+      "- factualAccuracy: whether stated facts about the subject match the provided subject context or are carefully qualified when unknown.",
+      "- featureAccuracy: for PRODUCT/WEBSITE/BRAND, whether product/site/brand attributes and parameters are stated accurately; use 0.5 if not enough feature evidence.",
+      "- identityConfusionRisk: chance the answer confuses the subject with a same-name or adjacent entity.",
+      "- parameterErrorRate: share of concrete specs, dates, prices, capabilities, URLs, or attributes that appear wrong or unsupported.",
+      "- If facts cannot be verified from the provided context or answer evidence, lower confidence instead of inventing a mistake.",
+      "",
+      "Return JSON with keys: targetMentioned, targetRecommended, targetPosition, targetDescription, mentionedEntities, recommendationWinner, mentionContext, sentiment, matchedKeywords, citations, risks, entityProfile, entityAccuracy, confidence.",
       "Use supportsTarget on each citation to show whether it substantiates the target subject, not a generic category claim.",
     ].join("\n"),
   };
@@ -131,6 +164,7 @@ export function toNormalizedProbeJson(data: AnswerExtractorOutput, subject: Subj
     citations: data.citations,
     risks: data.risks,
     entityProfile: data.entityProfile,
+    entityAccuracy: data.entityAccuracy,
     confidence: data.confidence,
   };
 }

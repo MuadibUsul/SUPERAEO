@@ -863,6 +863,7 @@ model MetricSnapshot {
   subject                  ProjectSubject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   run                      SamplingRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
 
+  @@index([projectId, subjectId, createdAt])
   @@index([projectId, runId])
   @@index([subjectId, runId])
   @@map("metric_snapshots")
@@ -1318,6 +1319,10 @@ model QuerySample {
   runId       String      @map("run_id")
   queryId     String      @map("query_id")
   responseId  String?     @map("response_id")
+  modelKey    String      @default("default") @map("model_key")
+  providerId  String?     @map("provider_id")
+  modelId     String?     @map("model_id")
+  model       String?
   sampleIndex Int         @map("sample_index")
   persona     String?
   region      String?
@@ -1330,8 +1335,9 @@ model QuerySample {
   query       AeoQuery    @relation(fields: [queryId], references: [id], onDelete: Cascade)
   response    AIResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
 
-  @@unique([runId, queryId, sampleIndex])
+  @@unique([runId, queryId, modelKey, sampleIndex])
   @@index([projectId, runId])
+  @@index([providerId, modelId])
   @@map("query_samples")
 }
 
@@ -1640,6 +1646,7 @@ model ExperimentResult {
   zScore            Float               @map("z_score")
   pValue            Float               @map("p_value")
   significant       Boolean
+  metadata          Json?
   computedAt        DateTime            @default(now()) @map("computed_at")
   experiment        CognitionExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
 

@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 
 import { requireApiSession } from "@/server/auth/session";
+import { platformFromProviderType } from "@/server/ai/platform";
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { getProject } from "@/server/data/projects";
 import { withApiTrace } from "@/server/observability/api-wrapper";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { enqueueAnalysisJob, getQueueNames, isRedisConfigured } from "@/server/queue/client";
 import { createRunRequestSchema } from "@/server/validation/workflow";
+import { modelKeyFromParts } from "@/server/metrics/cip-metrics";
 
 type Context = {
   params: Promise<{ projectId: string }>;
@@ -67,6 +69,15 @@ export const POST = withApiTrace<Context>({ subsystem: "sampling", operation: "r
 
   const prisma = getPrisma();
   const subject = await ensurePrimaryProjectSubject(projectState.data);
+  let modelMatrix: Awaited<ReturnType<typeof validateModelMatrix>> = [];
+  try {
+    modelMatrix = parsed.data.modelMatrix ? await validateModelMatrix(parsed.data.modelMatrix) : [];
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid model matrix." },
+      { status: 400 },
+    );
+  }
   const queryIds =
     parsed.data.queryIds.length > 0
       ? parsed.data.queryIds
@@ -91,15 +102,18 @@ export const POST = withApiTrace<Context>({ subsystem: "sampling", operation: "r
       subjectId: subject.id,
       runType: parsed.data.runType,
       status: isRedisConfigured() ? "queued" : "draft",
-      platforms: parsed.data.platforms,
+      platforms: modelMatrix.length ? [...new Set(modelMatrix.map((item) => item.platform))] : parsed.data.platforms,
       sampleCountPerQuery: parsed.data.sampleCountPerQuery,
       selectedQueryIds: queryIds,
-      sampleCount: queryIds.length * parsed.data.sampleCountPerQuery,
-      samplingStrategy: parsed.data.samplingStrategy ?? {
-        personas: ["buyer"],
-        regions: ["US"],
-        contextModes: ["cold_start"],
-        routingTier: "low_cost_sampling",
+      sampleCount: queryIds.length * parsed.data.sampleCountPerQuery * Math.max(1, modelMatrix.length),
+      samplingStrategy: {
+        ...(parsed.data.samplingStrategy ?? {
+          personas: ["buyer"],
+          regions: ["US"],
+          contextModes: ["cold_start"],
+          routingTier: "low_cost_sampling",
+        }),
+        ...(modelMatrix.length ? { modelMatrix } : {}),
       },
       scheduledAt: new Date(),
       traceId: randomUUID(),
@@ -132,3 +146,48 @@ export const POST = withApiTrace<Context>({ subsystem: "sampling", operation: "r
 
   return NextResponse.json({ run: updatedRun, job: job.analysisJob }, { status: 201 });
 });
+
+async function validateModelMatrix(
+  items: Array<{ providerId: string; modelId?: string; model?: string }>,
+) {
+  if (items.length === 0) return [];
+
+  const prisma = getPrisma();
+  const providers = await prisma.aIProvider.findMany({
+    where: { id: { in: items.map((item) => item.providerId) }, enabled: true },
+    include: { models: { where: { enabled: true } } },
+  });
+  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+
+  return items.map((item) => {
+    const provider = providerById.get(item.providerId);
+    if (!provider) {
+      throw new Error("Selected model provider is not enabled.");
+    }
+
+    const modelRecord = item.modelId
+      ? provider.models.find((model) => model.id === item.modelId)
+      : item.model
+        ? provider.models.find((model) => model.name === item.model || model.displayName === item.model)
+        : null;
+    const model = modelRecord?.name ?? item.model ?? provider.defaultModel;
+
+    if (item.modelId && !modelRecord) {
+      throw new Error("Selected model is not enabled for its provider.");
+    }
+
+    if (item.model && !modelRecord && item.model !== provider.defaultModel) {
+      throw new Error("Selected model name is not enabled for its provider.");
+    }
+
+    return {
+      providerId: provider.id,
+      providerName: provider.name,
+      modelId: modelRecord?.id ?? null,
+      model,
+      platform: platformFromProviderType(provider.providerType),
+      modelKey: modelKeyFromParts({ providerId: provider.id, modelId: modelRecord?.id, model }),
+    };
+  });
+}
+

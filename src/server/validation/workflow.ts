@@ -18,6 +18,16 @@ export const createRunRequestSchema = z.object({
   platforms: z.array(z.string()).default(["openai"]),
   sampleCountPerQuery: z.coerce.number().int().min(1).max(5).default(1),
   queryIds: z.array(z.string()).optional().default([]),
+  modelMatrix: z
+    .array(
+      z.object({
+        providerId: z.string().trim().min(1),
+        modelId: z.string().trim().min(1).optional(),
+        model: z.string().trim().min(1).optional(),
+      }),
+    )
+    .max(6)
+    .optional(),
   samplingStrategy: z
     .object({
       personas: z.array(z.string()).default(["buyer"]),

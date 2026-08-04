@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiSession } from "@/server/auth/session";
 import { getProject } from "@/server/data/projects";
-import { buildCipMetricBundle } from "@/server/metrics/cip-metrics";
+import { getLatestCipMetricBundle } from "@/server/metrics/cip-metrics";
 import { withApiTrace } from "@/server/observability/api-wrapper";
 
 type Context = {
@@ -19,5 +19,5 @@ export const GET = withApiTrace<Context>({ subsystem: "project", operation: "pro
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
 
-  return NextResponse.json(await buildCipMetricBundle(projectId));
+  return NextResponse.json(await getLatestCipMetricBundle(projectId));
 });

@@ -82,10 +82,12 @@ export async function analyzeResponse(responseId: string, userId?: string) {
         authorityScore: data.entityProfile.authorityScore,
         consistencyScore: data.entityProfile.consistencyScore,
         centralityScore: data.entityProfile.centralityScore,
+        entityAccuracy: data.entityAccuracy,
       },
       evidenceJson: {
         citations: data.citations,
         risks: data.risks,
+        accuracyErrors: data.entityAccuracy.errorClaims,
         promptRunId: result.promptRunId,
       },
     },
@@ -101,10 +103,12 @@ export async function analyzeResponse(responseId: string, userId?: string) {
         authorityScore: data.entityProfile.authorityScore,
         consistencyScore: data.entityProfile.consistencyScore,
         centralityScore: data.entityProfile.centralityScore,
+        entityAccuracy: data.entityAccuracy,
       },
       evidenceJson: {
         citations: data.citations,
         risks: data.risks,
+        accuracyErrors: data.entityAccuracy.errorClaims,
         promptRunId: result.promptRunId,
       },
     },
@@ -190,19 +194,19 @@ export async function analyzeResponse(responseId: string, userId?: string) {
     },
   });
 
-  for (const hallucination of data.risks) {
-    await prisma.alert.create({
-      data: {
+  if (data.risks.length > 0) {
+    await prisma.alert.createMany({
+      data: data.risks.map((hallucination) => ({
         projectId: project.id,
         responseId,
-        alertType: "hallucination",
+        alertType: "hallucination" as const,
         severity: hallucination.riskLevel,
         title: hallucination.claim.slice(0, 120),
         message: hallucination.reason,
-        evidence: { evidence: hallucination.evidence, claim: hallucination.claim },
+        evidence: { evidence: hallucination.evidence, claim: hallucination.claim } as Prisma.InputJsonValue,
         correctionSuggestion: "Add or strengthen authoritative subject facts and citeable entity evidence.",
         confidence: hallucination.confidence,
-      },
+      })),
     });
   }
 

@@ -1,32 +1,13 @@
 import type { Locale } from "@/i18n/config";
 import { formatBriefTemplate, getCognitionBriefCopy } from "@/i18n/cognition-brief";
 import { getPrisma } from "@/server/db";
-import { buildCipMetricBundle } from "@/server/metrics/cip-metrics";
+import { getLatestCipMetricBundle, type CipMetricBundle } from "@/server/metrics/cip-metrics";
+import { asRecord, asRecordArray, clamp01, numberOrDefault, numberOrNull, stringOrEmpty, stringOrNull } from "@/server/utils/coerce";
 
 type HighlightGroupKey = "positiveTerms" | "riskTerms" | "competitorTerms" | "missingTerms";
 type ScoreKey = "recognition" | "semanticClarity" | "trust" | "recommendation" | "risk" | "opportunity";
 
-type MetricBundle = {
-  runId: string | null;
-  sampleCount: number;
-  metrics: {
-    aiVisibilityScore: number;
-    citationRate: number;
-    mentionRate: number;
-    recommendationShare: number;
-    aiImpressionShare: number;
-    entityVisibility: number;
-    semanticCoverage: number;
-    stabilityIndex: number;
-    hallucinationRiskScore: number;
-    competitorDelta: number;
-  };
-  confidence: {
-    mentionRate?: { estimate: number; lowerBound: number; upperBound: number };
-    citationRate?: { estimate: number; lowerBound: number; upperBound: number };
-    recommendationShare?: { estimate: number; lowerBound: number; upperBound: number };
-  };
-};
+type MetricBundle = CipMetricBundle;
 
 export type CognitionBriefViewModel = {
   summary: {
@@ -57,7 +38,7 @@ export async function buildCognitionBriefView(input: {
 }) {
   const prisma = getPrisma();
   const [metrics, latestNebula, latestOpportunity, latestReport, alerts] = await Promise.all([
-    buildCipMetricBundle(input.projectId, input.subjectId),
+    getLatestCipMetricBundle(input.projectId, input.subjectId),
     prisma.semanticNebulaSnapshot.findFirst({
       where: {
         projectId: input.projectId,
@@ -119,9 +100,9 @@ export function buildCognitionBriefViewModel(input: {
     valueAsStringArray(input.nebulaSummary.missingTerms).filter(isUsefulTerm),
   ).slice(0, 3);
   const sampleCount = input.metrics.sampleCount;
-  const totalTerms = numberOrZero(input.nebulaSummary.totalTerms);
+  const totalTerms = numberOrDefault(input.nebulaSummary.totalTerms, 0);
   const opportunityCount =
-    numberOrZero(input.opportunitySummary.totalOpportunities) || input.opportunityItems.length;
+    numberOrDefault(input.opportunitySummary.totalOpportunities, 0) || input.opportunityItems.length;
   const topOpportunity = input.opportunityItems[0] ?? null;
   const summaryFromReport = stringOrEmpty(input.reportSnapshot.cognitionSummary);
   const localizedReportSummary = matchesLocale(summaryFromReport, input.locale) ? summaryFromReport : "";
@@ -145,7 +126,7 @@ export function buildCognitionBriefViewModel(input: {
     topOpportunityScore !== null
       ? clamp01(topOpportunityScore / 100)
       : opportunityCount > 0
-        ? clamp01(numberOrZero(input.opportunitySummary.highLopOpportunities) / Math.max(1, opportunityCount))
+        ? clamp01(numberOrDefault(input.opportunitySummary.highLopOpportunities, 0) / Math.max(1, opportunityCount))
         : null;
 
   const trustBase =
@@ -290,37 +271,8 @@ function valueAsStringArray(value: unknown) {
   return Array.isArray(value) ? value.map(stringOrEmpty).filter(Boolean) : [];
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function asRecordArray(value: unknown) {
-  return Array.isArray(value) ? value.map(asRecord) : [];
-}
-
 function uniqueStrings(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function stringOrEmpty(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function stringOrNull(value: unknown) {
-  const normalized = stringOrEmpty(value);
-  return normalized || null;
-}
-
-function numberOrZero(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function numberOrNull(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function clamp01(value: number) {
-  return Math.max(0, Math.min(1, value));
 }
 
 function isUsefulTerm(term: string) {

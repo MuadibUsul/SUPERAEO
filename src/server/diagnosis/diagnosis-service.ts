@@ -3,10 +3,10 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
-import { buildCipMetricBundle } from "@/server/metrics/cip-metrics";
 import { getAIReadiness } from "@/server/ai/readiness";
 import { generateLongTailOpportunitySnapshot } from "@/server/opportunity/opportunity-service";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
+import { buildReportSnapshot } from "@/server/report/report-snapshot";
 import { executeSamplingRun } from "@/server/sampling/execute-run";
 import { buildSemanticNebulaSnapshots } from "@/server/semantic-nebula/nebula-service";
 import { generateQueriesRequestSchema } from "@/server/validation/workflow";
@@ -180,59 +180,13 @@ async function createDiagnosisReport(input: {
   subjectName: string;
 }) {
   const prisma = getPrisma();
-  const [metrics, latestNebula, opportunities, territory, alerts] = await Promise.all([
-    buildCipMetricBundle(input.projectId, input.subjectId),
-    prisma.semanticNebulaSnapshot.findFirst({
-      where: { projectId: input.projectId, subjectId: input.subjectId, scope: "OVERALL" },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.longTailOpportunitySnapshot.findFirst({
-      where: { projectId: input.projectId, subjectId: input.subjectId },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.questionTerritorySnapshot.findFirst({
-      where: { projectId: input.projectId, subjectId: input.subjectId },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.alert.findMany({
-      where: { projectId: input.projectId },
-      orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
-      take: 12,
-    }),
-  ]);
-  const opportunityItems = Array.isArray(opportunities?.opportunityJson)
-    ? opportunities.opportunityJson.slice(0, 5)
-    : [];
-  const nebulaNodes = Array.isArray(latestNebula?.nodeJson) ? latestNebula.nodeJson.slice(0, 12) : [];
   const title = `${input.subjectName} AI Cognition Audit`;
-  const snapshot = {
-    version: "2026-05-20.fireplace.v1",
-    generatedBy: "full_diagnosis",
+  const snapshot = await buildReportSnapshot({
     projectId: input.projectId,
     subjectId: input.subjectId,
-    runId: input.runId,
-    cognitionSummary: buildCognitionSummary(input.subjectName, metrics.metrics.aiVisibilityScore, opportunityItems.length),
-    metrics,
-    semanticPosition: {
-      summary: latestNebula?.summaryJson ?? null,
-      topNodes: nebulaNodes,
-    },
-    opportunities: {
-      summary: opportunities?.summaryJson ?? null,
-      topItems: opportunityItems,
-    },
-    questionTerritory: {
-      summary: territory?.summaryJson ?? null,
-    },
-    risks: alerts.map((alert) => ({
-      id: alert.id,
-      title: alert.title,
-      severity: alert.severity,
-      message: alert.message,
-      status: alert.status,
-      createdAt: alert.createdAt.toISOString(),
-    })),
-  } satisfies Prisma.InputJsonObject;
+    subjectName: input.subjectName,
+  });
+  const summary = summaryFromSnapshot(snapshot, input.subjectName);
 
   return prisma.report.create({
     data: {
@@ -242,19 +196,21 @@ async function createDiagnosisReport(input: {
       format: "html",
       status: "ready",
       snapshot,
-      html: renderReportHtml(title, snapshot.cognitionSummary),
+      html: renderReportHtml(title, summary),
     },
   });
 }
 
-function buildCognitionSummary(subjectName: string, visibilityScore: number, opportunityCount: number) {
-  if (visibilityScore >= 0.7) {
-    return `${subjectName} is already visible in observable AI answer space, with ${opportunityCount} prioritized long-tail opportunities to strengthen ownership.`;
+function summaryFromSnapshot(snapshot: Prisma.InputJsonValue, subjectName: string) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return `${subjectName} AI cognition report is ready.`;
   }
-  if (visibilityScore >= 0.4) {
-    return `${subjectName} has partial AI visibility, but the semantic field still needs clearer evidence and stronger answer inclusion paths.`;
-  }
-  return `${subjectName} is not yet strongly established in observable AI answer space; the next move is to build evidence around narrow, high-intent scenarios.`;
+  const briefs = "briefs" in snapshot && snapshot.briefs && typeof snapshot.briefs === "object" && !Array.isArray(snapshot.briefs)
+    ? snapshot.briefs as Record<string, unknown>
+    : {};
+  const en = briefs.en && typeof briefs.en === "object" && !Array.isArray(briefs.en) ? briefs.en as Record<string, unknown> : {};
+  const summary = en.summary && typeof en.summary === "object" && !Array.isArray(en.summary) ? en.summary as Record<string, unknown> : {};
+  return typeof summary.headline === "string" ? summary.headline : `${subjectName} AI cognition report is ready.`;
 }
 
 function renderReportHtml(title: string, summary: string) {

@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/server/auth/session";
 import { getProject } from "@/server/data/projects";
 import { getPrisma } from "@/server/db";
-import { buildCipMetricBundle } from "@/server/metrics/cip-metrics";
 import { withApiTrace } from "@/server/observability/api-wrapper";
+import { buildReportSnapshot } from "@/server/report/report-snapshot";
 
 type Context = {
   params: Promise<{ projectId: string }>;
@@ -50,65 +50,27 @@ export const POST = withApiTrace<Context>({ subsystem: "report", operation: "rep
     typeof json.title === "string" && json.title.trim()
       ? json.title.trim()
       : `${project.data.brandName} Cognition Audit`;
-
-  const metrics = await buildCipMetricBundle(projectId);
-  const latestCoverage = await getPrisma().semanticCoverageSnapshot.findFirst({
-    where: { projectId },
-    orderBy: { createdAt: "desc" },
-  });
-  const alerts = await getPrisma().alert.findMany({
-    where: { projectId },
-    orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
-    take: 20,
-  });
   const subject = project.data.subjects[0];
-  const [semanticNebula, opportunities, questionTerritory] = subject
-    ? await Promise.all([
-        getPrisma().semanticNebulaSnapshot.findFirst({
-          where: { projectId, subjectId: subject.id, scope: "OVERALL" },
-          orderBy: { createdAt: "desc" },
-        }),
-        getPrisma().longTailOpportunitySnapshot.findFirst({
-          where: { projectId, subjectId: subject.id },
-          orderBy: { createdAt: "desc" },
-        }),
-        getPrisma().questionTerritorySnapshot.findFirst({
-          where: { projectId, subjectId: subject.id },
-          orderBy: { createdAt: "desc" },
-        }),
-      ])
-    : [null, null, null];
+  const snapshot = await buildReportSnapshot({
+    projectId,
+    subjectId: subject?.id,
+    subjectName: subject?.displayName ?? project.data.brandName,
+  });
+  const visibilityScore = visibilityScoreFromSnapshot(snapshot);
+  const runId = runIdFromSnapshot(snapshot);
 
   const report = await getPrisma().report.create({
     data: {
       projectId,
-      runId: metrics.runId ?? undefined,
+      runId: runId ?? undefined,
       title,
       format: json.format === "pdf" ? "pdf" : "html",
       status: "ready",
-      snapshot: {
-        project: {
-          id: project.data.id,
-          name: project.data.name,
-          brandName: project.data.brandName,
-          domain: project.data.domain,
-        },
-        metrics,
-        semanticCoverage: latestCoverage,
-        semanticNebula,
-        opportunities,
-        questionTerritory,
-        alerts,
-      },
+      snapshot,
       html: [
         `<h1>${title}</h1>`,
-        `<p>AI Visibility Score: ${metrics.metrics.aiVisibilityScore.toFixed(2)}</p>`,
-        `<h2>Semantic Nebula Summary</h2>`,
-        `<p>${summarySentence(semanticNebula?.summaryJson, "Semantic nebula snapshot is ready.")}</p>`,
-        `<h2>Long-tail Opportunity Summary</h2>`,
-        `<p>${summarySentence(opportunities?.summaryJson, "Long-tail opportunity snapshot is ready.")}</p>`,
-        `<h2>Question Territory Map</h2>`,
-        `<p>${summarySentence(questionTerritory?.summaryJson, "Question territory snapshot is ready.")}</p>`,
+        `<p>AI Visibility Score: ${visibilityScore.toFixed(2)}</p>`,
+        `<p>Scores and recommendations in this report are backed by the latest completed metric snapshot.</p>`,
       ].join(""),
     },
   });
@@ -116,12 +78,22 @@ export const POST = withApiTrace<Context>({ subsystem: "report", operation: "rep
   return NextResponse.json({ report }, { status: 201 });
 });
 
-function summarySentence(value: unknown, fallback: string) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
-  const record = value as Record<string, unknown>;
-  const parts = Object.entries(record)
-    .filter(([, item]) => typeof item === "string" || typeof item === "number")
-    .slice(0, 4)
-    .map(([key, item]) => `${key}: ${String(item)}`);
-  return parts.length ? parts.join(" · ") : fallback;
+function visibilityScoreFromSnapshot(snapshot: unknown) {
+  const metrics = metricsRecord(snapshot);
+  const inner = metrics.metrics && typeof metrics.metrics === "object" && !Array.isArray(metrics.metrics)
+    ? metrics.metrics as Record<string, unknown>
+    : {};
+  return typeof inner.aiVisibilityScore === "number" ? inner.aiVisibilityScore : 0;
+}
+
+function runIdFromSnapshot(snapshot: unknown) {
+  const metrics = metricsRecord(snapshot);
+  return typeof metrics.runId === "string" ? metrics.runId : null;
+}
+
+function metricsRecord(snapshot: unknown) {
+  const record = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot) ? snapshot as Record<string, unknown> : {};
+  return record.metrics && typeof record.metrics === "object" && !Array.isArray(record.metrics)
+    ? record.metrics as Record<string, unknown>
+    : {};
 }

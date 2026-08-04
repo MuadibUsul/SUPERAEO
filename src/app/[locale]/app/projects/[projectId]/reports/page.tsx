@@ -10,21 +10,44 @@ import { StatusCallout } from "@/components/ui/status-callout";
 import { getCognitionBriefCopy } from "@/i18n/cognition-brief";
 import { normalizeLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
+import { getProofCopy } from "@/i18n/proof-copy";
 import { requirePageSession } from "@/server/auth/session";
 import { getProject } from "@/server/data/projects";
 import { getPrisma } from "@/server/db";
-import { buildCognitionBriefView } from "@/server/dashboard/cognition-brief";
-import { listExperimentSummaries, computeVisibilityOutcomeCorrelation } from "@/server/analysis/proof-service";
+import { buildCognitionBriefView, type CognitionBriefViewModel } from "@/server/dashboard/cognition-brief";
+import {
+  listExperimentSummaries,
+  computeVisibilityOutcomeCorrelation,
+  DEFAULT_OUTCOME_METRIC,
+  type ExperimentSummary,
+  type OutcomeCorrelation,
+} from "@/server/analysis/proof-service";
 import { getCognitionTrend, type CognitionTrend, type DriftSignal } from "@/server/analysis/trend-service";
-import { getEntityProfile, getEntityMetricLabel } from "@/server/entity/entity-profiles";
+import { getEntityProfile, getEntityMetricLabel, type EntityMetricKey } from "@/server/entity/entity-profiles";
+import { getLatestCipMetricBundle, type CipMetricBundle, type ModelBreakdown } from "@/server/metrics/cip-metrics";
+import { getSnapshotBrief } from "@/server/report/report-snapshot";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = { params: Promise<{ locale: string; projectId: string }> };
 
+type ReportEvidenceResponse = {
+  id: string;
+  query: { queryText: string };
+  provider: { name: string } | null;
+  platform: string;
+  model: string;
+  normalizedAnswer: string | null;
+  rawResponse: string;
+};
+
 function copyFor(locale: string) {
   const zh = locale === "zh-CN";
   return {
+    modelComparison: zh ? "模型对比" : "Model comparison",
+    singleModelScope: zh
+      ? "当前证据范围：单模型采样。启用多模型矩阵后会显示各模型差异。"
+      : "Evidence scope: single-model sampling. Enable a model matrix to compare models here.",
     title: zh ? "认知报告" : "Cognition Report",
     subtitle: zh ? "AI 当前如何理解你 —— 每个结论都可追溯到证据。" : "How AI understands you right now — every claim traces to evidence.",
     generatedOn: zh ? "生成于" : "Generated",
@@ -55,11 +78,7 @@ function copyFor(locale: string) {
     whoOwns: zh ? "谁占着" : "Who owns it",
     whatBuild: zh ? "该做什么" : "What to build",
     proof: zh ? "证明：是你改好的，不是模型漂移" : "Proof: your impact, not model drift",
-    netLift: zh ? "净提升（已扣除漂移）" : "Net lift (drift removed)",
-    significant: zh ? "统计显著" : "Significant",
-    notSignificant: zh ? "未达显著" : "Not significant",
     correlation: zh ? "与真实业务结果相关性" : "Correlation with real outcomes",
-    leadsBy: (n: number) => (zh ? `认知领先结果约 ${n} 天` : `Cognition leads by ~${n} days`),
     noProof: zh ? "运行一次受控实验后，这里会出现因果证明。" : "Run a controlled experiment to populate causal proof here.",
     appendix: zh ? "证据附录" : "Evidence appendix",
     appendixHint: zh ? "结论背后的原始 AI 回答样本。" : "Raw AI answer samples behind the findings.",
@@ -74,6 +93,7 @@ export default async function ReportsPage({ params }: PageProps) {
   const dictionary = getDictionary(locale);
   const copy = copyFor(locale);
   const briefCopy = getCognitionBriefCopy(locale);
+  const proofCopy = getProofCopy(locale);
   const session = await requirePageSession(locale);
   const state = await getProject(projectId, session);
 
@@ -90,29 +110,80 @@ export default async function ReportsPage({ params }: PageProps) {
   const subject = project.subjects[0];
   const subjectName = subject?.displayName ?? project.brandName;
   const prisma = getPrisma();
+  const latestReport = await prisma.report.findFirst({
+    where: { projectId, status: "ready" },
+    orderBy: { createdAt: "desc" },
+  });
+  const reportSnapshot = asRecord(latestReport?.snapshot);
 
-  const [brief, latestNebula, opportunitySnapshot, experiments, correlation, responses, trend] = await Promise.all([
-    buildCognitionBriefView({ projectId, subjectId: subject?.id, subjectName, locale }),
-    prisma.semanticNebulaSnapshot.findFirst({
-      where: { projectId, ...(subject ? { subjectId: subject.id } : {}), scope: "OVERALL" },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.longTailOpportunitySnapshot.findFirst({
-      where: { projectId, ...(subject ? { subjectId: subject.id } : {}) },
-      orderBy: { createdAt: "desc" },
-    }),
-    listExperimentSummaries(projectId),
-    computeVisibilityOutcomeCorrelation(projectId, "ai_referral_sessions"),
-    prisma.aIResponse.findMany({
-      where: { run: { projectId } },
-      include: { query: true, provider: { select: { name: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    }),
-    getCognitionTrend({ projectId, subjectId: subject?.id, locale }),
-  ]);
+  let metricsBundle: CipMetricBundle;
+  let brief: CognitionBriefViewModel;
+  let latestNebula: { nodeJson?: unknown } | null;
+  let opportunitySnapshot: { opportunityJson?: unknown } | null;
+  let experiments: ExperimentSummary[];
+  let correlation: OutcomeCorrelation | null;
+  let responses: ReportEvidenceResponse[];
+  let trend: CognitionTrend;
+
+  if (isReportSnapshot(reportSnapshot)) {
+    metricsBundle = metricBundleFromSnapshot(reportSnapshot.metrics) ?? (await getLatestCipMetricBundle(projectId, subject?.id));
+    brief = getSnapshotBrief(reportSnapshot, locale) as unknown as CognitionBriefViewModel;
+    latestNebula = asNullableRecord(reportSnapshot.semanticNebula);
+    opportunitySnapshot = asNullableRecord(reportSnapshot.opportunities);
+    experiments = asArray(reportSnapshot.experiments) as ExperimentSummary[];
+    correlation = asNullableRecord(reportSnapshot.correlation) as OutcomeCorrelation | null;
+    responses = asArray(reportSnapshot.responses).map(toSnapshotResponse);
+    const snapshotTrend = asNullableRecord(asRecord(reportSnapshot.trendByLocale)[locale]);
+    trend = snapshotTrend
+      ? (snapshotTrend as unknown as CognitionTrend)
+      : await getCognitionTrend({ projectId, subjectId: subject?.id, locale });
+  } else {
+    const [
+      freshMetrics,
+      freshBrief,
+      freshNebula,
+      freshOpportunitySnapshot,
+      freshExperiments,
+      freshCorrelation,
+      freshResponses,
+      freshTrend,
+    ] = await Promise.all([
+      getLatestCipMetricBundle(projectId, subject?.id),
+      buildCognitionBriefView({ projectId, subjectId: subject?.id, subjectName, locale }),
+      prisma.semanticNebulaSnapshot.findFirst({
+        where: { projectId, ...(subject ? { subjectId: subject.id } : {}), scope: "OVERALL" },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.longTailOpportunitySnapshot.findFirst({
+        where: { projectId, ...(subject ? { subjectId: subject.id } : {}) },
+        orderBy: { createdAt: "desc" },
+      }),
+      listExperimentSummaries(projectId),
+      computeVisibilityOutcomeCorrelation(projectId, DEFAULT_OUTCOME_METRIC),
+      prisma.aIResponse.findMany({
+        where: { run: { projectId } },
+        include: { query: true, provider: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+      getCognitionTrend({ projectId, subjectId: subject?.id, locale }),
+    ]);
+    metricsBundle = freshMetrics;
+    brief = freshBrief;
+    latestNebula = freshNebula;
+    opportunitySnapshot = freshOpportunitySnapshot;
+    experiments = freshExperiments;
+    correlation = freshCorrelation;
+    responses = freshResponses;
+    trend = freshTrend;
+  }
 
   const entityProfile = getEntityProfile(subject?.entityType);
+  const primaryMetricRows = entityProfile.primaryMetrics.map((key) => ({
+    key,
+    label: getEntityMetricLabel(key, locale),
+    value: entityMetricValue(key, metricsBundle),
+  }));
   const verdictLens = entityProfile.verdictLead[locale].replace("{subject}", subjectName);
   const topTerms = topNebulaTerms(latestNebula?.nodeJson, 8);
   const opportunities = parseOpportunities(opportunitySnapshot?.opportunityJson).slice(0, 4);
@@ -133,10 +204,9 @@ export default async function ReportsPage({ params }: PageProps) {
       <article className="mx-auto w-full max-w-4xl space-y-5">
         {/* Cover */}
         <header className="panel-strong relative overflow-hidden p-7">
-          <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[radial-gradient(circle,oklch(0.85_0.15_85/18%),transparent_70%)] blur-2xl" aria-hidden />
           <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div>
-              <Badge variant="outline" className="gap-1.5 border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]">
+              <Badge variant="outline" className="gap-1.5 border-primary/20 bg-primary/10 text-primary">
                 <Sparkles className="h-3 w-3" />
                 {subjectName}
               </Badge>
@@ -151,12 +221,12 @@ export default async function ReportsPage({ params }: PageProps) {
 
         {/* 1. Verdict */}
         <Section index={1} title={copy.verdict}>
-          <p className="mb-3 text-xs uppercase tracking-wide text-[oklch(0.82_0.13_205)]">{verdictLens}</p>
+          <p className="mb-3 text-xs uppercase tracking-wide text-cyan">{verdictLens}</p>
           <p className="text-xl font-medium leading-8 text-foreground md:text-2xl">{brief.summary.headline}</p>
           <p className="mt-2 text-sm text-dim">{brief.summary.subline}</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <Callout tone="0.74 0.18 12" icon={<AlertTriangle className="h-4 w-4" />} label={copy.biggestRisk} body={brief.risks[0]?.message ?? entityProfile.topRisk[locale]} />
-            <Callout tone="0.82 0.15 162" icon={<Target className="h-4 w-4" />} label={copy.topMove} body={brief.opportunities[0]?.title ?? copy.none} />
+            <Callout tone="var(--danger)" icon={<AlertTriangle className="h-4 w-4" />} label={copy.biggestRisk} body={brief.risks[0]?.message ?? entityProfile.topRisk[locale]} />
+            <Callout tone="var(--success)" icon={<Target className="h-4 w-4" />} label={copy.topMove} body={brief.opportunities[0]?.title ?? copy.none} />
           </div>
         </Section>
 
@@ -173,6 +243,12 @@ export default async function ReportsPage({ params }: PageProps) {
               <ScoreTile key={score.key} label={score.label} value={score.value} />
             ))}
           </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {primaryMetricRows.map((score) => (
+              <ScoreTile key={score.key} label={score.label} value={score.value} />
+            ))}
+          </div>
+          <ModelComparison rows={metricsBundle.modelBreakdown} copy={copy} />
         </Section>
 
         {/* 3. Cognition over time */}
@@ -203,8 +279,8 @@ export default async function ReportsPage({ params }: PageProps) {
               {topTerms.map((term) => (
                 <div key={term.term} className="flex items-center gap-3">
                   <span className="w-40 shrink-0 truncate text-sm text-dim">{term.term}</span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[oklch(0.92_0.04_255/10%)]">
-                    <div className="h-full rounded-full" style={{ width: `${term.gravity}%`, background: `oklch(${toneForTerm(term)})` }} />
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full" style={{ width: `${term.gravity}%`, background: toneForTerm(term) }} />
                   </div>
                   <span className="w-8 shrink-0 text-right font-mono text-xs text-faint">{term.gravity}</span>
                 </div>
@@ -212,18 +288,18 @@ export default async function ReportsPage({ params }: PageProps) {
             </div>
           ) : null}
           <div className="grid gap-3 md:grid-cols-3">
-            <TermGroup title={copy.fieldStrong} items={group(brief.highlights, "positiveTerms")} tone="0.82 0.15 162" />
-            <TermGroup title={copy.fieldCompetitor} items={group(brief.highlights, "competitorTerms")} tone="0.85 0.15 85" />
-            <TermGroup title={copy.fieldMissing} items={group(brief.highlights, "missingTerms")} tone="0.76 0.16 295" />
+            <TermGroup title={copy.fieldStrong} items={group(brief.highlights, "positiveTerms")} tone="var(--success)" />
+            <TermGroup title={copy.fieldCompetitor} items={group(brief.highlights, "competitorTerms")} tone="var(--warning)" />
+            <TermGroup title={copy.fieldMissing} items={group(brief.highlights, "missingTerms")} tone="var(--violet)" />
           </div>
         </Section>
 
         {/* 5. Strengths / Risks / Gaps */}
         <Section index={5} title={`${copy.strengths} · ${copy.risks} · ${copy.gaps}`}>
           <div className="grid gap-3 md:grid-cols-3">
-            <Column title={copy.strengths} tone="0.82 0.15 162" items={group(brief.highlights, "positiveTerms")} />
-            <Column title={copy.risks} tone="0.74 0.18 12" items={brief.risks.map((r) => r.message)} />
-            <Column title={copy.gaps} tone="0.76 0.16 295" items={group(brief.highlights, "missingTerms")} />
+            <Column title={copy.strengths} tone="var(--success)" items={group(brief.highlights, "positiveTerms")} />
+            <Column title={copy.risks} tone="var(--danger)" items={brief.risks.map((r) => r.message)} />
+            <Column title={copy.gaps} tone="var(--violet)" items={group(brief.highlights, "missingTerms")} />
           </div>
         </Section>
 
@@ -237,7 +313,7 @@ export default async function ReportsPage({ params }: PageProps) {
                 <article key={opp.id} className="panel-inset p-4">
                   <div className="flex items-start justify-between gap-3">
                     <h4 className="text-sm font-medium text-foreground">{opp.question}</h4>
-                    <span className="shrink-0 rounded-full border border-[oklch(0.85_0.15_85/25%)] px-2 py-0.5 font-mono text-xs text-[oklch(0.85_0.15_85)]">
+                    <span className="shrink-0 rounded-full border border-warning/30 px-2 py-0.5 font-mono text-xs text-warning">
                       {opp.priority} · {opp.lop}
                     </span>
                   </div>
@@ -259,11 +335,11 @@ export default async function ReportsPage({ params }: PageProps) {
               {experiment?.result ? (
                 <div className="panel-inset p-5">
                   <div className="flex items-center gap-2 text-sm text-dim">
-                    <FlaskConical className="h-4 w-4 text-[oklch(0.82_0.13_205)]" />
+                    <FlaskConical className="h-4 w-4 text-cyan" />
                     {experiment.name}
                   </div>
                   <div className="mt-3 flex items-end gap-3">
-                    <span className="font-mono text-3xl font-semibold text-[oklch(0.82_0.15_162)]">
+                    <span className="font-mono text-3xl font-semibold text-success">
                       {experiment.result.netLift >= 0 ? "+" : ""}
                       {Math.round(experiment.result.netLift * 100)}
                       <span className="text-lg">pts</span>
@@ -272,25 +348,25 @@ export default async function ReportsPage({ params }: PageProps) {
                       variant="outline"
                       className={
                         experiment.result.significant
-                          ? "mb-1 border-[oklch(0.82_0.15_162/30%)] bg-[oklch(0.82_0.15_162/10%)] text-[oklch(0.82_0.15_162)]"
+                          ? "mb-1 border-success/30 bg-success/10 text-success"
                           : "mb-1 border-border bg-secondary text-faint"
                       }
                     >
-                      {experiment.result.significant ? copy.significant : copy.notSignificant}
+                      {experiment.result.significant ? proofCopy.significant : proofCopy.notSignificant}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-xs text-faint">{copy.netLift} · p {experiment.result.pValue < 0.001 ? "<0.001" : experiment.result.pValue.toFixed(3)}</p>
+                  <p className="mt-1 text-xs text-faint">{proofCopy.netLift} · p {experiment.result.pValue < 0.001 ? "<0.001" : experiment.result.pValue.toFixed(3)}</p>
                 </div>
               ) : null}
               {correlation ? (
                 <div className="panel-inset p-5">
                   <div className="flex items-center gap-2 text-sm text-dim">
-                    <TrendingUp className="h-4 w-4 text-[oklch(0.82_0.15_162)]" />
+                    <TrendingUp className="h-4 w-4 text-success" />
                     {copy.correlation}
                   </div>
-                  <div className="mt-3 font-mono text-3xl font-semibold text-[oklch(0.82_0.15_162)]">r = {correlation.sameDayCorrelation.toFixed(2)}</div>
+                  <div className="mt-3 font-mono text-3xl font-semibold text-success">r = {correlation.sameDayCorrelation.toFixed(2)}</div>
                   <p className="mt-1 text-xs text-faint">
-                    {correlation.lag.bestLag > 0 ? copy.leadsBy(correlation.lag.bestLag) : ""} · {correlation.sourceName ?? ""}
+                    {correlation.lag.bestLag > 0 ? proofCopy.leadsBy(correlation.lag.bestLag) : ""} · {correlation.sourceName ?? ""}
                   </p>
                 </div>
               ) : null}
@@ -308,7 +384,7 @@ export default async function ReportsPage({ params }: PageProps) {
             ) : (
               brief.nextActions.map((action, i) => (
                 <div key={action} className="flex items-start gap-3 text-sm leading-6 text-dim">
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[oklch(0.85_0.15_85/14%)] font-mono text-[11px] text-[oklch(0.85_0.15_85)]">{i + 1}</span>
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 font-mono text-[11px] text-primary">{i + 1}</span>
                   {action}
                 </div>
               ))
@@ -345,7 +421,7 @@ function Section({ index, title, action, children }: { index: number; title: str
     <section className="panel p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-3 text-base font-semibold text-foreground">
-          <span className="flex size-6 items-center justify-center rounded-md bg-[oklch(0.85_0.15_85/14%)] font-mono text-xs text-[oklch(0.85_0.15_85)]">{index}</span>
+          <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 font-mono text-xs text-primary">{index}</span>
           {title}
         </h3>
         {action}
@@ -360,7 +436,11 @@ function TrendBlock({ trend, copy, locale }: { trend: CognitionTrend; copy: Retu
     locale === "zh-CN"
       ? { visibility: "AI 可见度", mention: "提及率", recommendation: "推荐占比", citation: "引用率" }
       : { visibility: "AI visibility", mention: "Mention", recommendation: "Recommendation", citation: "Citation" };
-  const sev: Record<DriftSignal["severity"], string> = { positive: "0.82 0.15 162", watch: "0.85 0.15 85", negative: "0.74 0.18 12" };
+  const sev: Record<DriftSignal["severity"], string> = {
+    positive: "var(--success)",
+    watch: "var(--warning)",
+    negative: "var(--danger)",
+  };
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
@@ -373,11 +453,11 @@ function TrendBlock({ trend, copy, locale }: { trend: CognitionTrend; copy: Retu
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {trend.metrics.map((m) => {
             const up = m.delta > 0;
-            const tone = m.delta === 0 ? "0.74 0.03 255" : up ? "0.82 0.15 162" : "0.74 0.18 12";
+            const tone = m.delta === 0 ? "var(--muted-foreground)" : up ? "var(--success)" : "var(--danger)";
             return (
               <div key={m.key} className="rounded-lg border border-border bg-card/40 p-2">
                 <div className="text-[10px] text-faint">{labels[m.key]}</div>
-                <div className="mt-0.5 font-mono text-sm font-semibold" style={{ color: `oklch(${tone})` }}>
+                <div className="mt-0.5 font-mono text-sm font-semibold" style={{ color: tone }}>
                   {up ? "+" : ""}{m.delta}<span className="text-[10px]">pts</span>
                 </div>
               </div>
@@ -396,7 +476,10 @@ function TrendBlock({ trend, copy, locale }: { trend: CognitionTrend; copy: Retu
               <div
                 key={signal.id}
                 className="rounded-lg border p-2.5 text-xs leading-5"
-                style={{ borderColor: `oklch(${sev[signal.severity]} / 0.22)`, background: `oklch(${sev[signal.severity]} / 0.06)`, color: "oklch(0.97 0.01 250 / 0.85)" }}
+                style={{
+                  borderColor: `color-mix(in oklab, ${sev[signal.severity]} 22%, transparent)`,
+                  background: `color-mix(in oklab, ${sev[signal.severity]} 6%, transparent)`,
+                }}
               >
                 {signal.message}
               </div>
@@ -424,20 +507,26 @@ function TrendSparkline({ values }: { values: number[] }) {
     <svg viewBox={`0 0 ${width} ${height}`} className="mt-2 h-24 w-full" preserveAspectRatio="none" role="img" aria-label="visibility trend">
       <defs>
         <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="oklch(0.82 0.15 162 / 0.32)" />
-          <stop offset="100%" stopColor="oklch(0.82 0.15 162 / 0)" />
+          <stop offset="0%" stopColor="color-mix(in oklab, var(--success) 32%, transparent)" />
+          <stop offset="100%" stopColor="color-mix(in oklab, var(--success) 0%, transparent)" />
         </linearGradient>
       </defs>
       <path d={area} fill="url(#trendFill)" />
-      <path d={line} fill="none" stroke="oklch(0.82 0.15 162)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      <path d={line} fill="none" stroke="var(--success)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 }
 
 function Callout({ tone, icon, label, body }: { tone: string; icon: React.ReactNode; label: string; body: string }) {
   return (
-    <div className="rounded-lg border p-4" style={{ borderColor: `oklch(${tone} / 0.22)`, background: `oklch(${tone} / 0.06)` }}>
-      <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: `oklch(${tone})` }}>
+    <div
+      className="rounded-lg border p-4"
+      style={{
+        borderColor: `color-mix(in oklab, ${tone} 22%, transparent)`,
+        background: `color-mix(in oklab, ${tone} 6%, transparent)`,
+      }}
+    >
+      <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: tone }}>
         {icon}
         {label}
       </div>
@@ -448,13 +537,55 @@ function Callout({ tone, icon, label, body }: { tone: string; icon: React.ReactN
 
 function ScoreTile({ label, value }: { label: string; value: number | null }) {
   const pct = value === null ? null : Math.max(0, Math.min(100, Math.round(value * 100)));
-  const tone = pct === null ? "0.74 0.03 255" : pct >= 66 ? "0.82 0.15 162" : pct >= 40 ? "0.85 0.15 85" : "0.74 0.18 12";
+  const tone =
+    pct === null ? "var(--muted-foreground)" : pct >= 66 ? "var(--success)" : pct >= 40 ? "var(--warning)" : "var(--danger)";
   return (
     <div className="panel-inset p-3">
       <div className="text-xs text-faint">{label}</div>
-      <div className="mt-2 font-mono text-2xl font-semibold tabular-nums" style={{ color: `oklch(${tone})` }}>
+      <div className="mt-2 font-mono text-2xl font-semibold tabular-nums" style={{ color: tone }}>
         {pct === null ? "-" : pct}
       </div>
+    </div>
+  );
+}
+
+function ModelComparison({ rows, copy }: { rows: ModelBreakdown[]; copy: ReturnType<typeof copyFor> }) {
+  if (rows.length < 2) {
+    return <p className="mt-4 text-xs leading-5 text-faint">{copy.singleModelScope}</p>;
+  }
+
+  return (
+    <div className="mt-5 panel-inset p-4">
+      <div className="mb-3 text-sm font-medium text-foreground">{copy.modelComparison}</div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {rows.slice(0, 4).map((row) => (
+          <div key={row.modelKey} className="rounded-lg border border-border bg-card/40 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-foreground">{row.providerName ?? row.platform}</div>
+                <div className="mt-0.5 text-xs text-faint">{row.model}</div>
+              </div>
+              <span className="font-mono text-[11px] text-faint">{row.sampleCount}</span>
+            </div>
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              <MiniMetric label="Mention" value={row.mentionRate} />
+              <MiniMetric label="Rec" value={row.recommendationShare} />
+              <MiniMetric label="Cite" value={row.citationRate} />
+              <MiniMetric label="Acc" value={row.accuracyScore} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: number }) {
+  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
+  return (
+    <div>
+      <div className="text-[10px] uppercase text-faint">{label}</div>
+      <div className="mt-1 font-mono text-sm font-semibold text-dim">{pct}</div>
     </div>
   );
 }
@@ -462,7 +593,7 @@ function ScoreTile({ label, value }: { label: string; value: number | null }) {
 function TermGroup({ title, items, tone }: { title: string; items: string[]; tone: string }) {
   return (
     <div className="panel-inset p-4">
-      <div className="text-xs font-medium" style={{ color: `oklch(${tone})` }}>{title}</div>
+      <div className="text-xs font-medium" style={{ color: tone }}>{title}</div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {items.length === 0 ? <span className="text-xs text-faint">—</span> : items.map((item) => (
           <span key={item} className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-dim">{item}</span>
@@ -476,13 +607,13 @@ function Column({ title, tone, items }: { title: string; tone: string; items: st
   return (
     <div className="panel-inset p-4">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <span className="size-2 rounded-full" style={{ background: `oklch(${tone})` }} />
+        <span className="size-2 rounded-full" style={{ background: tone }} />
         {title}
       </div>
       <ul className="mt-3 space-y-2">
         {items.length === 0 ? <li className="text-xs text-faint">—</li> : items.slice(0, 5).map((item, i) => (
           <li key={`${item}-${i}`} className="flex items-start gap-2 text-xs leading-5 text-dim">
-            <Check className="mt-0.5 h-3 w-3 shrink-0" style={{ color: `oklch(${tone})` }} />
+            <Check className="mt-0.5 h-3 w-3 shrink-0" style={{ color: tone }} />
             {item}
           </li>
         ))}
@@ -520,10 +651,10 @@ function topNebulaTerms(value: unknown, limit: number): NebTerm[] {
 }
 
 function toneForTerm(term: NebTerm): string {
-  if (term.context.competitorContext) return "0.85 0.15 85";
-  if (term.context.missingDesired) return "0.76 0.16 295";
-  if (term.context.riskContext) return "0.74 0.18 12";
-  return "0.82 0.15 162";
+  if (term.context.competitorContext) return "var(--warning)";
+  if (term.context.missingDesired) return "var(--violet)";
+  if (term.context.riskContext) return "var(--danger)";
+  return "var(--success)";
 }
 
 type Opp = { id: string; question: string; scenario: string; priority: string; lop: number; competitors: string[]; assets: string[] };
@@ -546,4 +677,77 @@ function parseOpportunities(value: unknown): Opp[] {
 
 function group(highlights: Array<{ key: string; items: string[] }>, key: string): string[] {
   return highlights.find((h) => h.key === key)?.items ?? [];
+}
+
+function entityMetricValue(key: EntityMetricKey, bundle: CipMetricBundle) {
+  switch (key) {
+    case "recognition":
+      return bundle.metrics.mentionRate;
+    case "recommendationShare":
+      return bundle.metrics.recommendationShare;
+    case "citationRate":
+      return bundle.metrics.citationRate;
+    case "accuracy":
+      return bundle.entityMetrics.factualAccuracy;
+    case "authority":
+      return bundle.entityMetrics.authority || bundle.metrics.entityVisibility;
+    case "featureAccuracy":
+      return bundle.entityMetrics.featureAccuracy;
+    case "competitorDelta":
+      return clamp01(0.5 + bundle.metrics.competitorDelta / 2);
+    case "semanticCoverage":
+      return bundle.metrics.semanticCoverage;
+  }
+}
+
+function metricBundleFromSnapshot(value: unknown): CipMetricBundle | null {
+  const record = asRecord(value);
+  return isRecord(record.metrics) && typeof record.sampleCount === "number" ? (record as unknown as CipMetricBundle) : null;
+}
+
+function toSnapshotResponse(value: unknown): ReportEvidenceResponse {
+  const record = asRecord(value);
+  const providerName = stringOrDefault(record.providerName, stringOrDefault(record.platform, ""));
+  return {
+    id: stringOrDefault(record.id, stringOrDefault(record.queryText, "response")),
+    query: { queryText: stringOrDefault(record.queryText, "") },
+    provider: providerName ? { name: providerName } : null,
+    platform: stringOrDefault(record.platform, providerName || "unknown"),
+    model: stringOrDefault(record.model, "unknown"),
+    normalizedAnswer: stringOrNull(record.normalizedAnswer),
+    rawResponse: stringOrDefault(record.rawResponse, stringOrDefault(record.normalizedAnswer, "")),
+  };
+}
+
+function isReportSnapshot(value: Record<string, unknown>) {
+  return typeof value.version === "string" && isRecord(value.briefs);
+}
+
+function asNullableRecord(value: unknown): Record<string, unknown> | null {
+  const record = asRecord(value);
+  return Object.keys(record).length > 0 ? record : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringOrDefault(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
 }

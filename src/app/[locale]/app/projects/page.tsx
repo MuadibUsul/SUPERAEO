@@ -67,14 +67,14 @@ export default async function ProjectsPage({ params }: PageProps) {
       <div className="panel-strong p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <Badge variant="outline" className="gap-1.5 border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]">
+            <Badge variant="outline" className="gap-1.5 border-primary/20 bg-primary/10 text-primary">
               <Sparkles className="h-3.5 w-3.5" />
               {copy.badge}
             </Badge>
             <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">{dictionary.app.projects}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-dim">{copy.description}</p>
           </div>
-          <Button asChild size="lg" className="glow-gold">
+          <Button asChild size="lg">
             <Link href={`/${locale}/app/projects/new`}>
               <Plus className="h-4 w-4" />
               {dictionary.app.newProject}
@@ -159,7 +159,7 @@ function PlanUsageStrip({
   return (
     <div className="panel flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex items-center gap-3">
-        <span className="rounded-lg bg-[oklch(0.85_0.15_85/14%)] px-3 py-1.5 text-sm font-semibold text-[oklch(0.85_0.15_85)]">
+        <span className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
           {planName}
         </span>
         <div>
@@ -171,7 +171,7 @@ function PlanUsageStrip({
       <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-4 lg:max-w-2xl">
         {usage.metrics.map((metric) => {
           const pct = Math.min(100, Math.round((metric.used / Math.max(1, metric.limit)) * 100));
-          const tone = metric.exceeded ? "0.74 0.18 12" : pct >= 80 ? "0.85 0.15 85" : "0.82 0.15 162";
+          const tone = metric.exceeded ? "var(--danger)" : pct >= 80 ? "var(--warning)" : "var(--success)";
           return (
             <div key={metric.key}>
               <div className="flex items-baseline justify-between gap-1 text-xs">
@@ -180,8 +180,8 @@ function PlanUsageStrip({
                   {metric.used}/{formatLimit(metric.limit, locale)}
                 </span>
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[oklch(0.92_0.04_255/10%)]">
-                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `oklch(${tone})` }} />
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone }} />
               </div>
             </div>
           );

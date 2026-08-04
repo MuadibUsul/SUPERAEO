@@ -62,12 +62,11 @@ export default async function DashboardPage({ params }: PageProps) {
       ) : null}
 
       <section className="panel-strong relative overflow-hidden p-7">
-        <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[radial-gradient(circle,oklch(0.85_0.15_85/18%),transparent_70%)] blur-2xl" aria-hidden />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-4xl">
             <Badge
               variant="outline"
-              className="gap-1.5 border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]"
+              className="gap-1.5 border-primary/20 bg-primary/10 text-primary"
             >
               <Sparkles className="h-3 w-3" />
               {brief.summary.eyebrow}
@@ -78,13 +77,13 @@ export default async function DashboardPage({ params }: PageProps) {
             <p className="mt-3 max-w-3xl text-sm leading-6 text-dim">{brief.summary.subline}</p>
           </div>
           <div className="shrink-0 rounded-2xl border border-border bg-background/30 px-5 py-4 text-right backdrop-blur">
-            <div className="eyebrow text-[oklch(0.85_0.15_85)]">{brief.summary.evidenceLevel}</div>
+            <div className="eyebrow text-primary">{brief.summary.evidenceLevel}</div>
             <div className="mt-2 text-sm text-faint">{copy.eyebrow}</div>
           </div>
         </div>
 
         <div className="relative mt-6 flex flex-wrap gap-2">
-          <Button asChild size="lg" className="glow-gold">
+          <Button asChild size="lg">
             <Link href={`/${locale}/app/projects/${projectId}/semantic-nebula`}>
               {copy.exploreNebula}
               <Sparkles className="h-4 w-4" />
@@ -128,7 +127,7 @@ export default async function DashboardPage({ params }: PageProps) {
               brief.opportunities.map((opportunity) => (
                 <article
                   key={opportunity.id}
-                  className="panel-inset p-4 transition-colors hover:border-[oklch(0.82_0.15_162/30%)]"
+                  className="panel-inset p-4 transition-colors hover:border-success/30"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -136,7 +135,7 @@ export default async function DashboardPage({ params }: PageProps) {
                       <p className="mt-2 text-xs leading-5 text-faint">{opportunity.subtitle}</p>
                     </div>
                     <div className="text-right">
-                      <div className="font-mono text-lg font-semibold text-[oklch(0.82_0.15_162)]">{opportunity.score ?? "-"}</div>
+                      <div className="font-mono text-lg font-semibold text-success">{opportunity.score ?? "-"}</div>
                       <div className="eyebrow text-faint">{opportunity.priority ?? ""}</div>
                     </div>
                   </div>
@@ -154,11 +153,11 @@ export default async function DashboardPage({ params }: PageProps) {
               <p className="text-sm text-faint">{copy.noRisks}</p>
             ) : (
               brief.risks.map((risk) => (
-                <article key={risk.id} className="rounded-lg border border-[oklch(0.74_0.18_12/18%)] bg-[oklch(0.74_0.18_12/6%)] p-4">
+                <article key={risk.id} className="rounded-lg border border-danger/20 bg-danger/5 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm leading-6 text-foreground/90">{risk.message}</p>
                     {risk.severity ? (
-                      <span className="shrink-0 rounded-full border border-[oklch(0.74_0.18_12/30%)] px-2 py-0.5 font-mono text-xs text-[oklch(0.78_0.18_12)]">
+                      <span className="shrink-0 rounded-full border border-danger/30 px-2 py-0.5 font-mono text-xs text-danger">
                         {risk.severity}
                       </span>
                     ) : null}
@@ -176,7 +175,7 @@ export default async function DashboardPage({ params }: PageProps) {
             ) : (
               brief.nextActions.map((action, index) => (
                 <article key={action} className="panel-inset flex items-start gap-3 p-4 text-sm leading-6 text-dim">
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[oklch(0.85_0.15_85/14%)] font-mono text-[11px] text-[oklch(0.85_0.15_85)]">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 font-mono text-[11px] text-primary">
                     {index + 1}
                   </span>
                   {action}
@@ -200,19 +199,26 @@ function ScoreTile({
   emptyLabel: string;
 }) {
   const percent = value === null ? null : Math.max(0, Math.min(100, Math.round(value * 100)));
-  const tone = percent === null ? "0.74 0.03 255" : percent >= 66 ? "0.82 0.15 162" : percent >= 40 ? "0.85 0.15 85" : "0.74 0.18 12";
+  const tone =
+    percent === null
+      ? "var(--muted-foreground)"
+      : percent >= 66
+        ? "var(--success)"
+        : percent >= 40
+          ? "var(--warning)"
+          : "var(--danger)";
   return (
     <Card>
       <CardContent className="p-4">
         <div className="text-sm text-dim">{label}</div>
-        <div className="mt-3 font-mono text-2xl font-semibold tabular-nums" style={{ color: `oklch(${tone})` }}>
+        <div className="mt-3 font-mono text-2xl font-semibold tabular-nums" style={{ color: tone }}>
           {percent === null ? "-" : percent}
         </div>
         <div className="mt-1 text-xs text-faint">{percent === null ? emptyLabel : `${percent}%`}</div>
-        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[oklch(0.92_0.04_255/10%)]">
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full transition-[width] duration-700"
-            style={{ width: `${percent ?? 0}%`, background: `oklch(${tone})` }}
+            style={{ width: `${percent ?? 0}%`, background: tone }}
           />
         </div>
       </CardContent>

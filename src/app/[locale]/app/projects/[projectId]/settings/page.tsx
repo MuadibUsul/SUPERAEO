@@ -56,11 +56,11 @@ export default async function SettingsPage({ params }: PageProps) {
       workflowState={project._count}
     >
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <Card className="border-white/10 bg-white/[0.045] text-white">
+        <Card>
           <CardHeader>
             <CardTitle>{copy.auditSubject}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-white/62">
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
             <Row label={copy.name} value={project.brandName} />
             <Row label={copy.website} value={project.domain} />
             <Row label={copy.category} value={project.industry} />
@@ -68,7 +68,7 @@ export default async function SettingsPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        <Card className="border-white/10 bg-white/[0.045] text-white">
+        <Card>
           <CardHeader>
             <CardTitle>{dictionary.app.advanced}</CardTitle>
           </CardHeader>
@@ -77,7 +77,7 @@ export default async function SettingsPage({ params }: PageProps) {
               <Link
                 key={segment}
                 href={`/${locale}/app/projects/${projectId}/${segment}`}
-                className="flex items-center justify-between rounded-md border border-white/10 bg-black/18 px-3 py-3 text-sm text-white/62 transition hover:bg-white/8 hover:text-white"
+                className="flex items-center justify-between rounded-md border border-border bg-muted px-3 py-3 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
               >
                 {labelFor(segment, dictionary.app)}
                 <ArrowRight className="h-4 w-4" />
@@ -92,9 +92,9 @@ export default async function SettingsPage({ params }: PageProps) {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-3 last:border-0 last:pb-0">
+    <div className="flex items-start justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0">
       <span>{label}</span>
-      <span className="text-right text-white">{value}</span>
+      <span className="text-right text-foreground">{value}</span>
     </div>
   );
 }

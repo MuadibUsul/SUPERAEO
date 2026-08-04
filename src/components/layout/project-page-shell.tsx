@@ -38,9 +38,9 @@ export function ProjectPageShell({
             {eyebrow ? (
               <Badge
                 variant="outline"
-                className="gap-1.5 border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]"
+                className="gap-1.5 border-primary/20 bg-primary/10 text-primary"
               >
-                <span className="size-1.5 rounded-full bg-[oklch(0.85_0.15_85)]" />
+                <span className="size-1.5 rounded-full bg-primary" />
                 {eyebrow}
               </Badge>
             ) : null}

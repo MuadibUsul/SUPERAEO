@@ -26,33 +26,38 @@ export function AuthForm({ mode, locale }: { mode: "login" | "signup"; locale: L
     setIsSubmitting(true);
 
     const formData = new FormData(event.currentTarget);
-    const response = await fetch(`/api/auth/${mode}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: formData.get("email"),
-        password: formData.get("password"),
-        name: formData.get("name"),
-        organizationName: formData.get("organizationName"),
-        locale,
-      }),
-    });
-    const payload = await response.json().catch(() => null);
-    setIsSubmitting(false);
+    try {
+      const response = await fetch(`/api/auth/${mode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: formData.get("email"),
+          password: formData.get("password"),
+          name: formData.get("name"),
+          organizationName: formData.get("organizationName"),
+          locale,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      setError(payload?.error ?? (isSignup ? dictionary.auth.signupError : dictionary.auth.loginError));
-      return;
+      if (!response.ok) {
+        setError(payload?.error ?? (isSignup ? dictionary.auth.signupError : dictionary.auth.loginError));
+        return;
+      }
+
+      router.push(payload.redirectTo ?? `/${locale}/app/projects`);
+    } catch {
+      setError(isSignup ? dictionary.auth.signupError : dictionary.auth.loginError);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    router.push(payload.redirectTo ?? `/${locale}/app/projects`);
   }
 
   return (
-    <Card className="w-full max-w-md border-white/10 bg-white/[0.045] text-white shadow-[0_24px_80px_rgba(0,0,0,0.22)] backdrop-blur">
+    <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle>{isSignup ? dictionary.auth.signupTitle : dictionary.auth.loginTitle}</CardTitle>
-        <CardDescription className="text-white/58">
+        <CardDescription>
           {isSignup ? dictionary.auth.signupDescription : dictionary.auth.loginDescription}
         </CardDescription>
       </CardHeader>
@@ -62,13 +67,7 @@ export function AuthForm({ mode, locale }: { mode: "login" | "signup"; locale: L
             <>
               <div className="grid gap-2">
                 <Label htmlFor="name">{dictionary.auth.name}</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  autoComplete="name"
-                  required
-                  className="border-white/12 bg-black/20 text-white"
-                />
+                <Input id="name" name="name" autoComplete="name" required />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="organizationName">{dictionary.auth.organization}</Label>
@@ -77,21 +76,13 @@ export function AuthForm({ mode, locale }: { mode: "login" | "signup"; locale: L
                   name="organizationName"
                   autoComplete="organization"
                   placeholder={dictionary.auth.organizationPlaceholder}
-                  className="border-white/12 bg-black/20 text-white placeholder:text-white/28"
                 />
               </div>
             </>
           ) : null}
           <div className="grid gap-2">
             <Label htmlFor="email">{dictionary.auth.email}</Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              className="border-white/12 bg-black/20 text-white"
-            />
+            <Input id="email" name="email" type="email" autoComplete="email" required />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password">{dictionary.auth.password}</Label>
@@ -102,15 +93,14 @@ export function AuthForm({ mode, locale }: { mode: "login" | "signup"; locale: L
               autoComplete={isSignup ? "new-password" : "current-password"}
               required
               minLength={8}
-              className="border-white/12 bg-black/20 text-white"
             />
           </div>
-          {error ? <p className="text-sm text-rose-200">{error}</p> : null}
-          <Button type="submit" className="w-full bg-amber-100 text-slate-950 hover:bg-amber-50" disabled={isSubmitting}>
+          {error ? <p className="text-sm text-danger">{error}</p> : null}
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {isSignup ? dictionary.auth.submitSignup : dictionary.auth.submitLogin}
           </Button>
-          <Button asChild variant="link" className="w-full text-white/64 hover:text-white">
+          <Button asChild variant="link" className="w-full text-muted-foreground hover:text-foreground">
             <Link href={`/${locale}/${isSignup ? "login" : "signup"}`}>
               {isSignup ? dictionary.auth.hasAccount : dictionary.auth.noAccount}
             </Link>

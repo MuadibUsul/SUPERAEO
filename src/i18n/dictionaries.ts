@@ -176,6 +176,13 @@ const zhCN = {
     proof: "效果验证",
     settings: "设置",
     advanced: "高级",
+    hubs: {
+      overview: "概览",
+      config: "配置",
+      insights: "洞察",
+      verification: "验证",
+      reports: "报告",
+    },
   },
   start: {
     badge: "AI Cognition Audit",
@@ -702,6 +709,13 @@ const en = {
     proof: "Proof",
     settings: "Settings",
     advanced: "Advanced",
+    hubs: {
+      overview: "Overview",
+      config: "Setup",
+      insights: "Insights",
+      verification: "Verification",
+      reports: "Reports",
+    },
   },
   start: {
     badge: "AI Cognition Audit",

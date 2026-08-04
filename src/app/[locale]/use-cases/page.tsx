@@ -19,7 +19,7 @@ export default async function UseCasesPage({ params }: PageProps) {
   const copy = dictionary.marketingPages.useCases;
 
   return (
-    <div className="min-h-screen bg-[#030614] text-white">
+    <div className="dark min-h-screen bg-[#030614] text-white">
       <SiteHeader locale={locale} variant="cosmic" />
       <main className="relative isolate">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_16%,rgba(251,191,36,0.14),transparent_24%),radial-gradient(circle_at_80%_24%,rgba(34,211,238,0.12),transparent_28%),linear-gradient(180deg,#030614_0%,#070b18_100%)]" />

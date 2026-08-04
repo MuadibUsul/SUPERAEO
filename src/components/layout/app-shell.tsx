@@ -58,9 +58,6 @@ export function AppShell({
   const navItems = mode === "admin" ? adminNav : userNav;
   const labels = mode === "admin" ? dictionary.admin : dictionary.app;
   const homeHref = `/${locale}${mode === "admin" ? "/admin" : "/app/projects"}`;
-  // Both the customer app and the operator console use the cosmic surface so the
-  // product feels like one platform (the audit flagged the admin/app visual split).
-  const isApp = true;
   const shellCopy =
     locale === "zh-CN"
       ? {
@@ -77,30 +74,10 @@ export function AppShell({
         };
 
   return (
-    <div
-      className={cn(
-        "relative min-h-screen text-foreground",
-        isApp ? "dark cosmic-bg" : "bg-background",
-      )}
-    >
-      {isApp ? (
-        <div className="pointer-events-none fixed inset-0 -z-10 starfield opacity-70" aria-hidden />
-      ) : null}
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-30 hidden w-68 border-r px-4 py-5 lg:block",
-          isApp ? "border-sidebar-border bg-sidebar backdrop-blur-xl" : "border-border bg-card/70",
-        )}
-      >
+    <div className="relative min-h-screen bg-background text-foreground">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-68 border-r border-sidebar-border bg-sidebar px-4 py-5 lg:block">
         <Link href={homeHref} className="group flex items-center gap-3 px-2">
-          <div
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-xl transition-transform group-hover:scale-105",
-              isApp
-                ? "bg-gradient-to-br from-gold via-cyan to-violet text-[oklch(0.18_0.04_264)] glow-gold"
-                : "bg-primary text-primary-foreground",
-            )}
-          >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-transform group-hover:scale-105">
             <Network className="h-5 w-5" />
           </div>
           <div>
@@ -132,24 +109,19 @@ export function AppShell({
                 {isActive ? (
                   <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
                 ) : null}
-                <Icon className={cn("h-4 w-4 transition-colors", isActive && isApp && "text-primary")} />
+                <Icon className={cn("h-4 w-4 transition-colors", isActive && "text-primary")} />
                 {label}
               </Link>
             );
           })}
         </nav>
-        <div className={cn("absolute inset-x-4 bottom-5 space-y-3 border-t pt-4 text-xs", isApp ? "border-sidebar-border text-faint" : "border-border text-muted-foreground")}>
+        <div className="absolute inset-x-4 bottom-5 space-y-3 border-t border-sidebar-border pt-4 text-xs text-muted-foreground">
           <p className="truncate">{session?.user.email}</p>
           <LogoutButton locale={locale} label={dictionary.nav.logout} />
         </div>
       </aside>
       <div className="lg:pl-68">
-        <header
-          className={cn(
-            "sticky top-0 z-20 border-b px-4 py-3 backdrop-blur-xl lg:hidden",
-            isApp ? "border-border bg-background/80" : "border-border bg-background/95",
-          )}
-        >
+        <header className="sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-xl lg:hidden">
           <Link href={homeHref} className="flex items-center gap-2 text-sm font-semibold">
             <Network className="h-4 w-4 text-primary" />
             {mode === "admin" ? dictionary.nav.admin : dictionary.nav.app}

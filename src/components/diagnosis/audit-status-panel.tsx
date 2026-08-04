@@ -216,33 +216,29 @@ export function AuditStatusPanel({
 
   if (isCompleted && !expanded) {
     return (
-      <section className="rounded-lg border border-emerald-200/12 bg-emerald-200/[0.06] p-4 text-white shadow-[0_24px_90px_rgba(0,0,0,0.18)] backdrop-blur">
+      <section className="rounded-lg border border-success/20 bg-success/5 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs uppercase tracking-[0.22em] text-emerald-100/80">{copy.title}</p>
-              <span className="rounded-full border border-emerald-200/20 bg-emerald-200/10 px-2.5 py-1 text-xs text-emerald-50">
+              <p className="text-xs uppercase tracking-[0.22em] text-success">{copy.title}</p>
+              <span className="rounded-full border border-success/25 bg-success/10 px-2.5 py-1 text-xs text-success">
                 {statusLabel}
               </span>
             </div>
-            <p className="mt-2 text-sm leading-6 text-white/58">{copy.compactHint}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.compactHint}</p>
             {status?.latestRun ? (
-              <p className="mt-2 text-xs text-white/40">
+              <p className="mt-2 text-xs text-faint">
                 {copy.latestRun}: {status.latestRun.status} / {status.latestRun.sampleCount}
               </p>
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             {status?.latestReport ? (
-              <Button
-                asChild
-                variant="outline"
-                className="border-white/15 bg-white/6 text-white hover:bg-white/12 hover:text-white"
-              >
+              <Button asChild variant="outline">
                 <Link href={`/${locale}/app/projects/${projectId}/reports`}>{copy.viewReport}</Link>
               </Button>
             ) : null}
-            <Button type="button" variant="outline" className="border-white/15 bg-white/6 text-white hover:bg-white/12 hover:text-white" onClick={() => setExpanded(true)}>
+            <Button type="button" variant="outline" onClick={() => setExpanded(true)}>
               <ChevronDown className="h-4 w-4" />
               {copy.expand}
             </Button>
@@ -257,51 +253,42 @@ export function AuditStatusPanel({
   }
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4 text-white shadow-[0_24px_90px_rgba(0,0,0,0.22)] backdrop-blur">
+    <section className="panel p-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs uppercase tracking-[0.22em] text-amber-200/70">{copy.title}</p>
+            <p className="eyebrow text-muted-foreground">{copy.title}</p>
             <span
               className={cn(
                 "rounded-full border px-2.5 py-1 text-xs",
                 isCompleted
-                  ? "border-emerald-200/20 bg-emerald-200/10 text-emerald-100"
+                  ? "border-success/25 bg-success/10 text-success"
                   : workerDelayed
-                    ? "border-amber-200/30 bg-amber-200/10 text-amber-100"
+                    ? "border-warning/30 bg-warning/10 text-warning"
                   : isFailed
-                    ? "border-rose-200/20 bg-rose-200/10 text-rose-100"
-                    : "border-white/10 bg-white/6 text-white/58",
+                    ? "border-danger/25 bg-danger/10 text-danger"
+                    : "border-border bg-muted text-muted-foreground",
               )}
             >
               {statusLabel}
             </span>
           </div>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/56">{copy.subtitle}</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{copy.subtitle}</p>
           {status?.latestRun ? (
-            <p className="mt-2 text-xs text-white/42">
+            <p className="mt-2 text-xs text-faint">
               {copy.latestRun}: {status.latestRun.status} / {status.latestRun.sampleCount}
             </p>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {isCompleted ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-white/15 bg-white/6 text-white hover:bg-white/12 hover:text-white"
-              onClick={() => setExpanded(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => setExpanded(false)}>
               <ChevronUp className="h-4 w-4" />
               {copy.collapse}
             </Button>
           ) : null}
           {status?.latestReport ? (
-            <Button
-              asChild
-              variant="outline"
-              className="border-white/15 bg-white/6 text-white hover:bg-white/12 hover:text-white"
-            >
+            <Button asChild variant="outline">
               <Link href={`/${locale}/app/projects/${projectId}/reports`}>{copy.viewReport}</Link>
             </Button>
           ) : null}
@@ -323,13 +310,13 @@ export function AuditStatusPanel({
       </div>
 
       {workerDelayed ? (
-        <div className="mt-4 rounded-md border border-amber-200/25 bg-amber-200/10 p-3">
+        <div className="mt-4 rounded-md border border-warning/25 bg-warning/10 p-3">
           <div className="flex gap-3">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-100" />
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-amber-50">{copy.delayed}</p>
-              <p className="mt-1 text-sm leading-6 text-white/62">{copy.delayedDescription}</p>
-              <p className="mt-2 break-all font-mono text-xs text-white/50">Trace: {status?.job?.traceId ?? "-"}</p>
+              <p className="text-sm font-medium text-foreground">{copy.delayed}</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.delayedDescription}</p>
+              <p className="mt-2 break-all font-mono text-xs text-faint">Trace: {status?.job?.traceId ?? "-"}</p>
             </div>
           </div>
         </div>
@@ -338,27 +325,27 @@ export function AuditStatusPanel({
       {showProgress ? (
         <div className="mt-4">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="flex min-w-0 items-center gap-2 text-white/82">
+            <span className="flex min-w-0 items-center gap-2 text-foreground">
               {active ? (
                 <span className="relative flex h-2 w-2 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-200/70" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-200" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
                 </span>
               ) : (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-200" />
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
               )}
               <span className="truncate font-medium">{stageLabel}</span>
             </span>
-            <span className="shrink-0 font-mono text-xs text-white/52">{Math.round(progress)}%</span>
+            <span className="shrink-0 font-mono text-xs text-faint">{Math.round(progress)}%</span>
           </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-200 via-cyan-200 to-violet-300 shadow-[0_0_18px_rgba(251,191,36,0.35)] transition-[width] duration-200 ease-out"
+              className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
               style={{ width: `${Math.max(2, Math.round(progress))}%` }}
             />
           </div>
           {active ? (
-            <p key={thought} className="mt-2 animate-fade-in text-xs text-white/55">
+            <p key={thought} className="mt-2 animate-fade-in text-xs text-muted-foreground">
               {thought}
             </p>
           ) : null}
@@ -374,30 +361,30 @@ export function AuditStatusPanel({
               className={cn(
                 "rounded-md border px-3 py-3",
                 state === "done"
-                  ? "border-emerald-200/18 bg-emerald-200/8"
+                  ? "border-success/20 bg-success/5"
                   : state === "current"
-                    ? "border-amber-200/30 bg-amber-200/10"
-                    : "border-white/10 bg-black/12",
+                    ? "border-primary/25 bg-primary/5"
+                    : "border-border bg-muted/50",
               )}
             >
               <div className="flex items-center gap-2">
                 {state === "done" ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-200" />
+                  <CheckCircle2 className="h-4 w-4 text-success" />
                 ) : state === "current" ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-amber-100" />
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 ) : isFailed ? (
-                  <XCircle className="h-4 w-4 text-white/28" />
+                  <XCircle className="h-4 w-4 text-muted-foreground/50" />
                 ) : (
-                  <Circle className="h-4 w-4 text-white/28" />
+                  <Circle className="h-4 w-4 text-muted-foreground/50" />
                 )}
-                <span className="text-sm text-white/78">{copy.stages[stage]}</span>
+                <span className="text-sm text-dim">{copy.stages[stage]}</span>
               </div>
             </div>
           );
         })}
       </div>
 
-      {status?.job?.error || error ? <p className="mt-3 text-sm text-rose-200">{error ?? status?.job?.error}</p> : null}
+      {status?.job?.error || error ? <p className="mt-3 text-sm text-danger">{error ?? status?.job?.error}</p> : null}
     </section>
   );
 }

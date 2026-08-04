@@ -2,15 +2,20 @@ import { notFound } from "next/navigation";
 import { FlaskConical, TrendingUp } from "lucide-react";
 
 import { ProjectPageShell } from "@/components/layout/project-page-shell";
+import { ExperimentWaveActions, ProofExperimentBuilder } from "@/components/proof/experiment-actions";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusCallout } from "@/components/ui/status-callout";
 import { normalizeLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
+import { getProofCopy } from "@/i18n/proof-copy";
 import { requirePageSession } from "@/server/auth/session";
 import { getProject } from "@/server/data/projects";
+import { getPrisma } from "@/server/db";
 import {
   computeVisibilityOutcomeCorrelation,
+  DEFAULT_OUTCOME_METRIC,
+  defaultExperimentMetricForEntity,
   listExperimentSummaries,
   type ExperimentSummary,
   type OutcomeCorrelation,
@@ -22,75 +27,11 @@ type PageProps = {
   params: Promise<{ locale: string; projectId: string }>;
 };
 
-function copyFor(locale: string) {
-  return locale === "zh-CN"
-    ? {
-        eyebrow: "Proof Layer",
-        title: "效果验证",
-        description:
-          "证明 AI 认知的变化来自你的干预，而不是模型自身漂移；并把 AI 可见度和真实业务结果挂钩。",
-        causalTitle: "因果验证 · 处理组 vs 对照组",
-        causalHint:
-          "把问题集分成「处理组」（执行内容干预）和「对照组」（保持不变）。对照组的变化代表模型漂移，从处理组的提升中扣掉它，剩下的才是你的功劳。",
-        treatment: "处理组",
-        control: "对照组（= 模型漂移基线）",
-        baseline: "基线",
-        retest: "复测",
-        netLift: "净提升（已扣除漂移）",
-        drift: "模型漂移",
-        significant: "统计显著",
-        notSignificant: "未达显著",
-        pValue: "p 值",
-        noExperiments: "还没有受控实验。创建一个处理/对照实验来证明干预效果。",
-        corrTitle: "真实结果相关性",
-        corrHint: "把 AI 可见度时间序列和导入的真实业务结果（如 AI 转介会话）配对，计算相关性与领先滞后。",
-        sameDay: "同日相关性 r",
-        bestLag: "最佳滞后",
-        leadsBy: (n: number) => `认知领先结果约 ${n} 天`,
-        sameDayLabel: "认知与结果同步",
-        pairedDays: "配对天数",
-        visibility: "AI 可见度",
-        outcome: "业务结果",
-        noCorrelation: "还没有足够的可见度快照或导入的业务结果来计算相关性。",
-        samples: "样本",
-      }
-    : {
-        eyebrow: "Proof Layer",
-        title: "Proof",
-        description:
-          "Prove the change in AI cognition came from your intervention — not background model drift — and tie AI visibility to real business outcomes.",
-        causalTitle: "Causal proof · treatment vs control",
-        causalHint:
-          "Split the question set into a treatment arm (intervention applied) and a control arm (left untouched). The control's movement is model drift; subtract it from the treatment gain and what remains is your effect.",
-        treatment: "Treatment",
-        control: "Control (= model-drift baseline)",
-        baseline: "Baseline",
-        retest: "Retest",
-        netLift: "Net lift (drift removed)",
-        drift: "Model drift",
-        significant: "Statistically significant",
-        notSignificant: "Not significant",
-        pValue: "p-value",
-        noExperiments: "No controlled experiments yet. Create a treatment/control experiment to prove intervention impact.",
-        corrTitle: "Real-outcome correlation",
-        corrHint: "Pairs the AI-visibility time series with imported business outcomes (e.g. AI-referral sessions) and reports correlation and lead/lag.",
-        sameDay: "Same-day correlation r",
-        bestLag: "Best lag",
-        leadsBy: (n: number) => `Cognition leads outcome by ~${n} days`,
-        sameDayLabel: "Cognition moves with outcome",
-        pairedDays: "Paired days",
-        visibility: "AI visibility",
-        outcome: "Outcome",
-        noCorrelation: "Not enough visibility snapshots or imported outcomes to compute a correlation yet.",
-        samples: "samples",
-      };
-}
-
 export default async function ProofPage({ params }: PageProps) {
   const { locale: rawLocale, projectId } = await params;
   const locale = normalizeLocale(rawLocale);
   const dictionary = getDictionary(locale);
-  const copy = copyFor(locale);
+  const copy = getProofCopy(locale);
   const session = await requirePageSession(locale);
   const state = await getProject(projectId, session);
 
@@ -103,9 +44,18 @@ export default async function ProofPage({ params }: PageProps) {
   }
   if (!state.data) notFound();
 
-  const [experiments, correlation] = await Promise.all([
+  const project = state.data;
+  const subject = project.subjects[0];
+  const prisma = getPrisma();
+  const [experiments, correlation, queries] = await Promise.all([
     listExperimentSummaries(projectId),
-    computeVisibilityOutcomeCorrelation(projectId, "ai_referral_sessions"),
+    computeVisibilityOutcomeCorrelation(projectId, DEFAULT_OUTCOME_METRIC),
+    prisma.aeoQuery.findMany({
+      where: { projectId, ...(subject ? { subjectId: subject.id } : {}) },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, queryText: true, queryType: true },
+      take: 80,
+    }),
   ]);
 
   return (
@@ -113,9 +63,9 @@ export default async function ProofPage({ params }: PageProps) {
       projectId={projectId}
       locale={locale}
       title={copy.title}
-      eyebrow={state.data.subjects[0]?.displayName ?? state.data.brandName}
+      eyebrow={subject?.displayName ?? project.brandName}
       description={copy.description}
-      workflowState={state.data._count}
+      workflowState={project._count}
     >
       <Card>
         <CardHeader>
@@ -126,10 +76,18 @@ export default async function ProofPage({ params }: PageProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="max-w-3xl text-sm leading-6 text-dim">{copy.causalHint}</p>
+          <ProofExperimentBuilder
+            projectId={projectId}
+            locale={locale}
+            queries={queries.map((query) => ({ ...query, queryType: String(query.queryType) }))}
+            defaultMetric={defaultExperimentMetricForEntity(subject?.entityType)}
+          />
           {experiments.length === 0 ? (
             <p className="text-sm text-faint">{copy.noExperiments}</p>
           ) : (
-            experiments.map((experiment) => <ExperimentCard key={experiment.id} experiment={experiment} copy={copy} />)
+            experiments.map((experiment) => (
+              <ExperimentCard key={experiment.id} experiment={experiment} projectId={projectId} locale={locale} copy={copy} />
+            ))
           )}
         </CardContent>
       </Card>
@@ -150,7 +108,17 @@ export default async function ProofPage({ params }: PageProps) {
   );
 }
 
-function ExperimentCard({ experiment, copy }: { experiment: ExperimentSummary; copy: ReturnType<typeof copyFor> }) {
+function ExperimentCard({
+  experiment,
+  projectId,
+  locale,
+  copy,
+}: {
+  experiment: ExperimentSummary;
+  projectId: string;
+  locale: string;
+  copy: ReturnType<typeof getProofCopy>;
+}) {
   const r = experiment.result;
   return (
     <article className="panel-strong p-6">
@@ -172,6 +140,13 @@ function ExperimentCard({ experiment, copy }: { experiment: ExperimentSummary; c
           </Badge>
         ) : null}
       </div>
+      <ExperimentWaveActions
+        projectId={projectId}
+        experimentId={experiment.id}
+        locale={locale}
+        hasBaseline={experiment.hasBaseline}
+        hasRetest={experiment.hasRetest}
+      />
 
       {r ? (
         <>
@@ -218,7 +193,7 @@ function ArmTrack({
   delta: number;
   samples: number;
   tone: string;
-  copy: ReturnType<typeof copyFor>;
+  copy: ReturnType<typeof getProofCopy>;
   highlight?: boolean;
 }) {
   return (
@@ -270,7 +245,7 @@ function Bar({ pre, post, tone }: { pre: number; post: number; tone: string }) {
   );
 }
 
-function CorrelationPanel({ correlation, copy }: { correlation: OutcomeCorrelation; copy: ReturnType<typeof copyFor> }) {
+function CorrelationPanel({ correlation, copy }: { correlation: OutcomeCorrelation; copy: ReturnType<typeof getProofCopy> }) {
   const leads = correlation.lag.bestLag > 0;
   return (
     <div className="grid gap-4 lg:grid-cols-[auto_1fr]">

@@ -7,7 +7,7 @@
  *  - computeVisibilityOutcomeCorrelation: pairs the AI-visibility time series
  *    with an imported business-outcome series and reports correlation + lag.
  */
-import type { ExperimentArm } from "@/generated/prisma/client";
+import type { ExperimentArm, ExperimentWaveType, Prisma, SubjectEntityType } from "@/generated/prisma/client";
 import { getPrisma } from "@/server/db";
 import {
   differenceInDifferences,
@@ -16,8 +16,100 @@ import {
   type DifferenceInDifferences,
   type LaggedCorrelation,
 } from "@/server/analysis/causal-statistics";
+import { isRecord } from "@/server/utils/coerce";
+
+export const DEFAULT_OUTCOME_METRIC = "ai_referral_sessions";
 
 type ArmProportion = { successes: number; samples: number };
+type ExperimentAssignmentInput = { queryId: string; arm: ExperimentArm };
+
+export function defaultExperimentMetricForEntity(entityType: SubjectEntityType | string | null | undefined) {
+  if (entityType === "PERSON") return "factualAccuracy";
+  if (entityType === "PRODUCT") return "featureAccuracy";
+  if (entityType === "WEBSITE") return "citationRate";
+  return "recommendationShare";
+}
+
+export async function createCognitionExperiment(input: {
+  projectId: string;
+  subjectId?: string | null;
+  name: string;
+  hypothesis?: string | null;
+  metricKey?: string | null;
+  queryIds: string[];
+  assignments?: ExperimentAssignmentInput[];
+}) {
+  const prisma = getPrisma();
+  const subject = input.subjectId
+    ? await prisma.projectSubject.findUnique({ where: { id: input.subjectId }, select: { id: true, entityType: true } })
+    : await prisma.projectSubject.findFirst({
+        where: { projectId: input.projectId, isPrimary: true },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, entityType: true },
+      });
+  const queryIds = [...new Set(input.queryIds)].filter(Boolean);
+  if (queryIds.length < 2) {
+    throw new Error("Select at least two questions for an experiment.");
+  }
+
+  const queries = await prisma.aeoQuery.findMany({
+    where: { projectId: input.projectId, id: { in: queryIds } },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (queries.length < 2) {
+    throw new Error("Experiment questions were not found for this project.");
+  }
+
+  const validQueryIds = queries.map((query) => query.id);
+  const assignments = normalizeAssignments(validQueryIds, input.assignments);
+  const treatmentCount = assignments.filter((assignment) => assignment.arm === "treatment").length;
+  const controlCount = assignments.filter((assignment) => assignment.arm === "control").length;
+  if (treatmentCount === 0 || controlCount === 0) {
+    throw new Error("Experiment needs at least one treatment and one control question.");
+  }
+
+  return prisma.cognitionExperiment.create({
+    data: {
+      projectId: input.projectId,
+      subjectId: subject?.id ?? null,
+      name: input.name,
+      hypothesis: input.hypothesis || null,
+      metricKey: input.metricKey || defaultExperimentMetricForEntity(subject?.entityType),
+      status: "draft",
+      assignments: {
+        create: assignments.map((assignment) => ({
+          queryId: assignment.queryId,
+          arm: assignment.arm,
+        })),
+      },
+    },
+    include: {
+      assignments: { include: { query: true }, orderBy: { createdAt: "asc" } },
+      waves: { include: { observations: true }, orderBy: { measuredAt: "asc" } },
+      results: { orderBy: { computedAt: "desc" }, take: 1 },
+    },
+  });
+}
+
+function normalizeAssignments(queryIds: string[], assignments?: ExperimentAssignmentInput[]) {
+  if (assignments?.length) {
+    const valid = new Set(queryIds);
+    const byQuery = new Map<string, ExperimentArm>();
+    for (const assignment of assignments) {
+      if (valid.has(assignment.queryId)) byQuery.set(assignment.queryId, assignment.arm);
+    }
+    return queryIds.map((queryId, index) => ({
+      queryId,
+      arm: byQuery.get(queryId) ?? (index % 2 === 0 ? "treatment" : "control"),
+    }));
+  }
+
+  return queryIds.map((queryId, index) => ({
+    queryId,
+    arm: index % 2 === 0 ? "treatment" as const : "control" as const,
+  }));
+}
 
 /**
  * Recompute the difference-in-differences result for an experiment from its
@@ -58,6 +150,13 @@ export async function computeExperimentResult(experimentId: string) {
       zScore: did.z,
       pValue: did.pValue,
       significant: did.significant,
+      metadata: {
+        baselineWaveId: baselineWave.id,
+        retestWaveId: latestRetest.id,
+        metricKey: experiment.metricKey,
+        baselineMeasuredAt: baselineWave.measuredAt.toISOString(),
+        retestMeasuredAt: latestRetest.measuredAt.toISOString(),
+      } as Prisma.InputJsonValue,
     },
   });
 }
@@ -77,6 +176,8 @@ export type ExperimentSummary = {
   computedAt: string | null;
   treatmentSamples: number;
   controlSamples: number;
+  hasBaseline: boolean;
+  hasRetest: boolean;
 };
 
 /** Latest persisted result per experiment for a project (recomputes if stale/missing). */
@@ -106,6 +207,7 @@ export async function listExperimentSummaries(projectId: string): Promise<Experi
           controlPre: armProportion(baseline.observations, "control"),
           controlPost: armProportion(latestRetest.observations, "control"),
         });
+        computeExperimentResult(experiment.id).catch(() => null);
         return toSummary(experiment, did, null);
       }
     }
@@ -113,8 +215,118 @@ export async function listExperimentSummaries(projectId: string): Promise<Experi
   });
 }
 
+export async function getExperimentDetail(experimentId: string) {
+  return getPrisma().cognitionExperiment.findUnique({
+    where: { id: experimentId },
+    include: {
+      assignments: { include: { query: true }, orderBy: { createdAt: "asc" } },
+      waves: { include: { observations: true, run: true }, orderBy: { measuredAt: "asc" } },
+      results: { orderBy: { computedAt: "desc" }, take: 5 },
+    },
+  });
+}
+
+export async function finalizeExperimentWavesForRun(runId: string) {
+  const prisma = getPrisma();
+  const waves = await prisma.experimentWave.findMany({
+    where: { runId },
+    include: {
+      experiment: { include: { assignments: true } },
+    },
+  });
+  if (waves.length === 0) return [];
+
+  const responses = await prisma.aIResponse.findMany({
+    where: { runId },
+    include: {
+      analysis: true,
+      citationSources: true,
+      probeResults: {
+        where: { probeFamily: "answer_extraction" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  const waveSummaries: Array<{ waveId: string; experimentId: string }> = [];
+  const experimentIds = new Set<string>();
+
+  for (const wave of waves) {
+    const armObservations = aggregateWaveObservations({
+      metricKey: wave.experiment.metricKey,
+      assignments: wave.experiment.assignments,
+      responses,
+    });
+    for (const observation of armObservations) {
+      await prisma.experimentObservation.upsert({
+        where: { waveId_arm: { waveId: wave.id, arm: observation.arm } },
+        update: { samples: observation.samples, successes: observation.successes },
+        create: {
+          waveId: wave.id,
+          arm: observation.arm,
+          samples: observation.samples,
+          successes: observation.successes,
+        },
+      });
+    }
+    await prisma.cognitionExperiment.update({
+      where: { id: wave.experimentId },
+      data: { status: wave.waveType === "baseline" ? "running" : "concluded" },
+    });
+    waveSummaries.push({ waveId: wave.id, experimentId: wave.experimentId });
+    experimentIds.add(wave.experimentId);
+  }
+
+  // Compute result once per unique experiment after all observations are persisted.
+  const resultMap = new Map<string, Awaited<ReturnType<typeof computeExperimentResult>>>();
+  for (const experimentId of experimentIds) {
+    resultMap.set(experimentId, await computeExperimentResult(experimentId));
+  }
+
+  return waveSummaries.map(({ waveId, experimentId }) => ({
+    waveId,
+    experimentId,
+    result: resultMap.get(experimentId) ?? null,
+  }));
+}
+
+export function aggregateWaveObservations(input: {
+  metricKey: string;
+  assignments: Array<{ queryId: string; arm: ExperimentArm }>;
+  responses: Array<ResponseForMetric>;
+}) {
+  const armByQuery = new Map(input.assignments.map((assignment) => [assignment.queryId, assignment.arm]));
+  const buckets: Record<ExperimentArm, { samples: number; successes: number }> = {
+    treatment: { samples: 0, successes: 0 },
+    control: { samples: 0, successes: 0 },
+  };
+
+  for (const response of input.responses) {
+    const arm = armByQuery.get(response.queryId);
+    if (!arm) continue;
+    buckets[arm].samples += 1;
+    if (responseSucceeded(input.metricKey, response)) {
+      buckets[arm].successes += 1;
+    }
+  }
+
+  return (["treatment", "control"] as const).map((arm) => ({
+    arm,
+    samples: buckets[arm].samples,
+    successes: buckets[arm].successes,
+  }));
+}
+
 function toSummary(
-  experiment: { id: string; name: string; hypothesis: string | null; metricKey: string; status: string; waves: Array<{ observations: Array<{ arm: ExperimentArm; samples: number }> }> },
+  experiment: {
+    id: string;
+    name: string;
+    hypothesis: string | null;
+    metricKey: string;
+    status: string;
+    waves: Array<{ waveType: ExperimentWaveType; observations: Array<{ arm: ExperimentArm; samples: number }> }>;
+  },
   result: DifferenceInDifferences | null,
   computedAt: string | null,
 ): ExperimentSummary {
@@ -130,6 +342,8 @@ function toSummary(
     computedAt,
     treatmentSamples,
     controlSamples,
+    hasBaseline: experiment.waves.some((wave) => wave.waveType === "baseline"),
+    hasRetest: experiment.waves.some((wave) => wave.waveType === "retest"),
   };
 }
 
@@ -161,6 +375,59 @@ function resultToDid(result: {
     pValue: result.pValue,
     significant: result.significant,
   };
+}
+
+export async function createExperimentWaveRun(input: {
+  experimentId: string;
+  waveType: ExperimentWaveType;
+  label?: string | null;
+  sampleCountPerQuery?: number;
+  queued: boolean;
+  traceId: string;
+}) {
+  const prisma = getPrisma();
+  const experiment = await prisma.cognitionExperiment.findUnique({
+    where: { id: input.experimentId },
+    include: { assignments: true, project: true },
+  });
+  if (!experiment) throw new Error("Experiment not found.");
+  if (experiment.assignments.length < 2) throw new Error("Experiment has no assigned questions.");
+
+  const selectedQueryIds = experiment.assignments.map((assignment) => assignment.queryId);
+  const sampleCountPerQuery = input.sampleCountPerQuery ?? 1;
+  const run = await prisma.samplingRun.create({
+    data: {
+      projectId: experiment.projectId,
+      subjectId: experiment.subjectId,
+      runType: input.waveType === "baseline" ? "baseline" : "retest",
+      status: input.queued ? "queued" : "draft",
+      platforms: ["openai"],
+      sampleCountPerQuery,
+      selectedQueryIds,
+      sampleCount: selectedQueryIds.length * sampleCountPerQuery,
+      samplingStrategy: {
+        source: "cognition_experiment",
+        experimentId: experiment.id,
+        waveType: input.waveType,
+        metricKey: experiment.metricKey,
+      },
+      scheduledAt: new Date(),
+      traceId: input.traceId,
+    },
+  });
+  const wave = await prisma.experimentWave.create({
+    data: {
+      experimentId: experiment.id,
+      waveType: input.waveType,
+      label: input.label || (input.waveType === "baseline" ? "Baseline" : "Retest"),
+      runId: run.id,
+    },
+  });
+  await prisma.cognitionExperiment.update({
+    where: { id: experiment.id },
+    data: { status: input.waveType === "baseline" ? "running" : "measuring" },
+  });
+  return { experiment, run, wave };
 }
 
 export type OutcomeCorrelation = {
@@ -227,3 +494,55 @@ export async function computeVisibilityOutcomeCorrelation(projectId: string, met
 function dayKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
+
+type ResponseForMetric = {
+  queryId: string;
+  analysis: { brandMentioned: boolean; brandRecommended: boolean } | null;
+  citationSources: Array<{ supportsBrand: boolean }>;
+  probeResults: Array<{ normalizedJson: unknown }>;
+};
+
+function responseSucceeded(metricKey: string, response: ResponseForMetric) {
+  const normalizedKey = metricKey.replaceAll("_", "").toLowerCase();
+  if (normalizedKey === "mentionrate" || normalizedKey === "recognition") return targetMentioned(response);
+  if (normalizedKey === "recommendationshare") return targetRecommended(response);
+  if (normalizedKey === "citationrate") return targetCited(response);
+  if (normalizedKey === "authority") return scoreFromNormalized(response, ["entityProfile", "authorityScore"]) >= 0.75;
+  if (normalizedKey === "featureaccuracy") return scoreFromNormalized(response, ["entityAccuracy", "featureAccuracy"]) >= 0.75;
+  if (normalizedKey === "factualaccuracy" || normalizedKey === "accuracy") {
+    return scoreFromNormalized(response, ["entityAccuracy", "factualAccuracy"]) >= 0.75;
+  }
+  return targetMentioned(response);
+}
+
+function targetMentioned(response: Pick<ResponseForMetric, "analysis" | "probeResults">) {
+  const normalized = normalizedResult(response);
+  if (typeof normalized.targetMentioned === "boolean") return normalized.targetMentioned;
+  return Boolean(response.analysis?.brandMentioned);
+}
+
+function targetRecommended(response: Pick<ResponseForMetric, "analysis" | "probeResults">) {
+  const normalized = normalizedResult(response);
+  if (typeof normalized.targetRecommended === "boolean") return normalized.targetRecommended;
+  return Boolean(response.analysis?.brandRecommended);
+}
+
+function targetCited(response: Pick<ResponseForMetric, "citationSources" | "probeResults">) {
+  const normalized = normalizedResult(response);
+  const citations = Array.isArray(normalized.citations) ? normalized.citations : [];
+  if (citations.some((citation) => isRecord(citation) && citation.supportsTarget === true)) return true;
+  return response.citationSources.some((source) => source.supportsBrand);
+}
+
+function scoreFromNormalized(response: Pick<ResponseForMetric, "probeResults">, path: [string, string]) {
+  const parent = normalizedResult(response)[path[0]];
+  if (!isRecord(parent)) return 0;
+  const score = parent[path[1]];
+  return typeof score === "number" && Number.isFinite(score) ? score : 0;
+}
+
+function normalizedResult(response: Pick<ResponseForMetric, "probeResults">) {
+  const value = response.probeResults[0]?.normalizedJson;
+  return isRecord(value) ? value : {};
+}
+

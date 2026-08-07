@@ -19,6 +19,13 @@ type GeneratedSemanticKeyword = {
   confidence: number;
 };
 
+// Minimum distinct semantic concepts an audit needs to proceed. The generator
+// targets 6 keyword types at ~4 each (min 24, max 26 raw); after normal
+// cross-type dedup the merged count typically lands in the low 20s, so this
+// floor must sit comfortably BELOW that band — a floor of 25 collided with the
+// generator's own ceiling and failed audits on any duplicates removed.
+const MIN_SEMANTIC_KEYWORDS_FOR_AUDIT = 18;
+
 export async function generateSemanticKeywordsForProject(input: {
   projectId: string;
   requestedByUserId?: string;
@@ -154,11 +161,15 @@ export async function generateSemanticKeywordsForProject(input: {
     },
   });
 
-  if (mergedKeywords.length < 25) {
+  if (mergedKeywords.length < MIN_SEMANTIC_KEYWORDS_FOR_AUDIT) {
     throw new CipError("语义关键词生成失败，请重试或联系管理员。", {
       errorCode: "SEMANTIC_KEYWORD_TOO_FEW_CONCEPTS",
       status: 500,
-      metadata: { rawKeywordCount: rawKeywords.length, mergedKeywordCount: mergedKeywords.length },
+      metadata: {
+        rawKeywordCount: rawKeywords.length,
+        mergedKeywordCount: mergedKeywords.length,
+        required: MIN_SEMANTIC_KEYWORDS_FOR_AUDIT,
+      },
     });
   }
 

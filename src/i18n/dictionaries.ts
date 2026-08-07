@@ -177,11 +177,11 @@ const zhCN = {
     settings: "设置",
     advanced: "高级",
     hubs: {
-      overview: "概览",
-      config: "配置",
-      insights: "洞察",
-      verification: "验证",
-      reports: "报告",
+      diagnose: "诊断",
+      cognition: "认知",
+      act: "行动",
+      prove: "证明",
+      settings: "设置",
     },
   },
   start: {
@@ -710,11 +710,11 @@ const en = {
     settings: "Settings",
     advanced: "Advanced",
     hubs: {
-      overview: "Overview",
-      config: "Setup",
-      insights: "Insights",
-      verification: "Verification",
-      reports: "Reports",
+      diagnose: "Diagnose",
+      cognition: "Cognition",
+      act: "Act",
+      prove: "Prove",
+      settings: "Settings",
     },
   },
   start: {

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, Network } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
+import { CipMark } from "@/components/brand/cip-mark";
 import { Button } from "@/components/ui/button";
 import type { Locale } from "@/i18n/config";
 import { LOCALES } from "@/i18n/config";
@@ -28,10 +29,8 @@ export function SiteHeader({
       )}
     >
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href={`/${locale}`} className="group flex items-center gap-2 font-semibold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-transform group-hover:scale-105">
-            <Network className="h-4 w-4" />
-          </span>
+        <Link href={`/${locale}`} className="group flex items-center gap-2.5 font-semibold tracking-tight">
+          <CipMark size={26} className="text-foreground transition-transform group-hover:scale-105" />
           <span>CIP</span>
         </Link>
 

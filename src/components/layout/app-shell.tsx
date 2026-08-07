@@ -16,6 +16,7 @@ import {
   Waypoints,
 } from "lucide-react";
 
+import { CipMark } from "@/components/brand/cip-mark";
 import { LogoutButton } from "@/components/auth/logout-button";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
@@ -77,9 +78,7 @@ export function AppShell({
     <div className="relative min-h-screen bg-background text-foreground">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-68 border-r border-sidebar-border bg-sidebar px-4 py-5 lg:block">
         <Link href={homeHref} className="group flex items-center gap-3 px-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-transform group-hover:scale-105">
-            <Network className="h-5 w-5" />
-          </div>
+          <CipMark size={30} className="text-foreground transition-transform group-hover:scale-105" />
           <div>
             <p className="text-sm font-semibold leading-none">
               {mode === "admin" ? shellCopy.adminTitle : shellCopy.appTitle}
@@ -123,7 +122,7 @@ export function AppShell({
       <div className="lg:pl-68">
         <header className="sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-xl lg:hidden">
           <Link href={homeHref} className="flex items-center gap-2 text-sm font-semibold">
-            <Network className="h-4 w-4 text-primary" />
+            <CipMark size={20} className="text-foreground" />
             {mode === "admin" ? dictionary.nav.admin : dictionary.nav.app}
           </Link>
         </header>

@@ -6,7 +6,11 @@ import { getCognitionTrend } from "@/server/analysis/trend-service";
 import { getPrisma } from "@/server/db";
 import { getEntityProfile } from "@/server/entity/entity-profiles";
 import { getLatestCipMetricBundle } from "@/server/metrics/cip-metrics";
+import { buildReportAnalysis } from "@/server/report/report-analysis";
+import { polishReportAnalysis } from "@/server/report/report-polish";
 import { asRecord, asRecordArray } from "@/server/utils/coerce";
+
+const REPORT_LOCALES: Locale[] = ["zh-CN", "en"];
 
 const snapshotVersion = "2026-06-21.a-layer.v1";
 
@@ -55,6 +59,37 @@ export async function buildReportSnapshot(input: {
   const opportunityItems = asRecordArray(opportunitySnapshot?.opportunityJson);
   const nebulaSummary = asRecord(latestNebula?.summaryJson);
   const opportunitySummary = asRecord(opportunitySnapshot?.summaryJson);
+
+  // Deep analysis — deterministic skeleton, AI-polished per locale (with a
+  // deterministic fallback baked into polishReportAnalysis).
+  const experimentInputs = experiments.map((item) => ({
+    name: item.name,
+    significant: Boolean(item.result?.significant),
+    netEffect: item.result?.netLift,
+    pValue: item.result?.pValue,
+  }));
+  const analysisEntries = await Promise.all(
+    REPORT_LOCALES.map(async (loc) => {
+      const skeleton = buildReportAnalysis({
+        entityType: subject?.entityType,
+        subjectName: input.subjectName,
+        bundle: metrics,
+        nebulaSummary,
+        correlation: correlation as Record<string, unknown> | null,
+        experiments: experimentInputs,
+        locale: loc,
+      });
+      const polished = await polishReportAnalysis({
+        analysis: skeleton,
+        subjectName: input.subjectName,
+        locale: loc,
+        projectId: input.projectId,
+        subjectId: input.subjectId ?? undefined,
+      });
+      return [loc, polished] as const;
+    }),
+  );
+  const analysisByLocale = Object.fromEntries(analysisEntries);
   const trendByLocale = { "zh-CN": trendZh, en: trendEn };
   const briefs = {
     "zh-CN": buildCognitionBriefViewModel({
@@ -98,6 +133,7 @@ export async function buildReportSnapshot(input: {
     entityProfile: getEntityProfile(subject?.entityType),
     metrics,
     briefs,
+    analysisByLocale,
     semanticNebula: latestNebula
       ? {
           id: latestNebula.id,

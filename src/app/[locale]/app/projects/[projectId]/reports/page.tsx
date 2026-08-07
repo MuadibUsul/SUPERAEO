@@ -26,7 +26,7 @@ import { getCognitionTrend, type CognitionTrend, type DriftSignal } from "@/serv
 import { getEntityProfile, getEntityMetricLabel, type EntityMetricKey } from "@/server/entity/entity-profiles";
 import { getLatestCipMetricBundle, type CipMetricBundle, type ModelBreakdown } from "@/server/metrics/cip-metrics";
 import { getSnapshotBrief } from "@/server/report/report-snapshot";
-import { buildReportAnalysis } from "@/server/report/report-analysis";
+import { buildReportAnalysis, type ReportAnalysis } from "@/server/report/report-analysis";
 
 export const dynamic = "force-dynamic";
 
@@ -189,20 +189,26 @@ export default async function ReportsPage({ params }: PageProps) {
   const topTerms = topNebulaTerms(latestNebula?.nodeJson, 8);
   const opportunities = parseOpportunities(opportunitySnapshot?.opportunityJson).slice(0, 4);
   const experiment = experiments.find((item) => item.result) ?? null;
-  const reportAnalysis = buildReportAnalysis({
-    entityType: subject?.entityType,
-    subjectName,
-    bundle: metricsBundle,
-    nebulaSummary: asRecord(asRecord(latestNebula).summaryJson),
-    correlation: correlation as Record<string, unknown> | null,
-    experiments: experiments.map((item) => ({
-      name: item.name,
-      significant: Boolean(item.result?.significant),
-      netEffect: item.result?.netLift,
-      pValue: item.result?.pValue,
-    })),
-    locale,
-  });
+  // Prefer the AI-polished analysis stored with the report; fall back to the
+  // deterministic skeleton for a live/preview render (no snapshot yet).
+  const storedAnalysis = asNullableRecord(asRecord(reportSnapshot.analysisByLocale)[locale]);
+  const reportAnalysis: ReportAnalysis =
+    storedAnalysis && Array.isArray(storedAnalysis.metrics)
+      ? (storedAnalysis as unknown as ReportAnalysis)
+      : buildReportAnalysis({
+          entityType: subject?.entityType,
+          subjectName,
+          bundle: metricsBundle,
+          nebulaSummary: asRecord(asRecord(latestNebula).summaryJson),
+          correlation: correlation as Record<string, unknown> | null,
+          experiments: experiments.map((item) => ({
+            name: item.name,
+            significant: Boolean(item.result?.significant),
+            netEffect: item.result?.netLift,
+            pValue: item.result?.pValue,
+          })),
+          locale,
+        });
   const analysisTone: Record<string, string> = {
     good: "var(--success)",
     warn: "var(--warning)",

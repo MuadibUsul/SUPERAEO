@@ -34,12 +34,11 @@ export default async function StartPage({ params }: PageProps) {
   }
 
   return (
-    <div className="dark cosmic-bg min-h-screen text-foreground">
-      <div className="pointer-events-none fixed inset-0 -z-10 starfield opacity-60" aria-hidden />
-      <SiteHeader locale={locale} showPrimaryCta={false} variant="cosmic" />
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader locale={locale} showPrimaryCta={false} />
       <main className="relative mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-5xl items-center px-4 py-12 sm:px-6 lg:px-8">
         <section className="panel-strong relative w-full p-6 md:p-9">
-          <Badge variant="outline" className="border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]">
+          <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
             <Sparkles className="mr-1 h-3.5 w-3.5" />
             {copy.badge}
           </Badge>
@@ -54,7 +53,7 @@ export default async function StartPage({ params }: PageProps) {
               <p className="mt-2 text-sm leading-6 text-dim">{copy.signedOutBody}</p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
-              <Button asChild size="lg" className="glow-gold">
+              <Button asChild size="lg">
                 <Link href={`/${locale}/signup`}>
                   {copy.createAccount}
                   <ArrowRight className="h-4 w-4" />

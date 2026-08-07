@@ -27,7 +27,7 @@ export function PublicNebulaHero({
         <span className="eyebrow rounded-full border border-border bg-background/30 px-3 py-1 text-dim backdrop-blur-sm">
           Cognition Intelligence Platform
         </span>
-        <h1 className="text-aurora mt-5 max-w-3xl text-4xl font-semibold leading-[1.08] tracking-tight md:text-6xl">
+        <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-[1.08] tracking-tight text-balance text-foreground md:text-6xl">
           {hero.title}
         </h1>
         <p className="mt-4 max-w-xl text-base leading-7 text-dim md:text-lg">{hero.subtitle}</p>
@@ -35,7 +35,7 @@ export function PublicNebulaHero({
 
       <div className="pointer-events-none absolute inset-x-0 bottom-6 z-20 mx-auto flex max-w-3xl flex-col items-center gap-2 px-6 text-center">
         <p className="max-w-xl text-xs leading-5 text-faint">{hero.microcopy}</p>
-        <div className="rounded-full border border-[oklch(0.85_0.15_85/22%)] bg-background/30 px-3 py-1.5 text-[11px] font-medium text-[oklch(0.85_0.15_85)] backdrop-blur-sm">
+        <div className="rounded-full border border-primary/30 bg-background/30 px-3 py-1.5 text-[11px] font-medium text-primary backdrop-blur-sm">
           {hero.demoLabel}
         </div>
       </div>

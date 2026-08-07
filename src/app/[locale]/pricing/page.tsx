@@ -30,15 +30,14 @@ export default async function PricingPage({ params }: PageProps) {
   const planName: Record<OrganizationPlan, string> = { free: planCopy.free, pro: planCopy.pro, scale: planCopy.scale };
 
   return (
-    <div className="dark cosmic-bg min-h-screen text-foreground">
-      <div className="pointer-events-none fixed inset-0 -z-10 starfield opacity-60" aria-hidden />
-      <SiteHeader locale={locale} variant="cosmic" />
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader locale={locale} />
       <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
-          <Badge variant="outline" className="gap-1.5 border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]">
+          <Badge variant="outline" className="gap-1.5 border-primary/20 bg-primary/10 text-primary">
             {zh ? "定价" : "Pricing"}
           </Badge>
-          <h1 className="text-aurora mt-5 text-4xl font-semibold leading-[1.1] tracking-tight md:text-5xl">{heroTitle}</h1>
+          <h1 className="mt-5 text-4xl font-semibold leading-[1.1] tracking-tight text-balance text-foreground md:text-5xl">{heroTitle}</h1>
           <p className="mt-4 text-base leading-7 text-dim">{heroSubtitle}</p>
         </div>
 
@@ -51,12 +50,12 @@ export default async function PricingPage({ params }: PageProps) {
                 key={planId}
                 className={
                   isRecommended
-                    ? "panel-strong relative flex flex-col p-7 ring-1 ring-[oklch(0.85_0.15_85/35%)]"
+                    ? "panel-strong relative flex flex-col p-7 ring-1 ring-primary/40"
                     : "panel relative flex flex-col p-7"
                 }
               >
                 {isRecommended ? (
-                  <span className="absolute -top-3 left-7 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground glow-gold">
+                  <span className="absolute -top-3 left-7 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm">
                     {zh ? "最受欢迎" : "Most popular"}
                   </span>
                 ) : null}
@@ -77,7 +76,7 @@ export default async function PricingPage({ params }: PageProps) {
                   asChild
                   size="lg"
                   variant={isRecommended ? "default" : "outline"}
-                  className={isRecommended ? "mt-6 glow-gold" : "mt-6"}
+                  className="mt-6"
                 >
                   <Link href={`/${locale}/start`}>
                     {planId === "free" ? (zh ? "免费开始" : "Start free") : planId === "scale" ? planCopy.contact : zh ? "升级到专业版" : "Upgrade to Pro"}
@@ -97,7 +96,7 @@ export default async function PricingPage({ params }: PageProps) {
                 <ul className="mt-6 space-y-2.5">
                   {plan.featureKeys.map((featureKey) => (
                     <li key={featureKey} className="flex items-start gap-2.5 text-sm text-dim">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[oklch(0.82_0.15_162)]" />
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                       {planCopy.features[featureKey] ?? featureKey}
                     </li>
                   ))}
@@ -109,7 +108,7 @@ export default async function PricingPage({ params }: PageProps) {
 
         <div className="panel mt-10 flex flex-col items-start gap-4 p-7 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
-            <FlaskConical className="mt-0.5 h-6 w-6 shrink-0 text-[oklch(0.85_0.15_85)]" />
+            <FlaskConical className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
             <div>
               <h3 className="text-base font-semibold text-foreground">
                 {zh ? "为什么不只是另一个 AI 排名工具？" : "Why this isn't just another AI rank tracker"}

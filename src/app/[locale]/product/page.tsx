@@ -21,19 +21,18 @@ export default async function ProductPage({ params }: PageProps) {
   const copy = dictionary.marketingPages.product;
 
   return (
-    <div className="dark cosmic-bg min-h-screen text-foreground">
-      <div className="pointer-events-none fixed inset-0 -z-10 starfield opacity-60" aria-hidden />
-      <SiteHeader locale={locale} variant="cosmic" />
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader locale={locale} />
       <main className="relative isolate">
         <section className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-6xl items-center px-4 py-12 sm:px-6 lg:px-8">
           <div className="grid w-full gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="panel-strong p-8 sm:p-10">
-              <Badge variant="outline" className="border-[oklch(0.85_0.15_85/25%)] bg-[oklch(0.85_0.15_85/10%)] text-[oklch(0.85_0.15_85)]">
+              <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
                 {copy.badge}
               </Badge>
               <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">{copy.title}</h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-dim">{copy.body}</p>
-              <Button asChild size="lg" className="mt-8 glow-gold">
+              <Button asChild size="lg" className="mt-8">
                 <Link href={`/${locale}/start`}>
                   {dictionary.nav.start}
                   <ArrowRight className="h-4 w-4" />
@@ -48,7 +47,7 @@ export default async function ProductPage({ params }: PageProps) {
                   <Card key={item.title}>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-lg text-foreground">
-                        <Icon className="h-5 w-5 text-[oklch(0.85_0.15_85)]" />
+                        <Icon className="h-5 w-5 text-primary" />
                         {item.title}
                       </CardTitle>
                     </CardHeader>

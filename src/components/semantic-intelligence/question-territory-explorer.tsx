@@ -55,16 +55,16 @@ export function QuestionTerritoryExplorer({
 
   return (
     <>
-      <div className="relative h-88 overflow-hidden rounded-2xl border border-border bg-[oklch(0.08_0.02_264)] cosmic-grid">
+      <div className="relative h-88 overflow-hidden rounded-2xl border border-border bg-muted">
         <div className="absolute inset-x-6 bottom-6 h-px bg-border" />
         <div className="absolute bottom-6 left-6 top-6 w-px bg-border" />
-        <div className="eyebrow absolute left-10 top-8 text-[oklch(0.82_0.13_205/60%)]">
+        <div className="eyebrow absolute left-10 top-8 text-cyan/80">
           {labels.quadrants.open}
         </div>
-        <div className="eyebrow absolute right-10 top-8 text-right text-[oklch(0.85_0.15_85/60%)]">
+        <div className="eyebrow absolute right-10 top-8 text-right text-gold/80">
           {labels.quadrants.stronghold}
         </div>
-        <div className="eyebrow absolute bottom-10 left-10 text-[oklch(0.82_0.15_162/55%)]">
+        <div className="eyebrow absolute bottom-10 left-10 text-success/80">
           {labels.quadrants.easyWins}
         </div>
         <div className="eyebrow absolute bottom-10 right-10 text-right text-faint">
@@ -78,7 +78,7 @@ export function QuestionTerritoryExplorer({
               key={`${item.cluster}-${item.question}`}
               type="button"
               title={item.question}
-              className="absolute rounded-full border border-white/50 transition hover:scale-110"
+              className="absolute rounded-full border border-background transition hover:scale-110"
               style={{
                 left: `${Math.max(8, Math.min(90, x))}%`,
                 top: `${Math.max(8, Math.min(86, y))}%`,
@@ -108,7 +108,7 @@ export function QuestionTerritoryExplorer({
           <button
             key={`${item.cluster}-${item.question}-card`}
             type="button"
-            className="rounded-lg border border-border bg-card p-4 text-left backdrop-blur transition-all hover:border-[oklch(0.82_0.13_205/35%)] hover:bg-accent"
+            className="rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-primary/35 hover:bg-accent"
             onClick={() => setActive(item)}
           >
             <div className="flex items-start justify-between gap-3">

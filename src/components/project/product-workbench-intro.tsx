@@ -95,10 +95,10 @@ export function ProductWorkbenchIntro({ projectCount }: { projectCount: number }
           </div>
 
           <div className="mt-7 grid gap-3 md:grid-cols-4">
-            <SignalMetric label="Target queries" value="50-100" tone="text-sky-300" />
-            <SignalMetric label="Keywords" value="25-30" tone="text-emerald-300" />
-            <SignalMetric label="Primary platform" value="OpenAI" tone="text-violet-300" />
-            <SignalMetric label="Live projects" value={String(projectCount)} tone="text-amber-300" />
+            <SignalMetric label="Target queries" value="50-100" tone="text-cyan" />
+            <SignalMetric label="Keywords" value="25-30" tone="text-emerald" />
+            <SignalMetric label="Primary platform" value="OpenAI" tone="text-violet" />
+            <SignalMetric label="Live projects" value={String(projectCount)} tone="text-gold" />
           </div>
         </div>
 
@@ -193,7 +193,7 @@ export function ProductWorkbenchIntro({ projectCount }: { projectCount: number }
           <CardContent className="space-y-3">
             {reportItems.map((item) => (
               <div key={item} className="flex items-start gap-3">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                 <span className="text-sm text-muted-foreground">{item}</span>
               </div>
             ))}
@@ -233,12 +233,12 @@ function MiniNode({
   strong?: boolean;
 }) {
   const toneClass: Record<typeof tone, string> = {
-    amber: "border-amber-500/30 bg-amber-500/10 text-amber-100",
-    sky: "border-sky-500/30 bg-sky-500/10 text-sky-100",
-    emerald: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
-    rose: "border-rose-500/30 bg-rose-500/10 text-rose-100",
-    violet: "border-violet-500/30 bg-violet-500/10 text-violet-100",
-    slate: "border-slate-500/30 bg-slate-500/10 text-slate-100",
+    amber: "border-gold/30 bg-gold/10 text-gold",
+    sky: "border-cyan/30 bg-cyan/10 text-cyan",
+    emerald: "border-emerald/30 bg-emerald/10 text-emerald",
+    rose: "border-rose/30 bg-rose/10 text-rose",
+    violet: "border-violet/30 bg-violet/10 text-violet",
+    slate: "border-border bg-muted text-muted-foreground",
   };
 
   return (

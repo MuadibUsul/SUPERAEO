@@ -95,7 +95,7 @@ export default async function ProofPage({ params }: PageProps) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="h-4 w-4 text-[oklch(0.82_0.15_162)]" />
+            <TrendingUp className="h-4 w-4 text-success" />
             {copy.corrTitle}
           </CardTitle>
         </CardHeader>
@@ -132,7 +132,7 @@ function ExperimentCard({
             variant="outline"
             className={
               r.significant
-                ? "shrink-0 gap-1.5 border-[oklch(0.82_0.15_162/30%)] bg-[oklch(0.82_0.15_162/10%)] text-[oklch(0.82_0.15_162)]"
+                ? "shrink-0 gap-1.5 border-success/30 bg-success/10 text-success"
                 : "shrink-0 gap-1.5 border-border bg-secondary text-faint"
             }
           >
@@ -153,9 +153,9 @@ function ExperimentCard({
           <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr_auto]">
             <ArmTrack label={copy.treatment} pre={r.treatmentPreRate} post={r.treatmentPostRate} delta={r.treatmentDelta} samples={experiment.treatmentSamples} tone="0.82 0.13 205" copy={copy} highlight />
             <ArmTrack label={copy.control} pre={r.controlPreRate} post={r.controlPostRate} delta={r.controlDelta} samples={experiment.controlSamples} tone="0.74 0.03 255" copy={copy} />
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-[oklch(0.82_0.15_162/25%)] bg-[oklch(0.82_0.15_162/8%)] px-6 py-4 text-center">
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-success/25 bg-success/10 px-6 py-4 text-center">
               <span className="eyebrow text-faint">{copy.netLift}</span>
-              <span className="mt-1 font-mono text-3xl font-semibold text-[oklch(0.82_0.15_162)]">
+              <span className="mt-1 font-mono text-3xl font-semibold text-success">
                 {r.netLift >= 0 ? "+" : ""}
                 {Math.round(r.netLift * 100)}
                 <span className="text-lg">pts</span>
@@ -235,10 +235,10 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 function Bar({ pre, post, tone }: { pre: number; post: number; tone: string }) {
   return (
     <div className="mt-3 space-y-1.5">
-      <div className="h-1.5 overflow-hidden rounded-full bg-[oklch(0.92_0.04_255/10%)]">
-        <div className="h-full rounded-full bg-[oklch(0.74_0.03_255/50%)]" style={{ width: `${Math.round(pre * 100)}%` }} />
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-muted-foreground/40" style={{ width: `${Math.round(pre * 100)}%` }} />
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[oklch(0.92_0.04_255/10%)]">
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${Math.round(post * 100)}%`, background: `oklch(${tone})` }} />
       </div>
     </div>
@@ -252,7 +252,7 @@ function CorrelationPanel({ correlation, copy }: { correlation: OutcomeCorrelati
       <div className="grid grid-cols-3 gap-3 lg:grid-cols-1">
         <div className="panel-inset p-4">
           <div className="text-xs text-faint">{copy.sameDay}</div>
-          <div className="mt-1 font-mono text-2xl font-semibold text-[oklch(0.82_0.15_162)]">{correlation.sameDayCorrelation.toFixed(2)}</div>
+          <div className="mt-1 font-mono text-2xl font-semibold text-success">{correlation.sameDayCorrelation.toFixed(2)}</div>
         </div>
         <div className="panel-inset p-4">
           <div className="text-xs text-faint">{copy.bestLag}</div>
@@ -267,11 +267,11 @@ function CorrelationPanel({ correlation, copy }: { correlation: OutcomeCorrelati
       <div className="panel-inset p-4">
         <div className="mb-3 flex items-center gap-4 text-xs text-faint">
           <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[oklch(0.85_0.15_85)]" />
+            <span className="h-2 w-2 rounded-full bg-primary" />
             {copy.visibility}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[oklch(0.82_0.15_162)]" />
+            <span className="h-2 w-2 rounded-full bg-success" />
             {copy.outcome} {correlation.sourceName ? `· ${correlation.sourceName}` : ""}
           </span>
         </div>
@@ -300,8 +300,8 @@ function DualSparkline({ series }: { series: Array<{ date: string; visibility: n
     series.map((s, i) => `${i === 0 ? "M" : "L"}${xs(i).toFixed(1)},${yFn(s[key]).toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-36 w-full" preserveAspectRatio="none" role="img" aria-label="visibility vs outcome">
-      <path d={path(visY, "visibility")} fill="none" stroke="oklch(0.85 0.15 85)" strokeWidth={2} strokeLinejoin="round" />
-      <path d={path(outY, "outcome")} fill="none" stroke="oklch(0.82 0.15 162)" strokeWidth={2} strokeLinejoin="round" />
+      <path d={path(visY, "visibility")} fill="none" stroke="var(--primary)" strokeWidth={2} strokeLinejoin="round" />
+      <path d={path(outY, "outcome")} fill="none" stroke="var(--success)" strokeWidth={2} strokeLinejoin="round" />
     </svg>
   );
 }

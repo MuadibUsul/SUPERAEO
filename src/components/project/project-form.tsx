@@ -125,7 +125,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
   }
 
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.045] p-4 text-white shadow-[0_30px_120px_rgba(0,0,0,0.3)] backdrop-blur md:p-6">
+    <div className="panel p-4 md:p-6">
       <div className="grid gap-2 sm:grid-cols-3">
         {copy.steps.map((label, index) => (
           <div
@@ -133,10 +133,10 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
             className={cn(
               "rounded-md border px-3 py-2 text-sm",
               index === step
-                ? "border-amber-200/35 bg-amber-200/10 text-amber-100"
+                ? "border-primary/40 bg-primary/10 text-primary"
                 : index < step
-                  ? "border-cyan-200/20 bg-cyan-200/8 text-cyan-100/80"
-                  : "border-white/10 bg-black/12 text-white/42",
+                  ? "border-success/30 bg-success/10 text-success"
+                  : "border-border bg-muted text-faint",
             )}
           >
             <span className="font-mono text-xs">{String(index + 1).padStart(2, "0")}</span>
@@ -149,7 +149,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
         {step === 0 ? (
           <section>
             <h2 className="text-lg font-semibold">{copy.entityType}</h2>
-            <p className="mt-2 text-sm leading-6 text-white/58">{copy.entityHelp}</p>
+            <p className="mt-2 text-sm leading-6 text-dim">{copy.entityHelp}</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {entityTypes.map((item) => {
                 const Icon = item.icon;
@@ -161,14 +161,14 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
                     className={cn(
                       "rounded-lg border p-4 text-left transition",
                       active
-                        ? "border-amber-200/38 bg-amber-200/10 shadow-[0_0_42px_rgba(251,191,36,0.08)]"
-                        : "border-white/10 bg-black/16 hover:border-white/20 hover:bg-white/[0.06]",
+                        ? "border-primary/40 bg-primary/10 shadow-sm"
+                        : "border-border bg-card hover:border-border-strong hover:bg-muted",
                     )}
                     onClick={() => setEntityType(item.key)}
                   >
-                    <Icon className={cn("h-5 w-5", active ? "text-amber-100" : "text-cyan-100/70")} />
+                    <Icon className={cn("h-5 w-5", active ? "text-primary" : "text-muted-foreground")} />
                     <div className="mt-4 font-medium">{copy.types[item.key]}</div>
-                    <p className="mt-2 text-sm leading-6 text-white/54">{copy.typeDescriptions[item.key]}</p>
+                    <p className="mt-2 text-sm leading-6 text-dim">{copy.typeDescriptions[item.key]}</p>
                   </button>
                 );
               })}
@@ -180,7 +180,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
           <section className="grid gap-5">
             <div>
               <h2 className="text-lg font-semibold">{copy.minimalContext}</h2>
-              <p className="mt-2 text-sm leading-6 text-white/58">{copy.contextGuides[entityType]}</p>
+              <p className="mt-2 text-sm leading-6 text-dim">{copy.contextGuides[entityType]}</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={contextConfig.subjectLabel}>
@@ -254,7 +254,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
           <section className="grid gap-5">
             <div>
               <h2 className="text-lg font-semibold">{copy.startDiagnosis}</h2>
-              <p className="mt-2 text-sm leading-6 text-white/58">{copy.confirmBody}</p>
+              <p className="mt-2 text-sm leading-6 text-dim">{copy.confirmBody}</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={copy.projectName} optional optionalLabel={contextConfig.optionalLabel}>
@@ -263,8 +263,8 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
                   onChange={(event) => setProjectName(event.target.value)}
                   placeholder={generatedProjectName}
                 />
-                <p className="text-xs leading-5 text-white/42">
-                  {copy.generatedNamePreview}: <span className="text-white/68">{generatedProjectName}</span>
+                <p className="text-xs leading-5 text-faint">
+                  {copy.generatedNamePreview}: <span className="text-dim">{generatedProjectName}</span>
                 </p>
               </Field>
               <Field label={contextConfig.comparisonLabel} optional optionalLabel={contextConfig.optionalLabel}>
@@ -273,28 +273,27 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
                   onChange={(event) => setCompetitors(event.target.value)}
                   placeholder={contextConfig.comparisonPlaceholder}
                 />
-                <p className="text-xs leading-5 text-white/42">{contextConfig.comparisonHelp}</p>
+                <p className="text-xs leading-5 text-faint">{contextConfig.comparisonHelp}</p>
               </Field>
             </div>
-            <div className="rounded-lg border border-white/10 bg-black/18 p-4">
-              <Badge className="border-white/10 bg-white/8 text-white/70" variant="outline">
+            <div className="rounded-lg border border-border bg-muted p-4">
+              <Badge className="text-dim" variant="outline">
                 {copy.types[entityType]}
               </Badge>
               <div className="mt-3 text-xl font-semibold">{subjectName || copy.subjectName}</div>
-              <p className="mt-2 text-sm leading-6 text-white/58">{desiredUnderstanding || targetMarket || industry}</p>
-              {domain ? <p className="mt-2 font-mono text-xs text-white/38">{domain}</p> : null}
+              <p className="mt-2 text-sm leading-6 text-dim">{desiredUnderstanding || targetMarket || industry}</p>
+              {domain ? <p className="mt-2 font-mono text-xs text-faint">{domain}</p> : null}
             </div>
           </section>
         ) : null}
       </div>
 
-      {formError ? <p className="mt-4 text-sm text-rose-200">{formError}</p> : null}
+      {formError ? <p className="mt-4 text-sm text-danger">{formError}</p> : null}
 
       <div className="mt-6 flex justify-between gap-3">
         <Button
           type="button"
           variant="outline"
-          className="border-white/15 bg-white/6 text-white hover:bg-white/12 hover:text-white"
           disabled={step === 0 || isSubmitting}
           onClick={() => setStep((current) => Math.max(0, current - 1))}
         >
@@ -331,10 +330,10 @@ function Field({
 }) {
   return (
     <div className="grid gap-2">
-      <Label className="text-white/72">
+      <Label className="text-foreground">
         {label}
-        {optional ? <span className="ml-2 text-xs text-white/38">{optionalLabel}</span> : null}
-        {required ? <span className="ml-2 text-xs text-amber-100">*</span> : null}
+        {optional ? <span className="ml-2 text-xs text-faint">{optionalLabel}</span> : null}
+        {required ? <span className="ml-2 text-xs text-danger">*</span> : null}
       </Label>
       {children}
     </div>

@@ -245,8 +245,8 @@ export function AIProviderForm({
             />
           </div>
           {deepSeekHint ? (
-            <div className="flex gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-muted-foreground lg:col-span-2">
-              <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+            <div className="flex gap-3 rounded-xl border border-warning/25 bg-warning/5 p-4 text-sm text-muted-foreground lg:col-span-2">
+              <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
               <p>
                 DeepSeek should normally be configured as <code>openai_compatible</code>. Using
                 <code> openai_responses</code> will call the wrong endpoint family.

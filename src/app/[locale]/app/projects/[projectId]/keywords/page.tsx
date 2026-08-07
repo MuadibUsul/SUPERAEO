@@ -204,9 +204,9 @@ export default async function KeywordsPage({ params }: PageProps) {
       </Card>
 
       {!aiReadiness.ready ? (
-        <Card className="border-amber-500/20 bg-amber-500/5">
+        <Card className="border-warning/25 bg-warning/5">
           <CardContent className="flex gap-3 p-4 text-sm text-muted-foreground">
-            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
             <p>{copy.executionGuard}</p>
           </CardContent>
         </Card>

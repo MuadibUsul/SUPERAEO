@@ -10,9 +10,9 @@ export function StatusCallout({
   message: string;
 }) {
   return (
-    <Card className="border-[oklch(0.85_0.15_85/28%)] bg-[oklch(0.85_0.15_85/6%)]">
+    <Card className="border-warning/30 bg-warning/5">
       <CardContent className="flex gap-3 p-4">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[oklch(0.85_0.15_85)]" />
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
         <div>
           <p className="text-sm font-medium text-foreground">{title}</p>
           <p className="mt-1 text-sm text-dim">{message}</p>

@@ -90,7 +90,7 @@ export function OpportunityBoard({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <h4 className="text-sm font-medium leading-5 text-foreground">{opportunity.question}</h4>
-                        <span className="font-mono text-sm font-semibold text-[oklch(0.82_0.15_162)]">{opportunity.longTailOccupationPotential}</span>
+                        <span className="font-mono text-sm font-semibold text-success">{opportunity.longTailOccupationPotential}</span>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-faint">{opportunity.scenario}</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">

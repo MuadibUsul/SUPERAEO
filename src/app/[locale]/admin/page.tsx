@@ -80,7 +80,7 @@ export default async function AdminOverviewPage({ params }: PageProps) {
             <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">{copy.title}</h1>
             <p className="mt-3 text-sm leading-6 text-dim">{copy.body}</p>
           </div>
-          <Button asChild size="lg" className="glow-cyan">
+          <Button asChild size="lg">
             <Link href={`/${locale}/admin/ai-providers`}>
               {copy.cta}
               <ArrowRight className="h-4 w-4" />

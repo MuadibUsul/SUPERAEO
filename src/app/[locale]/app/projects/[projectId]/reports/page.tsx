@@ -26,6 +26,7 @@ import { getCognitionTrend, type CognitionTrend, type DriftSignal } from "@/serv
 import { getEntityProfile, getEntityMetricLabel, type EntityMetricKey } from "@/server/entity/entity-profiles";
 import { getLatestCipMetricBundle, type CipMetricBundle, type ModelBreakdown } from "@/server/metrics/cip-metrics";
 import { getSnapshotBrief } from "@/server/report/report-snapshot";
+import { buildReportAnalysis } from "@/server/report/report-analysis";
 
 export const dynamic = "force-dynamic";
 
@@ -188,6 +189,26 @@ export default async function ReportsPage({ params }: PageProps) {
   const topTerms = topNebulaTerms(latestNebula?.nodeJson, 8);
   const opportunities = parseOpportunities(opportunitySnapshot?.opportunityJson).slice(0, 4);
   const experiment = experiments.find((item) => item.result) ?? null;
+  const reportAnalysis = buildReportAnalysis({
+    entityType: subject?.entityType,
+    subjectName,
+    bundle: metricsBundle,
+    nebulaSummary: asRecord(asRecord(latestNebula).summaryJson),
+    correlation: correlation as Record<string, unknown> | null,
+    experiments: experiments.map((item) => ({
+      name: item.name,
+      significant: Boolean(item.result?.significant),
+      netEffect: item.result?.netLift,
+      pValue: item.result?.pValue,
+    })),
+    locale,
+  });
+  const analysisTone: Record<string, string> = {
+    good: "var(--success)",
+    warn: "var(--warning)",
+    bad: "var(--danger)",
+    neutral: "var(--muted-foreground)",
+  };
   const generatedAt = new Date().toLocaleDateString(locale === "zh-CN" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
 
   return (
@@ -228,6 +249,35 @@ export default async function ReportsPage({ params }: PageProps) {
             <Callout tone="var(--danger)" icon={<AlertTriangle className="h-4 w-4" />} label={copy.biggestRisk} body={brief.risks[0]?.message ?? entityProfile.topRisk[locale]} />
             <Callout tone="var(--success)" icon={<Target className="h-4 w-4" />} label={copy.topMove} body={brief.opportunities[0]?.title ?? copy.none} />
           </div>
+
+          {reportAnalysis.metrics.length > 0 ? (
+            <div className="mt-6 space-y-3">
+              <p className="text-xs uppercase tracking-wide text-faint">{locale === "zh-CN" ? "逐项深度分析" : "Metric-by-metric analysis"}</p>
+              {reportAnalysis.metrics.map((metric) => (
+                <div key={metric.key} className="panel-inset p-4">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-sm font-medium text-foreground">{metric.label}</span>
+                    <span className="font-mono text-sm tabular-nums" style={{ color: analysisTone[metric.tone] }}>
+                      {metric.percent === null ? "-" : metric.percent}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-sm leading-6 text-dim">{metric.context}</p>
+                  {metric.drivers.length > 0 ? (
+                    <ul className="mt-2 space-y-1">
+                      {metric.drivers.map((driver) => (
+                        <li key={driver} className="flex gap-2 text-xs leading-5 text-faint">
+                          <span aria-hidden>·</span>
+                          {driver}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {metric.causal ? <p className="mt-2 text-xs leading-5 text-cyan">{metric.causal}</p> : null}
+                  {metric.impact ? <p className="mt-1 text-xs leading-5 text-faint">→ {metric.impact}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </Section>
 
         {/* 2. Scores */}

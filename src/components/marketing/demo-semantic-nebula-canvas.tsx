@@ -57,23 +57,26 @@ type Projected = { sx: number; sy: number; scale: number; depth: number };
 const TAU = Math.PI * 2;
 const FOCAL = 2.35;
 
+// Dust / word field hues — the brand spectrum (magenta·violet·blue·cyan·mint)
+// plus a neutral haze. No off-brand gold.
 const hueRgb: Record<HueKey, [number, number, number]> = {
   haze: [188, 202, 224],
-  blue: [120, 146, 196],
-  cyan: [96, 200, 230],
-  violet: [170, 140, 232],
-  gold: [240, 196, 120],
-  rose: [232, 150, 188],
-  emerald: [130, 214, 178],
+  blue: [91, 139, 255],
+  cyan: [41, 211, 236],
+  violet: [168, 120, 255],
+  gold: [255, 92, 168], // remapped onto spectrum magenta (key name kept)
+  rose: [255, 92, 168],
+  emerald: [56, 224, 161],
 };
 
+// Node types coded on the brand spectrum; RISK keeps one semantic red.
 const termColors: Record<DemoNebulaTermType, { fill: string; stroke: string; glow: string }> = {
-  POSITIVE: { fill: "#8be9ff", stroke: "#22d3ee", glow: "rgba(34,211,238,1)" },
-  RISK: { fill: "#ff8da6", stroke: "#fb7185", glow: "rgba(251,113,133,1)" },
-  COMPETITOR: { fill: "#ffc766", stroke: "#f59e0b", glow: "rgba(245,158,11,1)" },
-  SCENARIO: { fill: "#bfa7ff", stroke: "#a78bfa", glow: "rgba(167,139,250,1)" },
-  OPPORTUNITY: { fill: "#8dffbf", stroke: "#34d399", glow: "rgba(52,211,153,1)" },
-  MISSING: { fill: "#f0abfc", stroke: "#d946ef", glow: "rgba(217,70,239,1)" },
+  POSITIVE: { fill: "#7fe3f5", stroke: "#29d3ec", glow: "rgba(41,211,236,1)" },
+  RISK: { fill: "#ff9aa5", stroke: "#ff5d6c", glow: "rgba(255,93,108,1)" },
+  COMPETITOR: { fill: "#9db4ff", stroke: "#5b8bff", glow: "rgba(91,139,255,1)" },
+  SCENARIO: { fill: "#c3aaff", stroke: "#a878ff", glow: "rgba(168,120,255,1)" },
+  OPPORTUNITY: { fill: "#7fecc0", stroke: "#38e0a1", glow: "rgba(56,224,161,1)" },
+  MISSING: { fill: "#ffa6cf", stroke: "#ff5ca8", glow: "rgba(255,92,168,1)" },
 };
 
 export function DemoSemanticNebulaCanvas({

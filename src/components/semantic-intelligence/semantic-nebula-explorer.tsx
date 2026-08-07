@@ -124,13 +124,13 @@ const typeColors: Record<string, { fill: string; stroke: string; glow: string; a
   TRUST: { fill: "#7ff7da", stroke: "#2dd4bf", glow: "rgba(45,212,191,0.8)", aura: "rgba(20,184,166,0.24)" },
   SCENARIO: { fill: "#8cbcff", stroke: "#60a5fa", glow: "rgba(96,165,250,0.78)", aura: "rgba(37,99,235,0.22)" },
   AUDIENCE: { fill: "#ff9ed0", stroke: "#f472b6", glow: "rgba(244,114,182,0.72)", aura: "rgba(219,39,119,0.2)" },
-  COMPETITOR: { fill: "#ffc766", stroke: "#f59e0b", glow: "rgba(245,158,11,0.9)", aura: "rgba(217,119,6,0.28)" },
+  COMPETITOR: { fill: "#9db4ff", stroke: "#5b8bff", glow: "rgba(91,139,255,0.9)", aura: "rgba(60,100,220,0.28)" },
   RISK: { fill: "#ff7b8d", stroke: "#fb7185", glow: "rgba(251,113,133,0.82)", aura: "rgba(190,18,60,0.24)" },
   NEGATIVE: { fill: "#ff6f91", stroke: "#f43f5e", glow: "rgba(244,63,94,0.78)", aura: "rgba(190,18,60,0.24)" },
-  INCORRECT: { fill: "#ff9a4f", stroke: "#fb923c", glow: "rgba(251,146,60,0.8)", aura: "rgba(234,88,12,0.24)" },
+  INCORRECT: { fill: "#ffa6cf", stroke: "#ff5ca8", glow: "rgba(255,92,168,0.8)", aura: "rgba(219,39,119,0.24)" },
   UNDESIRED: { fill: "#ff8da1", stroke: "#fb7185", glow: "rgba(251,113,133,0.72)", aura: "rgba(225,29,72,0.2)" },
   MISSING: { fill: "#d0a8ff", stroke: "#a78bfa", glow: "rgba(167,139,250,0.78)", aura: "rgba(124,58,237,0.24)" },
-  DESIRED: { fill: "#d8ff86", stroke: "#a3e635", glow: "rgba(163,230,53,0.72)", aura: "rgba(101,163,13,0.2)" },
+  DESIRED: { fill: "#7fecc0", stroke: "#38e0a1", glow: "rgba(56,224,161,0.72)", aura: "rgba(20,160,110,0.2)" },
   DEFAULT: { fill: "#e2e8f0", stroke: "#cbd5e1", glow: "rgba(203,213,225,0.54)", aura: "rgba(148,163,184,0.18)" },
 };
 
@@ -544,7 +544,7 @@ function drawBackground(
   context.fillRect(0, 0, width, height);
 
   // Restrained: a faint warm focal wash on the subject core + one cool accent.
-  drawGlow(context, center.x, center.y, Math.min(width, height) * 0.6, `rgba(210,150,70,${0.07 + Math.sin(time * 0.7) * 0.012})`);
+  drawGlow(context, center.x, center.y, Math.min(width, height) * 0.6, `rgba(41,211,236,${0.07 + Math.sin(time * 0.7) * 0.012})`);
   drawGlow(context, width * 0.18, height * 0.18, Math.min(width, height) * 0.28, "rgba(34,180,220,0.05)");
   drawGlow(context, width * 0.82, height * 0.8, Math.min(width, height) * 0.3, "rgba(120,110,200,0.045)");
 
@@ -675,8 +675,8 @@ function drawCenterEntity(
   const coreRadius = isMobile ? 20 : 30;
   context.save();
   context.globalCompositeOperation = "lighter";
-  drawGlow(context, center.x, center.y, coreRadius * (14 + pulse * 2), "rgba(255,149,34,0.28)");
-  drawGlow(context, center.x, center.y, coreRadius * (7 + pulse), "rgba(255,210,92,0.34)");
+  drawGlow(context, center.x, center.y, coreRadius * (14 + pulse * 2), "rgba(41,211,236,0.24)");
+  drawGlow(context, center.x, center.y, coreRadius * (7 + pulse), "rgba(168,120,255,0.32)");
   drawGlow(context, center.x, center.y, coreRadius * 3.5, "rgba(255,255,255,0.36)");
 
   const gradient = context.createRadialGradient(center.x - 6, center.y - 8, 0, center.x, center.y, coreRadius);

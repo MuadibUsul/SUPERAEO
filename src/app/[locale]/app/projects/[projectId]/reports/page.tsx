@@ -27,6 +27,7 @@ import { getEntityProfile, getEntityMetricLabel, type EntityMetricKey } from "@/
 import { getLatestCipMetricBundle, type CipMetricBundle, type ModelBreakdown } from "@/server/metrics/cip-metrics";
 import { getSnapshotBrief } from "@/server/report/report-snapshot";
 import { buildReportAnalysis, type ReportAnalysis } from "@/server/report/report-analysis";
+import { buildPositionSummary } from "@/server/semantic-nebula/position-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -215,6 +216,7 @@ export default async function ReportsPage({ params }: PageProps) {
     bad: "var(--danger)",
     neutral: "var(--muted-foreground)",
   };
+  const position = buildPositionSummary({ subjectName, nebulaSummary: asRecord(asRecord(latestNebula).summaryJson), locale });
   const generatedAt = new Date().toLocaleDateString(locale === "zh-CN" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
 
   return (
@@ -248,9 +250,12 @@ export default async function ReportsPage({ params }: PageProps) {
 
         {/* 1. Verdict */}
         <Section index={1} title={copy.verdict}>
-          <p className="mb-3 text-xs uppercase tracking-wide text-cyan">{verdictLens}</p>
-          <p className="text-xl font-medium leading-8 text-foreground md:text-2xl">{brief.summary.headline}</p>
-          <p className="mt-2 text-sm text-dim">{brief.summary.subline}</p>
+          <p className="mb-3 text-xs uppercase tracking-wide text-cyan">
+            {locale === "zh-CN" ? "实体在模型内的位置" : "Position inside the model"} · {verdictLens}
+          </p>
+          <p className="text-xl font-medium leading-8 text-foreground md:text-2xl">{position.headline}</p>
+          <p className="mt-2 text-sm text-dim">{brief.summary.headline}</p>
+          <p className="mt-1 text-sm text-faint">{brief.summary.subline}</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <Callout tone="var(--danger)" icon={<AlertTriangle className="h-4 w-4" />} label={copy.biggestRisk} body={brief.risks[0]?.message ?? entityProfile.topRisk[locale]} />
             <Callout tone="var(--success)" icon={<Target className="h-4 w-4" />} label={copy.topMove} body={brief.opportunities[0]?.title ?? copy.none} />

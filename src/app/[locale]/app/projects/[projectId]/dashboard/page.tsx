@@ -22,6 +22,9 @@ import {
 } from "@/server/dashboard/cognition-focus";
 import { getEntityProfile } from "@/server/entity/entity-profiles";
 import { getLatestCipMetricBundle } from "@/server/metrics/cip-metrics";
+import { buildPositionSummary } from "@/server/semantic-nebula/position-summary";
+import { getPrisma } from "@/server/db";
+import { asRecord } from "@/server/utils/coerce";
 
 export const dynamic = "force-dynamic";
 
@@ -66,15 +69,25 @@ export default async function DashboardPage({ params }: PageProps) {
   const project = state.data;
   const subject = project.subjects[0];
   const subjectName = subject?.displayName ?? project.brandName;
-  const [brief, bundle] = await Promise.all([
+  const [brief, bundle, nebula] = await Promise.all([
     buildCognitionBriefView({ projectId, subjectId: subject?.id, subjectName, locale }),
     getLatestCipMetricBundle(projectId, subject?.id),
+    getPrisma().semanticNebulaSnapshot.findFirst({
+      where: { projectId, ...(subject?.id ? { subjectId: subject.id } : {}), scope: "OVERALL" },
+      orderBy: { createdAt: "desc" },
+      select: { summaryJson: true },
+    }),
   ]);
   const focus = buildCognitionFocus({ entityType: subject?.entityType, bundle, locale });
   const profile = getEntityProfile(subject?.entityType);
   const verdictLead = profile.verdictLead[locale].replace("{subject}", subjectName);
+  const position = buildPositionSummary({ subjectName, nebulaSummary: asRecord(nebula?.summaryJson), locale });
 
   const t = {
+    positionEyebrow: zh ? "实体在模型内的位置" : "Position inside the model",
+    anchoredAt: zh ? "被定位于" : "Anchored at",
+    nearestRival: zh ? "邻域对手" : "Nearest rival",
+    dangerNear: zh ? "危险贴近" : "Dangerously near",
     matters: zh ? "此类型最重要的指标" : "What matters most for this type",
     biggestGap: zh ? "最大差距" : "Biggest gap",
     topRisk: zh ? "首要风险" : "Top risk",
@@ -105,13 +118,20 @@ export default async function DashboardPage({ params }: PageProps) {
           <div className="max-w-4xl">
             <Badge variant="outline" className="gap-1.5 border-primary/25 bg-primary/10 text-primary">
               <Sparkles className="h-3 w-3" />
-              {brief.summary.eyebrow}
+              {t.positionEyebrow}
             </Badge>
             <h2 className="mt-4 text-2xl font-semibold leading-[1.2] tracking-tight text-balance text-foreground md:text-[1.9rem]">
-              {brief.summary.headline}
+              {position.headline}
             </h2>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-dim">{brief.summary.subline}</p>
             <p className="mt-2 max-w-3xl text-xs leading-5 text-faint">{verdictLead}</p>
+            {position.clarity !== "unlocated" ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {position.anchor ? <PositionChip label={t.anchoredAt} value={position.anchor} color="var(--mint)" /> : null}
+                {position.nearestRival ? <PositionChip label={t.nearestRival} value={position.nearestRival} color="var(--violet)" /> : null}
+                {position.confusion ? <PositionChip label={t.dangerNear} value={position.confusion} color="var(--magenta)" /> : null}
+              </div>
+            ) : null}
           </div>
           <div className="shrink-0 rounded-xl border border-border bg-muted px-5 py-4 text-right">
             <div className="eyebrow text-primary">{copy.eyebrow}</div>
@@ -350,6 +370,16 @@ function SupportingTile({ metric }: { metric: FocusMetric }) {
         {!metric.isDelta && metric.percent !== null ? <span className="text-sm text-faint">%</span> : null}
       </div>
     </div>
+  );
+}
+
+function PositionChip({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1 text-xs">
+      <span className="size-1.5 rounded-full" style={{ background: color }} />
+      <span className="text-faint">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
+    </span>
   );
 }
 

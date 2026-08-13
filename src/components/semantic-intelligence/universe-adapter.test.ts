@@ -42,6 +42,29 @@ test("deterministic and coordinate-bounded", () => {
   }
 });
 
+test("carries evidence quotes, drops empty excerpts, and falls back model->source", () => {
+  const withEv = [
+    {
+      term: "x", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 80, frequencyScore: 50, context: {},
+      examples: [
+        { question: "Would you recommend x?", excerpt: "quote one", provider: "GPT" },
+        { excerpt: "quote two", model: "sonar" },
+        { excerpt: "" },
+      ],
+    },
+  ];
+  const out = adaptNebulaNodes(withEv);
+  assert.equal(out[0].examples.length, 2);
+  assert.equal(out[0].examples[0].excerpt, "quote one");
+  assert.equal(out[0].examples[0].source, "GPT");
+  assert.equal(out[0].examples[1].source, "sonar");
+});
+
+test("nodes without examples get an empty array", () => {
+  const out = adaptNebulaNodes(nodes);
+  assert.ok(out.every((n) => Array.isArray(n.examples)));
+});
+
 test("respects the limit and handles non-array input", () => {
   const many = Array.from({ length: 300 }, (_, i) => ({ term: `t${i}`, termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: i % 100, frequencyScore: 50, context: {} }));
   assert.equal(adaptNebulaNodes(many, 120).length, 120);

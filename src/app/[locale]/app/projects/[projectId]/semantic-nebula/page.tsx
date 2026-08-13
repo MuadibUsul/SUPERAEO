@@ -106,6 +106,7 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
               pull: locale === "zh-CN" ? "引力" : "pull",
               freq: locale === "zh-CN" ? "频率" : "freq",
               empty: dictionary.semanticIntelligence.states.noData,
+              evidence: locale === "zh-CN" ? "AI 为何把它放在这" : "Why AI placed it here",
             }}
           />
         </CardContent>

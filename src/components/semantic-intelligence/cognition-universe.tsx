@@ -24,6 +24,7 @@ type Copy = {
   pull: string;
   freq: string;
   empty: string;
+  evidence: string;
 };
 
 const DEFAULT_COPY: Copy = {
@@ -32,6 +33,7 @@ const DEFAULT_COPY: Copy = {
   pull: "pull",
   freq: "freq",
   empty: "No semantic field yet.",
+  evidence: "Why AI placed it here",
 };
 
 type Star = UniverseNode & { hue: [number, number, number]; tw: number };
@@ -295,7 +297,7 @@ export function CognitionUniverse({
 
       {/* selected detail */}
       {selected ? (
-        <div className="absolute bottom-3 right-3 w-52 rounded-lg border border-border bg-black/85 p-4 backdrop-blur">
+        <div className="absolute bottom-3 right-3 flex max-h-[calc(100%-1.5rem)] w-64 flex-col rounded-lg border border-border bg-black/85 p-4 backdrop-blur">
           <button className="absolute right-2.5 top-2 text-faint hover:text-foreground" onClick={() => setSelected(null)} aria-label="Close">×</button>
           <div className="pr-4 text-sm font-semibold text-foreground">{selected.label}</div>
           <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wide" style={{ color: `rgb(${HUE[selected.type].join(",")})` }}>
@@ -312,6 +314,20 @@ export function CognitionUniverse({
               </div>
             </div>
           ))}
+          {selected.examples.length > 0 ? (
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+              <div className="mb-2 font-mono text-[9.5px] uppercase tracking-wide text-faint">{copy.evidence}</div>
+              <div className="space-y-2">
+                {selected.examples.map((ex, i) => (
+                  <div key={i} className="rounded-md border border-border bg-white/[0.03] p-2">
+                    {ex.question ? <div className="mb-1 text-[10.5px] font-medium text-foreground/80">{ex.question}</div> : null}
+                    <p className="text-[11px] leading-5 text-dim">“{ex.excerpt}”</p>
+                    {ex.source ? <div className="mt-1 font-mono text-[9px] text-faint">{ex.source}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
         </>

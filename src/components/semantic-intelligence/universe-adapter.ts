@@ -10,6 +10,7 @@
 import { asRecord } from "@/server/utils/coerce";
 
 export type UniverseType = "positive" | "usecase" | "competitor" | "risk";
+export type UniverseEvidence = { question: string; excerpt: string; source: string };
 export type UniverseNode = {
   label: string;
   type: UniverseType;
@@ -18,7 +19,21 @@ export type UniverseNode = {
   x: number;
   y: number;
   z: number;
+  /** Raw AI quotes that placed this term near the entity. */
+  examples: UniverseEvidence[];
 };
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function extractExamples(raw: unknown): UniverseEvidence[] {
+  return (Array.isArray(raw) ? raw : [])
+    .slice(0, 5)
+    .map(asRecord)
+    .map((e) => ({ question: str(e.question), excerpt: str(e.excerpt), source: str(e.provider) || str(e.model) }))
+    .filter((e) => e.excerpt.length > 0);
+}
 
 const SECTOR_DIR: Record<UniverseType, [number, number, number]> = {
   positive: [-0.25, -0.62, 0.18],
@@ -64,7 +79,7 @@ export function adaptNebulaNodes(nodeJson: unknown, limit = 160): UniverseNode[]
       const type = classify(String(r.termType ?? ""), String(r.polarity ?? ""), asRecord(r.context));
       const strength = Math.max(0, Math.min(1, num(r.semanticGravity) / 100));
       const freq = Math.max(0, Math.min(1, num(r.frequencyScore) / 100));
-      return { label, type, strength, freq };
+      return { label, type, strength, freq, examples: extractExamples(r.examples) };
     })
     .filter((n) => n.label.length > 0)
     .sort((a, b) => b.strength - a.strength)

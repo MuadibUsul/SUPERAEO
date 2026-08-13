@@ -71,6 +71,17 @@ const stopwords = new Set([
   "would",
 ]);
 
+const genericPhrases = new Set([
+  "answer",
+  "bottom line",
+  "in conclusion",
+  "key takeaway",
+  "short answer",
+  "the answer",
+  "the short answer is",
+  "there are several options",
+]);
+
 export function extractSemanticTermCandidates(input: {
   subjectName: string;
   subjectAliases?: string[];
@@ -123,6 +134,26 @@ export function extractSemanticTermCandidates(input: {
       });
     }
 
+    for (const entity of asRecordArray(asRecord(analysis?.rawAnalysis)?.mentionedEntities)) {
+      const term = stringValue(entity.name);
+      const role = stringValue(entity.role);
+      if (!term || role === "target") continue;
+      const isComparison = role === "comparison";
+      addEvidenceTerm({
+        candidates,
+        term,
+        keywordType: isComparison ? "competitor" : role === "concept" ? "category" : undefined,
+        response,
+        answer,
+        subjectName: input.subjectName,
+        subjectAliases: input.subjectAliases,
+        competitors: input.competitors,
+        desiredTerms: input.desiredTerms,
+        undesiredTerms: input.undesiredTerms,
+        contextFlags: isComparison ? [...baseFlags, "competitor"] : baseFlags,
+      });
+    }
+
     for (const term of asStringArray(analysis?.competitorsMentioned)) {
       addEvidenceTerm({
         candidates,
@@ -159,10 +190,11 @@ export function extractSemanticTermCandidates(input: {
 
     for (const hallucination of asRecordArray(analysis?.possibleHallucinations)) {
       const claim = stringValue(hallucination.claim);
-      if (claim) {
+      const riskTerm = constrainRiskTerm(claim, input.subjectName, input.competitors);
+      if (riskTerm) {
         addEvidenceTerm({
           candidates,
-          term: claim.slice(0, 80),
+          term: riskTerm,
           keywordType: "risk",
           response,
           answer,
@@ -177,7 +209,7 @@ export function extractSemanticTermCandidates(input: {
       }
     }
 
-    for (const term of extractLightweightAnswerTerms(answer, input.subjectName, input.competitors)) {
+    for (const term of extractConstrainedAnswerTerms(answer, input.subjectName, input.competitors)) {
       addEvidenceTerm({
         candidates,
         term,
@@ -251,6 +283,8 @@ function addEvidenceTerm(input: {
 }) {
   if (!isUsableTerm(input.term)) return;
   const normalizedTerm = normalizeTerm(input.term);
+  const subjectTerms = [input.subjectName, ...(input.subjectAliases ?? [])].map(normalizeTerm);
+  if (subjectTerms.includes(normalizedTerm)) return;
   const classification = classifyTerm({
     term: input.term,
     keywordType: input.keywordType,
@@ -337,12 +371,6 @@ function contextFlagsForResponse(response: ExtractorResponse) {
   if (["recommendation", "best_tools", "buyer_decision"].includes(response.query.queryType) || response.analysis?.brandRecommended) {
     flags.push("recommendation");
   }
-  if (["comparison", "alternative"].includes(response.query.queryType)) {
-    flags.push("competitor");
-  }
-  if (["risk"].includes(response.query.queryType)) {
-    flags.push("risk");
-  }
   return flags;
 }
 
@@ -380,27 +408,63 @@ function calculateCoMentionScore(answer: string, term: string, aliases: string[]
   return normalizedAliases.some((alias) => normalizedAnswer.includes(alias)) || mentioned ? 0.45 : 0.15;
 }
 
-function extractLightweightAnswerTerms(answer: string, subjectName: string, competitors: string[]) {
+export function extractConstrainedAnswerTerms(answer: string, subjectName: string, competitors: string[]) {
   const lowerSubject = normalizeTerm(subjectName);
   const competitorSet = new Set(competitors.map(normalizeTerm));
-  const tokens = answer
-    .match(/[\p{L}\p{N}][\p{L}\p{N}\- ]{2,38}/gu)
-    ?.map((token) => token.trim())
-    .filter((token) => {
-      const normalized = normalizeTerm(token);
-      return normalized !== lowerSubject && !competitorSet.has(normalized) && !stopwords.has(normalized) && isUsableTerm(token);
-    }) ?? [];
+  const phrases = [
+    ...matchGroups(answer, /\*\*([^*\n]{2,80})\*\*/g),
+    ...matchGroups(answer, /^#{1,6}\s+([^\n]{2,80})$/gm),
+    ...matchGroups(answer, /^(?:[-*+]\s+|\d+[.)]\s+)?(?:\*\*)?([^:\n：]{2,48})(?:\*\*)?\s*[:：]/gm),
+  ]
+    .map(cleanPhrase)
+    .filter((phrase) => isConstrainedSemanticPhrase(phrase, lowerSubject, competitorSet));
 
   const counts = new Map<string, { term: string; count: number }>();
-  for (const token of tokens) {
-    const normalized = normalizeTerm(token);
-    counts.set(normalized, { term: token, count: (counts.get(normalized)?.count ?? 0) + 1 });
+  for (const phrase of phrases) {
+    const normalized = normalizeTerm(phrase);
+    counts.set(normalized, { term: phrase, count: (counts.get(normalized)?.count ?? 0) + 1 });
   }
 
   return Array.from(counts.values())
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => b.count - a.count || a.term.length - b.term.length)
     .slice(0, 8)
     .map((item) => item.term);
+}
+
+function matchGroups(value: string, pattern: RegExp) {
+  return Array.from(value.matchAll(pattern), (match) => match[1] ?? "");
+}
+
+function cleanPhrase(value: string) {
+  return value
+    .replace(/^[\s#>*_`'"“”‘’()[\]{}-]+|[\s#>*_`'"“”‘’()[\]{}.,!?;:，。！？；：-]+$/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isConstrainedSemanticPhrase(phrase: string, subject: string, competitors: Set<string>) {
+  const normalized = normalizeTerm(phrase);
+  if (!normalized || normalized === subject || competitors.has(normalized)) return false;
+  if (stopwords.has(normalized) || genericPhrases.has(normalized) || !isUsableTerm(phrase)) return false;
+  if (phrase.length > 72 || /[.!?。！？；;]/u.test(phrase)) return false;
+
+  const latinWords = phrase.match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) ?? [];
+  const containsCjk = /[\p{Script=Han}]/u.test(phrase);
+  if (containsCjk && phrase.length > 18) return false;
+  if (!containsCjk && (latinWords.length < 2 || latinWords.length > 6)) return false;
+
+  const first = normalizeTerm(latinWords[0] ?? "");
+  const last = normalizeTerm(latinWords.at(-1) ?? "");
+  return !stopwords.has(first) && !stopwords.has(last);
+}
+
+function constrainRiskTerm(claim: string, subjectName: string, competitors: string[]) {
+  const phrase = cleanPhrase(claim);
+  return isConstrainedSemanticPhrase(
+    phrase,
+    normalizeTerm(subjectName),
+    new Set(competitors.map(normalizeTerm)),
+  ) ? phrase : null;
 }
 
 function excerptAroundTerm(answer: string, term: string) {
@@ -422,6 +486,10 @@ function asStringArray(value: unknown) {
 
 function asRecordArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
+}
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 function includesString(value: unknown, term: string) {

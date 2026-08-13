@@ -21,8 +21,13 @@ function pointId(key: string): number {
 async function ensureCollection(size: number): Promise<void> {
   const client = getQdrantClient();
   const existing = await client.getCollections();
-  if (existing.collections.some((c) => c.name === COLLECTION)) return;
-  await client.createCollection(COLLECTION, { vectors: { size, distance: "Cosine" } });
+  if (!existing.collections.some((c) => c.name === COLLECTION)) {
+    await client.createCollection(COLLECTION, { vectors: { size, distance: "Cosine" } });
+  }
+  const info = await client.getCollection(COLLECTION);
+  if (!info.payload_schema?.projectId) {
+    await client.createPayloadIndex(COLLECTION, { field_name: "projectId", field_schema: "keyword", wait: true });
+  }
 }
 
 export type TermVector = {

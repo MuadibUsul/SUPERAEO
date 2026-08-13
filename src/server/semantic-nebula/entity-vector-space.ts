@@ -15,12 +15,34 @@ import { upsertTermVectors } from "@/server/semantic-nebula/vector-store";
 
 export type TermInput = { label: string; type: string };
 export type VectorNode = { label: string; type: string; x: number; y: number; z: number };
+export type VectorPosition = Pick<VectorNode, "x" | "y" | "z">;
 
 export type EntityVectorSpace = {
   model: string;
   dims: number;
   nodes: VectorNode[];
 };
+
+export function attachEntityVectorPositions<T extends { term: string; models?: string[] }>(
+  nodes: T[],
+  space: EntityVectorSpace,
+) {
+  const positions = new Map(space.nodes.map(({ label, x, y, z }) => [label, { x, y, z }]));
+  return nodes.map((node) => {
+    const position = positions.get(node.term);
+    if (!position) return node;
+    const modelPositions = Object.fromEntries(
+      (node.models ?? []).map((model) => [model, position]),
+    );
+    return {
+      ...node,
+      ...position,
+      embeddingModel: space.model,
+      embeddingDimensions: space.dims,
+      modelPositions,
+    };
+  });
+}
 
 export async function buildEntityVectorSpace(input: {
   projectId: string;

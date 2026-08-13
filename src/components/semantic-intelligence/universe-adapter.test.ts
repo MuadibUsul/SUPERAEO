@@ -73,6 +73,25 @@ test("real embedding coords win over the gravity fallback when present", () => {
   assert.notDeepEqual({ x: b.x, y: b.y, z: b.z }, { x: 0.4, y: -0.1, z: 0.2 });
 });
 
+test("a model layer uses its real coordinates and excludes terms outside that layer", () => {
+  const layered = [
+    {
+      term: "shared", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 90, frequencyScore: 50, context: {},
+      x: 0.1, y: 0.2, z: 0.3,
+      modelPositions: { "model-a": { x: -0.4, y: 0.5, z: 0.6 } },
+    },
+    {
+      term: "other", termType: "SCENARIO", polarity: "NEUTRAL", semanticGravity: 70, frequencyScore: 40, context: {},
+      x: 0.7, y: 0.8, z: 0.9,
+      modelPositions: { "model-b": { x: 0.2, y: 0.3, z: 0.4 } },
+    },
+  ];
+  const out = adaptNebulaNodes(layered, 160, "model-a");
+  assert.equal(out.length, 1);
+  assert.equal(out[0].label, "shared");
+  assert.deepEqual({ x: out[0].x, y: out[0].y, z: out[0].z }, { x: -0.4, y: 0.5, z: 0.6 });
+});
+
 test("nodes without examples get an empty array", () => {
   const out = adaptNebulaNodes(nodes);
   assert.ok(out.every((n) => Array.isArray(n.examples)));

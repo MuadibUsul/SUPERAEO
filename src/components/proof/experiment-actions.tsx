@@ -7,6 +7,7 @@ import { Calculator, FlaskConical, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 type QueryOption = {
@@ -138,18 +139,21 @@ export function ProofExperimentBuilder({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="experiment-metric">{copy.metric}</Label>
-          <select
-            id="experiment-metric"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm text-foreground"
+          <Select
             value={metricKey}
-            onChange={(event) => setMetricKey(event.target.value)}
+            onValueChange={setMetricKey}
           >
-            {metricOptions.map((metric) => (
-              <option key={metric.value} value={metric.value}>
-                {metric.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="experiment-metric" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              {metricOptions.map((metric) => (
+                <SelectItem key={metric.value} value={metric.value}>
+                  {metric.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -210,15 +214,19 @@ export function ProofExperimentBuilder({
                   <div className="mt-1 text-[11px] text-faint">{query.queryType}</div>
                 </div>
                 {mode === "manual" && selected ? (
-                  <select
-                    className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs text-foreground"
+                  <Select
                     value={arms[query.id] ?? (index % 2 === 0 ? "treatment" : "control")}
-                    onChange={(event) => setArms((current) => ({ ...current, [query.id]: event.target.value as Arm }))}
+                    onValueChange={(value) => setArms((current) => ({ ...current, [query.id]: value as Arm }))}
                   >
-                    <option value="treatment">{copy.treatment}</option>
-                    <option value="control">{copy.control}</option>
-                    <option value="exclude">{copy.exclude}</option>
-                  </select>
+                    <SelectTrigger size="sm" className="w-28 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent position="popper" align="end">
+                      <SelectItem value="treatment">{copy.treatment}</SelectItem>
+                      <SelectItem value="control">{copy.control}</SelectItem>
+                      <SelectItem value="exclude">{copy.exclude}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 ) : null}
               </div>
             </div>

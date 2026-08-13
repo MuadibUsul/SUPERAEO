@@ -11,6 +11,21 @@ function parseStrictJson(raw: string) {
   return JSON.parse(fenced?.[1] ?? trimmed);
 }
 
+function parseAndValidate<T>(raw: string, schema: z.ZodType<T>) {
+  try {
+    const parsed = schema.safeParse(parseStrictJson(raw));
+    return {
+      parsed,
+      error: parsed.success ? null : parsed.error.message,
+    };
+  } catch (error) {
+    return {
+      parsed: schema.safeParse(undefined),
+      error: `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 export async function runJsonPrompt<T>({
   projectId,
   subjectId,
@@ -89,9 +104,9 @@ export async function runJsonPrompt<T>({
     rawOutput = result.text;
     usage = result.usage;
 
-    let parsed = schema.safeParse(parseStrictJson(rawOutput));
+    let validation = parseAndValidate(rawOutput, schema);
 
-    if (!parsed.success) {
+    if (!validation.parsed.success) {
       repairAttempted = true;
       const repair = await runtime.generateJson({
         system:
@@ -104,7 +119,7 @@ export async function runJsonPrompt<T>({
           rawOutput,
           "",
           "Validation error:",
-          parsed.error.message,
+          validation.error ?? "Unknown structured output error.",
         ].join("\n"),
         model: providerModel,
         schemaName,
@@ -115,10 +130,11 @@ export async function runJsonPrompt<T>({
       });
       rawOutput = repair.text;
       usage = repair.usage ?? usage;
-      parsed = schema.safeParse(parseStrictJson(rawOutput));
+      validation = parseAndValidate(rawOutput, schema);
     }
 
-    if (!parsed.success) {
+    if (!validation.parsed.success) {
+      const validationError = validation.error ?? validation.parsed.error.message;
       const promptRun = await prisma.promptRun.create({
         data: {
           projectId,
@@ -130,7 +146,7 @@ export async function runJsonPrompt<T>({
           input: { system, prompt } as never,
           rawOutput,
           status: "failed",
-          error: parsed.error.message,
+          error: validationError,
           repairAttempted,
           usage: usage as never,
           metadata: promptMetadata as never,
@@ -146,7 +162,7 @@ export async function runJsonPrompt<T>({
         status: "failed",
         usage: usage as never,
         latencyMs: Date.now() - started,
-        error: parsed.error.message,
+        error: validationError,
         metadata: promptMetadata,
       });
       await recordTraceEvent({
@@ -156,7 +172,7 @@ export async function runJsonPrompt<T>({
         operation: promptName,
         status: "failed",
         errorCode: "STRUCTURED_OUTPUT_ERROR",
-        errorMessage: parsed.error.message,
+        errorMessage: validationError,
         durationMs: Date.now() - started,
         projectId,
         promptRunId: promptRun.id,
@@ -169,7 +185,7 @@ export async function runJsonPrompt<T>({
       return {
         ok: false as const,
         promptRunId: promptRun.id,
-        error: parsed.error.message,
+        error: validationError,
         providerId,
         model: providerModel,
         rawOutput,
@@ -188,7 +204,7 @@ export async function runJsonPrompt<T>({
         model: providerModel ?? "unconfigured",
         input: { system, prompt } as never,
         rawOutput,
-        parsedOutput: parsed.data as never,
+        parsedOutput: validation.parsed.data as never,
         status: repairAttempted ? "repaired" : "success",
         repairAttempted,
         usage: usage as never,
@@ -224,7 +240,7 @@ export async function runJsonPrompt<T>({
 
     return {
       ok: true as const,
-      data: parsed.data,
+      data: validation.parsed.data,
       promptRunId: promptRun.id,
       providerId,
       model: providerModel,

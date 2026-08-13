@@ -81,13 +81,13 @@ export default async function DashboardPage({ params }: PageProps) {
   const focus = buildCognitionFocus({ entityType: subject?.entityType, bundle, locale });
   const profile = getEntityProfile(subject?.entityType);
   const verdictLead = profile.verdictLead[locale].replace("{subject}", subjectName);
-  const position = buildPositionSummary({ subjectName, nebulaSummary: asRecord(nebula?.summaryJson), locale });
+  const position = buildPositionSummary({ subjectName, entityType: subject?.entityType, nebulaSummary: asRecord(nebula?.summaryJson), locale });
 
   const t = {
-    positionEyebrow: zh ? "实体在模型内的位置" : "Position inside the model",
-    anchoredAt: zh ? "被定位于" : "Anchored at",
-    nearestRival: zh ? "邻域对手" : "Nearest rival",
-    dangerNear: zh ? "危险贴近" : "Dangerously near",
+    positionEyebrow: zh ? "AI 目前怎么理解它" : "How AI currently understands it",
+    anchoredAt: zh ? "AI 最常关联" : "Most associated with",
+    nearestRival: zh ? "竞争内容中常见" : "Common in competitive answers",
+    dangerNear: zh ? "可能造成混淆" : "May cause confusion",
     matters: zh ? "此类型最重要的指标" : "What matters most for this type",
     biggestGap: zh ? "最大差距" : "Biggest gap",
     topRisk: zh ? "首要风险" : "Top risk",
@@ -123,7 +123,8 @@ export default async function DashboardPage({ params }: PageProps) {
             <h2 className="mt-4 text-2xl font-semibold leading-[1.2] tracking-tight text-balance text-foreground md:text-[1.9rem]">
               {position.headline}
             </h2>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-dim">{brief.summary.subline}</p>
+            {position.explanation ? <p className="mt-3 max-w-3xl text-sm leading-6 text-dim">{position.explanation}</p> : null}
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-dim">{brief.summary.subline}</p>
             <p className="mt-2 max-w-3xl text-xs leading-5 text-faint">{verdictLead}</p>
             {position.clarity !== "unlocated" ? (
               <div className="mt-4 flex flex-wrap gap-2">

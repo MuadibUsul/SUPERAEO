@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildSemanticNebula } from "@/server/semantic-nebula/nebula-builder";
+import { extractConstrainedAnswerTerms } from "@/server/semantic-nebula/semantic-term-extractor";
 
 test("builds nebula nodes and evidence from sampled responses", () => {
   const graph = buildSemanticNebula(
@@ -51,8 +52,26 @@ test("builds nebula nodes and evidence from sampled responses", () => {
   );
 
   assert.ok(graph.nodes.some((node) => node.term === "AI visibility"));
+  assert.notEqual(graph.nodes.find((node) => node.term === "AI visibility")?.termType, "COMPETITOR");
+  assert.equal(graph.nodes.find((node) => node.term === "Competitor AI")?.termType, "COMPETITOR");
+  assert.deepEqual(graph.nodes.find((node) => node.term === "AI visibility")?.models, ["model-a"]);
   assert.ok(graph.edges.length > 0);
   assert.equal(graph.summary.subjectName, "CIP");
+});
+
+test("extracts only bounded semantic phrases instead of fixed-width answer chunks", () => {
+  const answer = [
+    "Profound is the best-known option, while another platform is recommended for teams that want transparent methodology and raw response storage.",
+    "- **Sound quality:** balanced and clear",
+    "- **Quick charging:** useful for travel",
+    "## Noise cancellation",
+    "**This is an entire explanatory sentence that should not become a semantic term because it is too long and contains punctuation.**",
+  ].join("\n");
+
+  const terms = extractConstrainedAnswerTerms(answer, "Sony WH-CH720N", ["Profound"]);
+
+  assert.deepEqual(terms.sort(), ["Noise cancellation", "Quick charging", "Sound quality"].sort());
+  assert.equal(terms.some((term) => term.includes("response sto") || term === "rage"), false);
 });
 
 test("retains more than eighty scored nodes when evidence supports it", () => {

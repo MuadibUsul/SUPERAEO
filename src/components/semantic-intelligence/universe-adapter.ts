@@ -1,11 +1,9 @@
 /**
  * Adapt stored nebula nodes into cognition-universe nodes.
  *
- * Today's nodeJson has no coordinates, so we derive a deterministic 3D layout
- * from what the audit measured: type decides the sector direction, semantic
- * gravity decides distance from the entity (strong = close). When the
- * embedding vector space lands, real x/y/z replace `layout` here and nothing
- * else changes.
+ * Real embedding coordinates are preferred. Older snapshots without them use
+ * a deterministic gravity layout. A model layer can select its own stored
+ * position and hides terms that the selected answer model did not produce.
  */
 import { asRecord } from "@/server/utils/coerce";
 
@@ -70,22 +68,24 @@ function num(v: unknown, fallback = 0): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
-export function adaptNebulaNodes(nodeJson: unknown, limit = 160): UniverseNode[] {
+export function adaptNebulaNodes(nodeJson: unknown, limit = 160, modelLayer?: string): UniverseNode[] {
   const rows = Array.isArray(nodeJson) ? nodeJson : [];
   const nodes = rows
     .map((raw) => asRecord(raw))
     .map((r) => {
+      const layerPosition = modelLayer ? asRecord(asRecord(r.modelPositions)[modelLayer]) : r;
       const label = String(r.term ?? r.normalizedTerm ?? "").trim();
       const type = classify(String(r.termType ?? ""), String(r.polarity ?? ""), asRecord(r.context));
       const strength = Math.max(0, Math.min(1, num(r.semanticGravity) / 100));
       const freq = Math.max(0, Math.min(1, num(r.frequencyScore) / 100));
-      const hasCoords = typeof r.x === "number" && typeof r.y === "number" && typeof r.z === "number";
+      const hasCoords = typeof layerPosition.x === "number" && typeof layerPosition.y === "number" && typeof layerPosition.z === "number";
       return {
         label, type, strength, freq, examples: extractExamples(r.examples),
-        hasCoords, sx: num(r.x), sy: num(r.y), sz: num(r.z),
+        inLayer: !modelLayer || hasCoords,
+        hasCoords, sx: num(layerPosition.x), sy: num(layerPosition.y), sz: num(layerPosition.z),
       };
     })
-    .filter((n) => n.label.length > 0)
+    .filter((n) => n.label.length > 0 && n.inLayer)
     .sort((a, b) => b.strength - a.strength)
     .slice(0, limit);
 

@@ -66,7 +66,7 @@ export async function getLatestCipMetricBundle(projectId: string, subjectId?: st
 export async function buildCipMetricBundle(projectId: string, subjectId?: string | null): Promise<CipMetricBundle> {
   const prisma = getPrisma();
   const latestRun = await prisma.samplingRun.findFirst({
-    where: { projectId, ...(subjectId ? { subjectId } : {}) },
+    where: { projectId, ...(subjectId ? { subjectId } : {}), responses: { some: {} } },
     orderBy: { createdAt: "desc" },
     include: {
       subject: true,
@@ -428,4 +428,3 @@ function emptyEntityMetrics(): EntityMetrics {
     accuracyScore: 0,
   };
 }
-

@@ -21,23 +21,23 @@ test("locates the entity at its strongest owned meaning", () => {
 
 test("headline weaves anchor + confusion + rival (en)", () => {
   const p = buildPositionSummary({ subjectName: "Observable AI", nebulaSummary: rich, locale: "en" });
-  assert.match(p.headline, /places Observable AI closest to "AI observability"/);
-  assert.match(p.headline, /dangerously near "Observable \(data-viz\)"/);
-  assert.match(p.headline, /"Datadog" owns that neighbourhood/);
+  assert.match(p.headline, /most often associates this brand with "AI observability"/);
+  assert.match(p.explanation ?? "", /may give users the wrong impression/);
+  assert.match(p.explanation ?? "", /"Datadog" stands out more/);
 });
 
 test("headline works in Chinese", () => {
-  const p = buildPositionSummary({ subjectName: "可观测", nebulaSummary: rich, locale: "zh-CN" });
-  assert.match(p.headline, /最紧地放在「AI observability」/);
-  assert.match(p.headline, /危险地贴近「Observable \(data-viz\)」/);
-  assert.match(p.headline, /由「Datadog」占据/);
+  const p = buildPositionSummary({ subjectName: "耳机", entityType: "PRODUCT", nebulaSummary: rich, locale: "zh-CN" });
+  assert.match(p.headline, /最常把这款产品和「AI observability」联系在一起/);
+  assert.match(p.explanation ?? "", /可能让用户产生错误理解/);
+  assert.match(p.explanation ?? "", /「Datadog」出现得更突出/);
 });
 
 test("no evidence => unlocated", () => {
   const p = buildPositionSummary({ subjectName: "X", nebulaSummary: { totalTerms: 0 }, locale: "en" });
   assert.equal(p.clarity, "unlocated");
   assert.equal(p.anchor, null);
-  assert.match(p.headline, /hasn't placed X anywhere stable/);
+  assert.match(p.headline, /isn't enough data/);
 });
 
 test("partial when owned meanings are thin or confusions crowd", () => {
@@ -48,6 +48,5 @@ test("partial when owned meanings are thin or confusions crowd", () => {
   });
   assert.equal(p.clarity, "partial");
   assert.equal(p.anchor, "thing");
-  // no rival, no trailing rival clause
-  assert.doesNotMatch(p.headline, /owns that neighbourhood/);
+  assert.doesNotMatch(p.explanation ?? "", /competitive answers/);
 });

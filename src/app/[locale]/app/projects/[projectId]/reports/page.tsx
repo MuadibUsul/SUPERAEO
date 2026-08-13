@@ -216,7 +216,7 @@ export default async function ReportsPage({ params }: PageProps) {
     bad: "var(--danger)",
     neutral: "var(--muted-foreground)",
   };
-  const position = buildPositionSummary({ subjectName, nebulaSummary: asRecord(asRecord(latestNebula).summaryJson), locale });
+  const position = buildPositionSummary({ subjectName, entityType: subject?.entityType, nebulaSummary: asRecord(asRecord(latestNebula).summaryJson), locale });
   const generatedAt = new Date().toLocaleDateString(locale === "zh-CN" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
 
   return (
@@ -251,9 +251,10 @@ export default async function ReportsPage({ params }: PageProps) {
         {/* 1. Verdict */}
         <Section index={1} title={copy.verdict}>
           <p className="mb-3 text-xs uppercase tracking-wide text-cyan">
-            {locale === "zh-CN" ? "实体在模型内的位置" : "Position inside the model"} · {verdictLens}
+            {locale === "zh-CN" ? "AI 目前怎么理解它" : "How AI currently understands it"} · {verdictLens}
           </p>
           <p className="text-xl font-medium leading-8 text-foreground md:text-2xl">{position.headline}</p>
+          {position.explanation ? <p className="mt-2 text-sm leading-6 text-dim">{position.explanation}</p> : null}
           <p className="mt-2 text-sm text-dim">{brief.summary.headline}</p>
           <p className="mt-1 text-sm text-faint">{brief.summary.subline}</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">

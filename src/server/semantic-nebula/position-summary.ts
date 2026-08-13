@@ -27,6 +27,8 @@ export type PositionSummary = {
   clarity: "strong" | "partial" | "unlocated";
   /** One-sentence read of the position. */
   headline: string;
+  /** Plain-language context for the risk and competing signal. */
+  explanation: string | null;
 };
 
 function list(value: unknown): string[] {
@@ -35,10 +37,12 @@ function list(value: unknown): string[] {
 
 export function buildPositionSummary(input: {
   subjectName: string;
+  entityType?: string | null;
   nebulaSummary: Record<string, unknown>;
   locale: Locale;
 }): PositionSummary {
   const zh = input.locale === "zh-CN";
+  const entity = entityLabel(input.entityType, zh);
   const owned = list(input.nebulaSummary.strongestPositiveTerms);
   const rivals = list(input.nebulaSummary.competitorOwnedTerms);
   const confusions = list(input.nebulaSummary.strongestNegativeTerms).concat(list(input.nebulaSummary.riskTerms));
@@ -53,21 +57,35 @@ export function buildPositionSummary(input: {
     totalTerms === 0 || !anchor ? "unlocated" : owned.length >= 3 && confusions.length <= 2 ? "strong" : "partial";
 
   let headline: string;
+  let explanation: string | null = null;
   if (clarity === "unlocated") {
     headline = zh
-      ? `AI 尚未在语义空间里稳定地定位 ${input.subjectName}——先完成一次完整审计。`
-      : `AI hasn't placed ${input.subjectName} anywhere stable yet — run a full audit first.`;
+      ? `目前还没有足够数据说明 AI 怎么理解${entity}。`
+      : `There isn't enough data yet to show how AI understands ${entity}.`;
   } else if (zh) {
-    headline =
-      `AI 把 ${input.subjectName} 最紧地放在「${anchor}」附近` +
-      (confusion ? `，却危险地贴近「${confusion}」` : "") +
-      (nearestRival ? `；这片区域由「${nearestRival}」占据。` : "。");
+    headline = `从这次采样看，AI 最常把${entity}和「${anchor}」联系在一起。`;
+    explanation =
+      (confusion ? `需要注意：回答中也经常出现「${confusion}」，可能让用户产生错误理解。` : "") +
+      (nearestRival ? `在竞争相关回答中，「${nearestRival}」出现得更突出。` : "");
   } else {
-    headline =
-      `AI places ${input.subjectName} closest to "${anchor}"` +
-      (confusion ? `, but dangerously near "${confusion}"` : "") +
-      (nearestRival ? ` — and "${nearestRival}" owns that neighbourhood.` : ".");
+    headline = `In this sample, AI most often associates ${entity} with "${anchor}".`;
+    explanation =
+      (confusion ? `Watch out: "${confusion}" also appears often and may give users the wrong impression. ` : "") +
+      (nearestRival ? `In competitive answers, "${nearestRival}" stands out more.` : "");
   }
 
-  return { anchor, ownedMeanings: owned.slice(0, 3), nearestRival, confusion, gaps: gaps.slice(0, 3), clarity, headline };
+  return { anchor, ownedMeanings: owned.slice(0, 3), nearestRival, confusion, gaps: gaps.slice(0, 3), clarity, headline, explanation: explanation || null };
+}
+
+function entityLabel(entityType: string | null | undefined, zh: boolean) {
+  if (zh) {
+    if (entityType === "PRODUCT") return "这款产品";
+    if (entityType === "WEBSITE") return "这个网站";
+    if (entityType === "PERSON") return "这个人";
+    return "这个品牌";
+  }
+  if (entityType === "PRODUCT") return "this product";
+  if (entityType === "WEBSITE") return "this website";
+  if (entityType === "PERSON") return "this person";
+  return "this brand";
 }

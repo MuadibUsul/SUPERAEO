@@ -83,6 +83,7 @@ export function buildSemanticNebula(input: BuildInput, scope: NebulaScope): Sema
         sourceCount: candidate.responseIds.size,
         promptCount: candidate.queryIds.size,
         modelCount: candidate.modelIds.size,
+        models: Array.from(new Set(candidate.evidence.map((item) => item.model).filter((model): model is string => Boolean(model)))),
         firstSeenAt: candidate.firstSeenAt?.toISOString() ?? null,
         lastSeenAt: candidate.lastSeenAt?.toISOString() ?? null,
         components: gravity.components,

@@ -3,7 +3,7 @@ import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { buildSemanticNebula } from "@/server/semantic-nebula/nebula-builder";
-import { buildEntityVectorSpace } from "@/server/semantic-nebula/entity-vector-space";
+import { attachEntityVectorPositions, buildEntityVectorSpace } from "@/server/semantic-nebula/entity-vector-space";
 import { nebulaScopes, type NebulaScope } from "@/server/semantic-nebula/types";
 
 export async function getLatestSemanticNebulaSnapshots(input: {
@@ -96,6 +96,7 @@ export async function buildSemanticNebulaSnapshots(input: {
   });
 
   const requestedScopes = input.scopes?.length ? input.scopes : [...nebulaScopes];
+  const analyzedResponses = responses.filter((response) => response.analysis !== null);
   const snapshots = [];
 
   for (const scope of requestedScopes) {
@@ -110,7 +111,7 @@ export async function buildSemanticNebulaSnapshots(input: {
         subject,
         competitors: project.competitors,
         keywords,
-        responses,
+        responses: analyzedResponses,
       },
       scope,
     );
@@ -119,7 +120,12 @@ export async function buildSemanticNebulaSnapshots(input: {
       analysisJobId: input.analysisJobId,
       stage: "NEBULA_BUILDING_GRAPH",
       message: `Persisting ${scope} semantic nebula snapshot.`,
-      metadata: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length },
+      metadata: {
+        nodeCount: graph.nodes.length,
+        edgeCount: graph.edges.length,
+        analyzedResponseCount: analyzedResponses.length,
+        skippedUnanalyzedResponseCount: responses.length - analyzedResponses.length,
+      },
     });
 
     // Embed the entity + terms and fold real 3D positions into the OVERALL
@@ -134,11 +140,7 @@ export async function buildSemanticNebulaSnapshots(input: {
         terms: graph.nodes.map((node) => ({ label: node.term, type: String(node.termType) })),
       });
       if (space) {
-        const coord = new Map(space.nodes.map((node) => [node.label, node]));
-        nodesToStore = graph.nodes.map((node) => {
-          const c = coord.get(node.term);
-          return c ? { ...node, x: c.x, y: c.y, z: c.z } : node;
-        });
+        nodesToStore = attachEntityVectorPositions(graph.nodes, space);
       }
     }
 
@@ -160,4 +162,3 @@ export async function buildSemanticNebulaSnapshots(input: {
 
   return snapshots;
 }
-

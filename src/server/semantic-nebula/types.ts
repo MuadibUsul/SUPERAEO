@@ -104,6 +104,7 @@ export type SemanticNebulaNode = {
   sourceCount: number;
   promptCount: number;
   modelCount: number;
+  models: string[];
   firstSeenAt: string | null;
   lastSeenAt: string | null;
   components: SemanticGravityComponents;

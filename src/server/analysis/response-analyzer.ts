@@ -61,8 +61,8 @@ export async function analyzeResponse(responseId: string, userId?: string) {
   const data = result.data;
   const normalizedJson = toNormalizedProbeJson(data, subjectContext);
   const legacyCitations = data.citations.map(toLegacyCitation);
-  const mentionedEntityNames = data.mentionedEntities
-    .filter((entity) => entity.name.trim().length > 0)
+  const comparisonEntityNames = data.mentionedEntities
+    .filter((entity) => entity.role === "comparison" && entity.name.trim().length > 0)
     .map((entity) => entity.name.trim());
 
   await prisma.probeResult.upsert({
@@ -119,9 +119,9 @@ export async function analyzeResponse(responseId: string, userId?: string) {
     update: {
       brandMentioned: data.targetMentioned,
       brandRecommended: data.targetRecommended,
-      brandPosition: data.targetPosition ?? undefined,
+      brandPosition: data.targetPosition,
       brandDescription: data.targetDescription,
-      competitorsMentioned: mentionedEntityNames as Prisma.InputJsonValue,
+      competitorsMentioned: comparisonEntityNames as Prisma.InputJsonValue,
       recommendationWinner: data.recommendationWinner,
       mentionContext: data.mentionContext,
       sentiment: sentiment(data.sentiment),
@@ -135,9 +135,9 @@ export async function analyzeResponse(responseId: string, userId?: string) {
       responseId,
       brandMentioned: data.targetMentioned,
       brandRecommended: data.targetRecommended,
-      brandPosition: data.targetPosition ?? undefined,
+      brandPosition: data.targetPosition,
       brandDescription: data.targetDescription,
-      competitorsMentioned: mentionedEntityNames as Prisma.InputJsonValue,
+      competitorsMentioned: comparisonEntityNames as Prisma.InputJsonValue,
       recommendationWinner: data.recommendationWinner,
       mentionContext: data.mentionContext,
       sentiment: sentiment(data.sentiment),
@@ -194,6 +194,7 @@ export async function analyzeResponse(responseId: string, userId?: string) {
     },
   });
 
+  await prisma.alert.deleteMany({ where: { responseId, alertType: "hallucination" } });
   if (data.risks.length > 0) {
     await prisma.alert.createMany({
       data: data.risks.map((hallucination) => ({

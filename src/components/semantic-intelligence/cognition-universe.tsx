@@ -1,0 +1,296 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+import { cn } from "@/lib/utils";
+import type { UniverseNode, UniverseType } from "@/components/semantic-intelligence/universe-adapter";
+
+const HUE: Record<UniverseType, [number, number, number]> = {
+  positive: [56, 224, 161], // mint
+  usecase: [91, 139, 255], // blue
+  competitor: [168, 120, 255], // violet
+  risk: [255, 92, 168], // magenta
+};
+const SECTOR_DIR: Record<UniverseType, [number, number, number]> = {
+  positive: [-0.25, -0.62, 0.18],
+  usecase: [0.68, -0.05, 0.28],
+  competitor: [-0.72, 0.34, -0.22],
+  risk: [0.22, 0.5, 0.24],
+};
+
+type Copy = {
+  legend: Record<UniverseType, string>;
+  hint: string;
+  pull: string;
+  freq: string;
+  empty: string;
+};
+
+type Star = UniverseNode & { hue: [number, number, number]; tw: number };
+
+export function CognitionUniverse({
+  nodes,
+  subjectName,
+  copy,
+  className,
+}: {
+  nodes: UniverseNode[];
+  subjectName: string;
+  copy: Copy;
+  className?: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [typeOn, setTypeOn] = useState<Record<UniverseType, boolean>>({ positive: true, usecase: true, competitor: true, risk: true });
+  const [paused, setPaused] = useState(false);
+  const [selected, setSelected] = useState<UniverseNode | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; node: UniverseNode } | null>(null);
+
+  // mirror reactive state into a ref the animation loop can read each frame
+  const ui = useRef({ typeOn, paused, selected });
+  ui.current = { typeOn, paused, selected };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const stars: Star[] = nodes.map((n, i) => ({ ...n, hue: HUE[n.type], tw: (i * 2.399) % 6.283 }));
+    const cam = { yaw: 0.2, pitch: -0.18, dist: 3.4, tdist: 2.6 };
+    const look = { x: 0, y: 0, z: 0 };
+    const focus = { x: 0, y: 0, z: 0 };
+    let W = 0, H = 0, cx = 0, cy = 0, base = 600, dpr = 1;
+    let drag: { x: number; y: number; yaw: number; pitch: number; moved: boolean } | null = null;
+    let hoverStar: Star | null = null;
+    let lastScreen: Array<{ s: Star; sx: number; sy: number }> = [];
+    let raf = 0;
+
+    const resize = () => {
+      const r = wrap.getBoundingClientRect();
+      W = r.width; H = r.height; dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cx = W / 2; cy = H / 2; base = Math.min(W, H) * 0.6;
+    };
+    const project = (x: number, y: number, z: number) => {
+      x -= look.x; y -= look.y; z -= look.z;
+      const cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+      const x1 = x * cyw - z * syw, z1 = x * syw + z * cyw, y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+      let zc = z2 + cam.dist; if (zc < 0.05) zc = 0.05;
+      const s = 2.3 / zc;
+      return { sx: cx + x1 * s * base, sy: cy + y2 * s * base, s, depth: zc };
+    };
+    const fog = (d: number) => Math.max(0, Math.min(1, (4.6 - d) / 3.4));
+
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const { typeOn, paused, selected } = ui.current;
+      const now = performance.now();
+      if (!drag && !paused) cam.yaw += 0.0026;
+      cam.dist += (cam.tdist - cam.dist) * 0.06;
+      look.x += (focus.x - look.x) * 0.08; look.y += (focus.y - look.y) * 0.08; look.z += (focus.z - look.z) * 0.08;
+
+      const bg = ctx.createRadialGradient(cx, cy * 0.8, 0, cx, cy, Math.max(W, H) * 0.8);
+      bg.addColorStop(0, "#0a0b16"); bg.addColorStop(0.5, "#06070e"); bg.addColorStop(1, "#030308");
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = "lighter";
+
+      (Object.keys(SECTOR_DIR) as UniverseType[]).forEach((t) => {
+        if (!typeOn[t]) return;
+        const dir = SECTOR_DIR[t], p = project(dir[0] * 0.7, dir[1] * 0.7, dir[2] * 0.7), f = fog(p.depth); if (f <= 0) return;
+        const rad = 0.4 * p.s * base, h = HUE[t], g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, rad);
+        g.addColorStop(0, `rgba(${h[0]},${h[1]},${h[2]},${0.14 * f})`); g.addColorStop(1, `rgba(${h[0]},${h[1]},${h[2]},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.sx, p.sy, rad, 0, 6.2832); ctx.fill();
+      });
+
+      const bp = project(0, 0, 0);
+      stars.forEach((s) => {
+        if (!typeOn[s.type] || s.strength < 0.55) return;
+        if (selected && s.type !== selected.type) return;
+        const p = project(s.x, s.y, s.z), f = fog(p.depth); if (f <= 0) return;
+        const grd = ctx.createLinearGradient(bp.sx, bp.sy, p.sx, p.sy);
+        grd.addColorStop(0, "rgba(41,211,236,0)"); grd.addColorStop(1, `rgba(${s.hue[0]},${s.hue[1]},${s.hue[2]},${0.24 * f})`);
+        ctx.strokeStyle = grd; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(bp.sx, bp.sy); ctx.lineTo(p.sx, p.sy); ctx.stroke();
+      });
+
+      const order = stars.map((s) => ({ s, p: project(s.x, s.y, s.z) })).sort((a, b) => b.p.depth - a.p.depth);
+      lastScreen = [];
+      order.forEach(({ s, p }) => {
+        if (!typeOn[s.type]) return;
+        const f = fog(p.depth); if (f <= 0) return;
+        lastScreen.push({ s, sx: p.sx, sy: p.sy });
+        const dim = selected && selected.type !== s.type ? 0.25 : 1;
+        const pulse = s.type === "risk" ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
+        const r = (1.2 + s.freq * 4.2) * p.s * 1.6 * pulse, isH = hoverStar === s || selected === s;
+        ctx.globalAlpha = (0.35 + s.strength * 0.65) * f * dim;
+        ctx.fillStyle = `rgb(${s.hue[0]},${s.hue[1]},${s.hue[2]})`;
+        ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = (isH ? 26 : 8 + s.strength * 16) * f;
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, isH ? r + 2.5 : r, 0, 6.2832); ctx.fill();
+      });
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+
+      // labels for prominent / hovered stars
+      ctx.globalCompositeOperation = "source-over";
+      order.forEach(({ s, p }) => {
+        if (!typeOn[s.type]) return;
+        const f = fog(p.depth);
+        const isH = hoverStar === s || selected === s;
+        if (!(isH || (s.strength > 0.62 && f > 0.4))) return;
+        ctx.globalAlpha = isH ? 1 : 0.78 * f; ctx.fillStyle = isH ? "#fff" : "#c4c8d6";
+        ctx.font = `${isH ? "600" : "500"} 11px Inter, system-ui, sans-serif`;
+        ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(s.label, p.sx + 8, p.sy);
+      });
+      ctx.globalAlpha = 1;
+
+      // brand star
+      ctx.globalCompositeOperation = "lighter";
+      const cr = 15 * bp.s + 7;
+      const halo = ctx.createRadialGradient(bp.sx, bp.sy, 0, bp.sx, bp.sy, cr * 3.2);
+      halo.addColorStop(0, "rgba(180,245,255,0.5)"); halo.addColorStop(0.4, "rgba(41,211,236,0.28)"); halo.addColorStop(1, "rgba(41,211,236,0)");
+      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(bp.sx, bp.sy, cr * 3.2, 0, 6.2832); ctx.fill();
+      const core = ctx.createRadialGradient(bp.sx, bp.sy, 0, bp.sx, bp.sy, cr);
+      core.addColorStop(0, "#ffffff"); core.addColorStop(0.4, "#c9f7ff"); core.addColorStop(1, "rgba(41,211,236,0)");
+      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(bp.sx, bp.sy, cr, 0, 6.2832); ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = "#eafcff"; ctx.font = "700 14px Inter, system-ui, sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(subjectName, bp.sx, bp.sy - cr - 12);
+
+      const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.3, cx, cy, Math.max(W, H) * 0.75);
+      vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.55)");
+      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    };
+
+    const pick = (px: number, py: number) => {
+      let best: Star | null = null, bd = 15 * 15;
+      for (const { s, sx, sy } of lastScreen) {
+        if (!ui.current.typeOn[s.type]) continue;
+        const dx = sx - px, dy = sy - py, dd = dx * dx + dy * dy;
+        if (dd < bd) { bd = dd; best = s; }
+      }
+      return best;
+    };
+    const localXY = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const onDown = (e: MouseEvent) => { const { x, y } = localXY(e); drag = { x, y, yaw: cam.yaw, pitch: cam.pitch, moved: false }; };
+    const onUp = (e: MouseEvent) => {
+      if (drag && !drag.moved) { const { x, y } = localXY(e); const hit = pick(x, y); if (hit) { setSelected(hit); focus.x = hit.x; focus.y = hit.y; focus.z = hit.z; cam.tdist = 1.7; } else { setSelected(null); focus.x = 0; focus.y = 0; focus.z = 0; cam.tdist = 2.6; } }
+      drag = null;
+    };
+    const onMove = (e: MouseEvent) => {
+      const { x, y } = localXY(e);
+      if (drag) {
+        if (Math.abs(x - drag.x) + Math.abs(y - drag.y) > 3) drag.moved = true;
+        cam.yaw = drag.yaw + (x - drag.x) * 0.005; cam.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + (y - drag.y) * 0.005));
+        hoverStar = null; setTip(null); return;
+      }
+      const hit = pick(x, y); hoverStar = hit;
+      setTip(hit ? { x, y, node: hit } : null);
+      canvas.style.cursor = hit ? "pointer" : "grab";
+    };
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); cam.tdist = Math.max(1.1, Math.min(5.5, cam.tdist * (e.deltaY < 0 ? 0.9 : 1.11))); };
+    const onLeave = () => { hoverStar = null; setTip(null); };
+
+    resize();
+    window.addEventListener("resize", resize);
+    canvas.addEventListener("mousedown", onDown);
+    window.addEventListener("mouseup", onUp);
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mouseleave", onLeave);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    raf = requestAnimationFrame(draw);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      canvas.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mouseup", onUp);
+      canvas.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("mouseleave", onLeave);
+      canvas.removeEventListener("wheel", onWheel);
+    };
+  }, [nodes, subjectName]);
+
+  const toggle = (t: UniverseType) => setTypeOn((s) => ({ ...s, [t]: !s[t] }));
+
+  return (
+    <div ref={wrapRef} className={cn("relative overflow-hidden rounded-2xl border border-border bg-[#06070b]", className)}>
+      <canvas ref={canvasRef} className="block h-full w-full" style={{ cursor: "grab" }} />
+
+      {nodes.length === 0 ? (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-faint">{copy.empty}</div>
+      ) : null}
+
+      {/* type filters */}
+      <div className="absolute right-3 top-3 grid gap-1.5">
+        {(Object.keys(HUE) as UniverseType[]).map((t) => {
+          const h = HUE[t];
+          return (
+            <button
+              key={t}
+              onClick={() => toggle(t)}
+              className={cn(
+                "flex items-center justify-end gap-2 text-xs transition-opacity",
+                typeOn[t] ? "opacity-100" : "opacity-30",
+              )}
+            >
+              <span className="text-[#c4c8d6]">{copy.legend[t]}</span>
+              <span className="size-2 rounded-full" style={{ background: `rgb(${h[0]},${h[1]},${h[2]})`, boxShadow: `0 0 8px rgb(${h[0]},${h[1]},${h[2]})` }} />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* pause + hint */}
+      <div className="absolute bottom-3 left-3 flex items-center gap-3">
+        <button
+          onClick={() => setPaused((p) => !p)}
+          className="grid size-7 place-items-center rounded-md border border-border bg-black/40 text-[#c4c8d6] hover:text-white"
+          aria-label={paused ? "Resume" : "Pause"}
+        >
+          {paused ? (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z" /></svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" /><rect x="14" y="5" width="4" height="14" /></svg>
+          )}
+        </button>
+        <span className="font-mono text-[10px] leading-tight text-faint">{copy.hint}</span>
+      </div>
+
+      {/* hover tooltip */}
+      {tip ? (
+        <div
+          className="pointer-events-none absolute z-10 max-w-[220px] rounded-lg border border-border bg-black/85 px-3 py-2 text-xs backdrop-blur"
+          style={{ left: Math.min(tip.x + 14, 9999), top: tip.y + 10 }}
+        >
+          <div className="font-medium text-foreground">{tip.node.label}</div>
+          <div className="mt-0.5 font-mono text-[10px] text-faint">
+            {tip.node.type} · {copy.pull} {Math.round(tip.node.strength * 100)}
+          </div>
+        </div>
+      ) : null}
+
+      {/* selected detail */}
+      {selected ? (
+        <div className="absolute bottom-3 right-3 w-52 rounded-lg border border-border bg-black/85 p-4 backdrop-blur">
+          <button className="absolute right-2.5 top-2 text-faint hover:text-foreground" onClick={() => setSelected(null)} aria-label="Close">×</button>
+          <div className="pr-4 text-sm font-semibold text-foreground">{selected.label}</div>
+          <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wide" style={{ color: `rgb(${HUE[selected.type].join(",")})` }}>
+            {selected.type}
+          </div>
+          {(["strength", "freq"] as const).map((k) => (
+            <div key={k} className="mt-3">
+              <div className="mb-1 flex justify-between text-[11px] text-muted-foreground">
+                <span>{k === "strength" ? copy.pull : copy.freq}</span>
+                <span className="font-mono">{Math.round((selected[k] as number) * 100)}</span>
+              </div>
+              <div className="h-1 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full" style={{ width: `${Math.round((selected[k] as number) * 100)}%`, background: `rgb(${HUE[selected.type].join(",")})` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}

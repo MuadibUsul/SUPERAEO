@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 
 import { ProjectPageShell } from "@/components/layout/project-page-shell";
 import { SemanticJobAction } from "@/components/semantic-intelligence/semantic-job-action";
-import { SemanticNebulaExplorer } from "@/components/semantic-intelligence/semantic-nebula-explorer";
+import { CognitionUniverse } from "@/components/semantic-intelligence/cognition-universe";
+import { adaptNebulaNodes } from "@/components/semantic-intelligence/universe-adapter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusCallout } from "@/components/ui/status-callout";
 import { normalizeLocale } from "@/i18n/config";
@@ -92,35 +93,19 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
           />
         </CardHeader>
         <CardContent>
-          <SemanticNebulaExplorer
+          <CognitionUniverse
             subjectName={subject?.displayName ?? state.data.brandName}
-            snapshots={latestByScope.map((snapshot) => ({
-              id: snapshot.id,
-              scope: snapshot.scope,
-              nodeJson: snapshot.nodeJson,
-              edgeJson: snapshot.edgeJson,
-              summaryJson: snapshot.summaryJson,
-              createdAt: snapshot.createdAt.toISOString(),
-            }))}
+            nodes={adaptNebulaNodes(overall?.nodeJson)}
+            className="h-[560px]"
             copy={{
-              title: dictionary.semanticIntelligence.nebula.title,
-              scopes: {
-                OVERALL: dictionary.semanticIntelligence.nebula.overall,
-                POSITIVE_NEGATIVE: dictionary.semanticIntelligence.nebula.positiveNegative,
-                SCENARIO: dictionary.semanticIntelligence.nebula.scenario,
-                COMPETITOR: dictionary.semanticIntelligence.nebula.competitor,
-                MISSING: dictionary.semanticIntelligence.nebula.missing,
-                RISK: dictionary.semanticIntelligence.nebula.risk,
-              },
-              evidence: dictionary.semanticIntelligence.nebula.evidence,
-              components: dictionary.semanticIntelligence.nebula.components,
-              noData: dictionary.semanticIntelligence.states.noData,
-              showTop80: dictionary.semanticIntelligence.nebula.showTop80,
-              showAll: dictionary.semanticIntelligence.nebula.showAll,
-              legend: dictionary.semanticIntelligence.nebula.legend,
-              gravity: dictionary.semanticIntelligence.nebula.gravity,
-              confidence: dictionary.semanticIntelligence.nebula.confidence,
-              closeEvidence: dictionary.semanticIntelligence.nebula.closeEvidence,
+              legend:
+                locale === "zh-CN"
+                  ? { positive: "拥有 / 正向", usecase: "使用场景", competitor: "竞品占据", risk: "风险 / 混淆" }
+                  : { positive: "Owns", usecase: "Use-cases", competitor: "Competitor", risk: "Risk" },
+              hint: locale === "zh-CN" ? "拖拽环绕 · 滚轮缩放 · 点击星飞抵" : "drag · scroll · click a star",
+              pull: locale === "zh-CN" ? "引力" : "pull",
+              freq: locale === "zh-CN" ? "频率" : "freq",
+              empty: dictionary.semanticIntelligence.states.noData,
             }}
           />
         </CardContent>

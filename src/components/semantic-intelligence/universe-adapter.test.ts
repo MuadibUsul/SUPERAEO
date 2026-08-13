@@ -1,0 +1,50 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { adaptNebulaNodes } from "@/components/semantic-intelligence/universe-adapter";
+
+const nodes = [
+  { term: "AI observability", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 90, frequencyScore: 80, context: {} },
+  { term: "Datadog", termType: "COMPETITOR", polarity: "NEUTRAL", semanticGravity: 30, frequencyScore: 60, context: { competitorContext: true } },
+  { term: "confusion", termType: "RISK", polarity: "NEGATIVE", semanticGravity: 50, frequencyScore: 40, context: { riskContext: true } },
+  { term: "RAG eval", termType: "SCENARIO", polarity: "NEUTRAL", semanticGravity: 45, frequencyScore: 50, context: {} },
+  { term: "", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 10, frequencyScore: 10, context: {} },
+];
+
+test("classifies each node into a universe type", () => {
+  const out = adaptNebulaNodes(nodes);
+  const by = Object.fromEntries(out.map((n) => [n.label, n.type]));
+  assert.equal(by["AI observability"], "positive");
+  assert.equal(by["Datadog"], "competitor");
+  assert.equal(by["confusion"], "risk");
+  assert.equal(by["RAG eval"], "usecase");
+});
+
+test("drops empty labels", () => {
+  const out = adaptNebulaNodes(nodes);
+  assert.ok(!out.some((n) => n.label === ""));
+  assert.equal(out.length, 4);
+});
+
+test("strength maps 0..1 and a strong term sits closer to the origin than a weak one", () => {
+  const out = adaptNebulaNodes(nodes);
+  const strong = out.find((n) => n.label === "AI observability")!; // gravity 90
+  const weak = out.find((n) => n.label === "Datadog")!; // gravity 30
+  assert.equal(strong.strength, 0.9);
+  const dStrong = Math.hypot(strong.x, strong.y, strong.z);
+  const dWeak = Math.hypot(weak.x, weak.y, weak.z);
+  assert.ok(dStrong < dWeak, `strong ${dStrong.toFixed(2)} should be nearer than weak ${dWeak.toFixed(2)}`);
+});
+
+test("deterministic and coordinate-bounded", () => {
+  assert.deepEqual(adaptNebulaNodes(nodes), adaptNebulaNodes(nodes));
+  for (const n of adaptNebulaNodes(nodes)) {
+    for (const c of [n.x, n.y, n.z]) assert.ok(Math.abs(c) < 1.5, `coord ${c} out of range`);
+  }
+});
+
+test("respects the limit and handles non-array input", () => {
+  const many = Array.from({ length: 300 }, (_, i) => ({ term: `t${i}`, termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: i % 100, frequencyScore: 50, context: {} }));
+  assert.equal(adaptNebulaNodes(many, 120).length, 120);
+  assert.deepEqual(adaptNebulaNodes(null), []);
+  assert.deepEqual(adaptNebulaNodes(undefined), []);
+});

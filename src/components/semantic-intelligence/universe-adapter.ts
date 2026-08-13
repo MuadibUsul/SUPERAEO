@@ -1,0 +1,85 @@
+/**
+ * Adapt stored nebula nodes into cognition-universe nodes.
+ *
+ * Today's nodeJson has no coordinates, so we derive a deterministic 3D layout
+ * from what the audit measured: type decides the sector direction, semantic
+ * gravity decides distance from the entity (strong = close). When the
+ * embedding vector space lands, real x/y/z replace `layout` here and nothing
+ * else changes.
+ */
+import { asRecord } from "@/server/utils/coerce";
+
+export type UniverseType = "positive" | "usecase" | "competitor" | "risk";
+export type UniverseNode = {
+  label: string;
+  type: UniverseType;
+  strength: number; // 0..1
+  freq: number; // 0..1
+  x: number;
+  y: number;
+  z: number;
+};
+
+const SECTOR_DIR: Record<UniverseType, [number, number, number]> = {
+  positive: [-0.25, -0.62, 0.18],
+  usecase: [0.68, -0.05, 0.28],
+  competitor: [-0.72, 0.34, -0.22],
+  risk: [0.22, 0.5, 0.24],
+};
+
+function classify(termType: string, polarity: string, context: Record<string, unknown>): UniverseType {
+  const tt = termType.toUpperCase();
+  if (context.competitorContext === true || tt === "COMPETITOR") return "competitor";
+  if (
+    context.riskContext === true ||
+    context.missingDesired === true ||
+    ["RISK", "INCORRECT", "UNDESIRED", "NEGATIVE", "MISSING"].includes(tt)
+  ) {
+    return "risk";
+  }
+  if (polarity.toUpperCase() === "POSITIVE" || ["POSITIVE", "BENEFIT", "TRUST"].includes(tt)) return "positive";
+  return "usecase";
+}
+
+/** Deterministic hash → [0,1) for stable jitter. */
+function hash01(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967295;
+}
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+export function adaptNebulaNodes(nodeJson: unknown, limit = 160): UniverseNode[] {
+  const rows = Array.isArray(nodeJson) ? nodeJson : [];
+  const nodes = rows
+    .map((raw) => asRecord(raw))
+    .map((r) => {
+      const label = String(r.term ?? r.normalizedTerm ?? "").trim();
+      const type = classify(String(r.termType ?? ""), String(r.polarity ?? ""), asRecord(r.context));
+      const strength = Math.max(0, Math.min(1, num(r.semanticGravity) / 100));
+      const freq = Math.max(0, Math.min(1, num(r.frequencyScore) / 100));
+      return { label, type, strength, freq };
+    })
+    .filter((n) => n.label.length > 0)
+    .sort((a, b) => b.strength - a.strength)
+    .slice(0, limit);
+
+  return nodes.map((n) => {
+    const dir = SECTOR_DIR[n.type];
+    // strong terms sit close to the entity (origin); weak ones drift outward
+    const dist = 0.28 + (1 - n.strength) * 0.72;
+    const j = (seed: number) => (hash01(n.label + seed) - 0.5) * 0.28;
+    return {
+      ...n,
+      x: dir[0] * dist + j(1),
+      y: dir[1] * dist + j(2),
+      z: dir[2] * dist + j(3),
+    };
+  });
+}

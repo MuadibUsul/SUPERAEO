@@ -3,6 +3,7 @@ import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { buildSemanticNebula } from "@/server/semantic-nebula/nebula-builder";
+import { buildEntityVectorSpace } from "@/server/semantic-nebula/entity-vector-space";
 import { nebulaScopes, type NebulaScope } from "@/server/semantic-nebula/types";
 
 export async function getLatestSemanticNebulaSnapshots(input: {
@@ -121,6 +122,26 @@ export async function buildSemanticNebulaSnapshots(input: {
       metadata: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length },
     });
 
+    // Embed the entity + terms and fold real 3D positions into the OVERALL
+    // snapshot when an embeddings-capable provider is enabled. Best-effort:
+    // null when unavailable, and the universe falls back to its gravity layout.
+    let nodesToStore: unknown[] = graph.nodes;
+    if (scope === "OVERALL") {
+      const space = await buildEntityVectorSpace({
+        projectId: input.projectId,
+        subjectId: subject.id,
+        subjectName: subject.displayName,
+        terms: graph.nodes.map((node) => ({ label: node.term, type: String(node.termType) })),
+      });
+      if (space) {
+        const coord = new Map(space.nodes.map((node) => [node.label, node]));
+        nodesToStore = graph.nodes.map((node) => {
+          const c = coord.get(node.term);
+          return c ? { ...node, x: c.x, y: c.y, z: c.z } : node;
+        });
+      }
+    }
+
     const snapshot = await prisma.semanticNebulaSnapshot.create({
       data: {
         projectId: input.projectId,
@@ -128,7 +149,7 @@ export async function buildSemanticNebulaSnapshots(input: {
         runId: latestRun?.id,
         scope,
         version: graph.summary.version,
-        nodeJson: graph.nodes as Prisma.InputJsonValue,
+        nodeJson: nodesToStore as Prisma.InputJsonValue,
         edgeJson: graph.edges as Prisma.InputJsonValue,
         summaryJson: graph.summary as Prisma.InputJsonValue,
         evidenceJson: graph.evidence as Prisma.InputJsonValue,

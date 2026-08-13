@@ -60,6 +60,19 @@ test("carries evidence quotes, drops empty excerpts, and falls back model->sourc
   assert.equal(out[0].examples[1].source, "sonar");
 });
 
+test("real embedding coords win over the gravity fallback when present", () => {
+  const withCoords = [
+    { term: "embedded", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 90, frequencyScore: 50, context: {}, x: 0.4, y: -0.1, z: 0.2 },
+    { term: "fallback", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 90, frequencyScore: 50, context: {} },
+  ];
+  const out = adaptNebulaNodes(withCoords);
+  const a = out.find((n) => n.label === "embedded")!;
+  assert.deepEqual({ x: a.x, y: a.y, z: a.z }, { x: 0.4, y: -0.1, z: 0.2 });
+  // the coordless one is NOT at those exact coords (fallback layout)
+  const b = out.find((n) => n.label === "fallback")!;
+  assert.notDeepEqual({ x: b.x, y: b.y, z: b.z }, { x: 0.4, y: -0.1, z: 0.2 });
+});
+
 test("nodes without examples get an empty array", () => {
   const out = adaptNebulaNodes(nodes);
   assert.ok(out.every((n) => Array.isArray(n.examples)));

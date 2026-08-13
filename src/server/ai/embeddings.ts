@@ -1,32 +1,60 @@
 /**
  * Embedding client — the substrate for "where an entity sits inside the model".
  *
- * Provider-agnostic against the de-facto OpenAI `/embeddings` shape, so it
- * works with OpenAI, a local Ollama server (`/v1`), Jina, Voyage, etc. by env
- * alone — plug in a key later without touching code:
- *   EMBEDDING_API_URL   base, e.g. https://api.openai.com/v1  or  http://localhost:11434/v1
- *   EMBEDDING_API_KEY   bearer token (optional for local servers)
- *   EMBEDDING_MODEL     e.g. text-embedding-3-small | nomic-embed-text | bge-m3
+ * Reuses the platform's own connected providers: it picks an enabled provider
+ * flagged `supportsEmbeddings`, decrypts its key, and calls the OpenAI-standard
+ * `/embeddings` endpoint on its base URL. So activating embeddings is just
+ * "add/enable an embeddings-capable provider" in the operator console — no new
+ * secret in code. (DeepSeek has no /embeddings endpoint, so it can't be that
+ * provider; OpenAI, a local Ollama `/v1`, Jina, Voyage, etc. can.)
  *
- * Everything downstream guards on isEmbeddingConfigured(), so the app runs
- * unchanged until a source is provided.
+ * An env override (EMBEDDING_API_URL / _API_KEY / _MODEL) still works and wins,
+ * for pointing at something not managed as a provider (e.g. local Ollama).
+ * Everything downstream guards on the resolved config, so the app runs
+ * unchanged until a source exists.
  */
+import { getPrisma } from "@/server/db";
+import { decryptSecret } from "@/server/security/encryption";
 import { asArray, asRecord } from "@/server/utils/coerce";
 
 const DEFAULT_MODEL = "text-embedding-3-small";
 const MAX_BATCH = 96;
 
-export function isEmbeddingConfigured(): boolean {
-  return Boolean(process.env.EMBEDDING_API_URL);
+export type EmbeddingConfig = { url: string; key: string; model: string };
+
+function embeddingsUrl(base: string): string {
+  const b = base.replace(/\/+$/, "");
+  return /\/embeddings$/.test(b) ? b : `${b}/embeddings`;
 }
 
-export function embeddingModel(): string {
-  return process.env.EMBEDDING_MODEL || DEFAULT_MODEL;
+/**
+ * Resolve where to get embeddings: env override first, then the first enabled
+ * provider flagged supportsEmbeddings. Returns null when nothing is available.
+ */
+export async function resolveEmbeddingConfig(): Promise<EmbeddingConfig | null> {
+  const envUrl = process.env.EMBEDDING_API_URL;
+  if (envUrl) {
+    return { url: embeddingsUrl(envUrl), key: process.env.EMBEDDING_API_KEY || "", model: process.env.EMBEDDING_MODEL || DEFAULT_MODEL };
+  }
+  const provider = await getPrisma().aIProvider.findFirst({
+    where: { enabled: true, supportsEmbeddings: true },
+    include: { models: { where: { enabled: true } } },
+  });
+  if (!provider?.baseUrl || !provider.apiKeyEncrypted) return null;
+  let key: string;
+  try {
+    key = decryptSecret(provider.apiKeyEncrypted);
+  } catch {
+    return null;
+  }
+  if (!key) return null;
+  // prefer a model that actually looks like an embedding model, else default
+  const embedModel = provider.models.find((m) => /embed/i.test(m.name))?.name || DEFAULT_MODEL;
+  return { url: embeddingsUrl(provider.baseUrl), key, model: embedModel };
 }
 
-function endpoint(): string {
-  const base = (process.env.EMBEDDING_API_URL || "").replace(/\/+$/, "");
-  return /\/embeddings$/.test(base) ? base : `${base}/embeddings`;
+export async function isEmbeddingConfigured(): Promise<boolean> {
+  return (await resolveEmbeddingConfig()) !== null;
 }
 
 /** Parse the OpenAI-compatible response, preserving input order via `index`. */
@@ -43,28 +71,22 @@ function parseEmbeddings(raw: unknown, expected: number): number[][] {
 }
 
 /**
- * Embed a batch of texts. Returns one vector per input (same order).
- * Throws if unconfigured or the provider errors — callers guard with
- * isEmbeddingConfigured() and treat failure as "keep the existing layout".
+ * Embed a batch of texts (same order out). Pass a resolved config to avoid a
+ * second lookup, or let it resolve. Throws if unconfigured or the provider
+ * errors — callers treat failure as "keep the existing layout".
  */
-export async function embedTexts(texts: string[]): Promise<number[][]> {
-  if (!isEmbeddingConfigured()) throw new Error("Embedding source is not configured (set EMBEDDING_API_URL).");
+export async function embedTexts(texts: string[], config?: EmbeddingConfig): Promise<number[][]> {
   if (texts.length === 0) return [];
+  const cfg = config ?? (await resolveEmbeddingConfig());
+  if (!cfg) throw new Error("No embedding source: enable a provider with supportsEmbeddings, or set EMBEDDING_API_URL.");
 
-  const model = embeddingModel();
-  const key = process.env.EMBEDDING_API_KEY;
-  const url = endpoint();
   const results: number[][] = [];
-
   for (let start = 0; start < texts.length; start += MAX_BATCH) {
     const batch = texts.slice(start, start + MAX_BATCH);
-    const response = await fetch(url, {
+    const response = await fetch(cfg.url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(key ? { Authorization: `Bearer ${key}` } : {}),
-      },
-      body: JSON.stringify({ model, input: batch }),
+      headers: { "Content-Type": "application/json", ...(cfg.key ? { Authorization: `Bearer ${cfg.key}` } : {}) },
+      body: JSON.stringify({ model: cfg.model, input: batch }),
     });
     if (!response.ok) {
       const detail = await response.text().catch(() => "");

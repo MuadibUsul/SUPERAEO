@@ -79,22 +79,30 @@ export function adaptNebulaNodes(nodeJson: unknown, limit = 160): UniverseNode[]
       const type = classify(String(r.termType ?? ""), String(r.polarity ?? ""), asRecord(r.context));
       const strength = Math.max(0, Math.min(1, num(r.semanticGravity) / 100));
       const freq = Math.max(0, Math.min(1, num(r.frequencyScore) / 100));
-      return { label, type, strength, freq, examples: extractExamples(r.examples) };
+      const hasCoords = typeof r.x === "number" && typeof r.y === "number" && typeof r.z === "number";
+      return {
+        label, type, strength, freq, examples: extractExamples(r.examples),
+        hasCoords, sx: num(r.x), sy: num(r.y), sz: num(r.z),
+      };
     })
     .filter((n) => n.label.length > 0)
     .sort((a, b) => b.strength - a.strength)
     .slice(0, limit);
 
   return nodes.map((n) => {
-    const dir = SECTOR_DIR[n.type];
-    // strong terms sit close to the entity (origin); weak ones drift outward
-    const dist = 0.28 + (1 - n.strength) * 0.72;
-    const j = (seed: number) => (hash01(n.label + seed) - 0.5) * 0.28;
-    return {
-      ...n,
-      x: dir[0] * dist + j(1),
-      y: dir[1] * dist + j(2),
-      z: dir[2] * dist + j(3),
-    };
+    // real embedding coordinates win when present; otherwise a deterministic
+    // gravity-driven fallback (strong terms near the entity, weak ones outward)
+    let x: number, y: number, z: number;
+    if (n.hasCoords) {
+      x = n.sx; y = n.sy; z = n.sz;
+    } else {
+      const dir = SECTOR_DIR[n.type];
+      const dist = 0.28 + (1 - n.strength) * 0.72;
+      const j = (seed: number) => (hash01(n.label + seed) - 0.5) * 0.28;
+      x = dir[0] * dist + j(1);
+      y = dir[1] * dist + j(2);
+      z = dir[2] * dist + j(3);
+    }
+    return { label: n.label, type: n.type, strength: n.strength, freq: n.freq, examples: n.examples, x, y, z };
   });
 }

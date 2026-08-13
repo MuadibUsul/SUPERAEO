@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { semanticDomains } from "@/server/semantic-nebula/ontology";
+
 export const probeRunModes = ["demo", "standard", "max500", "max1000"] as const;
 export const probeDepthLevels = ["primary", "rationale", "decision", "comparison"] as const;
 export const probeExecutionModes = ["single", "micro_batch"] as const;
@@ -90,6 +92,29 @@ export const recommendedBrandSchema = z.object({
   reason_tags: z.array(z.string().trim().min(1)).max(8).default([]),
 });
 
+const nullableString = z.string().trim().nullable().optional().transform((value) => value ?? undefined);
+const nullableNumber = z.number().nullable().optional().transform((value) => value ?? undefined);
+
+export const probeSemanticUnitSchema = z.object({
+  domain: z.enum(semanticDomains),
+  type: z.string().trim().min(1),
+  canonicalLabel: nullableString,
+  surfaceForm: nullableString,
+  description: nullableString,
+  subject: nullableString,
+  predicate: nullableString,
+  object: nullableString,
+  value: z.union([z.number(), z.string()]).nullable().optional().transform((value) => value ?? undefined),
+  unit: nullableString,
+  polarity: z.enum(["positive", "negative", "neutral"]).nullable().optional().transform((value) => value ?? undefined),
+  negated: z.boolean().default(false),
+  uncertainty: z.enum(["certain", "possible", "likely", "expected", "rumored", "estimated", "unknown"]).default("unknown"),
+  confidence: z.number().min(0).max(1).default(0.5),
+  intensity: nullableNumber,
+  temporal: z.object({ from: nullableString, to: nullableString, label: nullableString }).nullable().optional().transform((value) => value ?? undefined),
+  condition: nullableString,
+});
+
 export const probeResponseSchema = z.object({
   probe_id: z.string().trim().min(1),
   mentioned_brand: z.boolean().nullable().optional(),
@@ -103,6 +128,7 @@ export const probeResponseSchema = z.object({
   sentiment_score: z.number().min(-1).max(1).nullable().optional(),
   recommendation_score: z.number().min(0).max(100).nullable().optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),
+  semantic_units: z.array(probeSemanticUnitSchema).max(12).default([]),
 });
 
 export const probeBatchResponseSchema = z.array(probeResponseSchema).min(1).max(10);
@@ -125,6 +151,7 @@ export const probeResponseJsonSchema = {
     "sentiment_score",
     "recommendation_score",
     "confidence",
+    "semantic_units",
   ],
   properties: {
     probe_id: { type: "string" },
@@ -153,6 +180,39 @@ export const probeResponseJsonSchema = {
     sentiment_score: { type: ["number", "null"] },
     recommendation_score: { type: ["number", "null"] },
     confidence: { type: ["number", "null"] },
+    semantic_units: {
+      type: "array",
+      maxItems: 12,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["domain", "type", "canonicalLabel", "surfaceForm", "description", "subject", "predicate", "object", "value", "unit", "polarity", "negated", "uncertainty", "confidence", "intensity", "temporal", "condition"],
+        properties: {
+          domain: { type: "string", enum: [...semanticDomains] },
+          type: { type: "string" },
+          canonicalLabel: { type: ["string", "null"] },
+          surfaceForm: { type: ["string", "null"] },
+          description: { type: ["string", "null"] },
+          subject: { type: ["string", "null"] },
+          predicate: { type: ["string", "null"] },
+          object: { type: ["string", "null"] },
+          value: { type: ["number", "string", "null"] },
+          unit: { type: ["string", "null"] },
+          polarity: { type: ["string", "null"], enum: ["positive", "negative", "neutral", null] },
+          negated: { type: "boolean" },
+          uncertainty: { type: "string", enum: ["certain", "possible", "likely", "expected", "rumored", "estimated", "unknown"] },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+          intensity: { type: ["number", "null"], minimum: 0, maximum: 1 },
+          temporal: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            required: ["from", "to", "label"],
+            properties: { from: { type: ["string", "null"] }, to: { type: ["string", "null"] }, label: { type: ["string", "null"] } },
+          },
+          condition: { type: ["string", "null"] },
+        },
+      },
+    },
   },
 } as const;
 
@@ -161,4 +221,18 @@ export const probeBatchResponseJsonSchema = {
   minItems: 1,
   maxItems: 10,
   items: probeResponseJsonSchema,
+} as const;
+
+const legacyProbeProperties = Object.fromEntries(
+  Object.entries(probeResponseJsonSchema.properties).filter(([field]) => field !== "semantic_units"),
+) as Omit<typeof probeResponseJsonSchema.properties, "semantic_units">;
+export const legacyProbeResponseJsonSchema = {
+  ...probeResponseJsonSchema,
+  required: probeResponseJsonSchema.required.filter((field) => field !== "semantic_units"),
+  properties: legacyProbeProperties,
+} as const;
+
+export const legacyProbeBatchResponseJsonSchema = {
+  ...probeBatchResponseJsonSchema,
+  items: legacyProbeResponseJsonSchema,
 } as const;

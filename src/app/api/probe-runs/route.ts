@@ -20,7 +20,7 @@ const createProbeRunSchema = z.object({
     targetMarkets: z.array(z.string()).optional(),
     domain: z.string().optional(),
   }),
-  mode: z.enum(["demo", "standard", "max500"]).default("standard"),
+  mode: z.enum(["demo", "standard", "max500", "max1000"]).default("standard"),
   execution_mode: z.enum(["single", "micro_batch"]).default("micro_batch"),
   target_throughput_per_minute: z.number().int().positive().default(500),
   micro_batch_size: z.number().int().min(1).max(10).default(5),

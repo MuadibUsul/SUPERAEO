@@ -1,13 +1,14 @@
-import type { BrandProbe, BrandProbeBatch, Prisma } from "@/generated/prisma/client";
+import type { BrandProbe, BrandProbeBatch, BrandProbeRun, Prisma } from "@/generated/prisma/client";
 import { resolveTaskExecutionPlan } from "@/server/ai/execution-policies";
 import { runJsonPrompt } from "@/server/ai/json-executor";
 import { getProbeRunConfig } from "@/server/brand-probes/config";
 import { buildMicroBatches } from "@/server/brand-probes/micro-batch-builder";
 import { RateLimiter } from "@/server/brand-probes/rate-limiter";
 import { extractSignals } from "@/server/brand-probes/signal-extractor";
+import { advanceSemanticExploration, getSemanticExplorationConfig } from "@/server/brand-probes/semantic-exploration-service";
 import { estimateBatchTokens, usageNumbers } from "@/server/brand-probes/token-cost";
 import { ThroughputController, type ThroughputSample } from "@/server/brand-probes/throughput-controller";
-import { probeBatchResponseJsonSchema, probeBatchResponseSchema, probeResponseJsonSchema, probeResponseSchema, type ProbeResponseJson } from "@/server/brand-probes/types";
+import { legacyProbeBatchResponseJsonSchema, legacyProbeResponseJsonSchema, probeBatchResponseJsonSchema, probeBatchResponseSchema, probeResponseJsonSchema, probeResponseSchema, type ProbeResponseJson } from "@/server/brand-probes/types";
 import { getPrisma } from "@/server/db";
 import { recordTraceEvent } from "@/server/observability/event-log";
 
@@ -15,7 +16,7 @@ type ProbeWithRun = BrandProbe & {
   run: { id: string; projectId: string; subjectId: string | null };
 };
 
-export async function runBrandProbeRun(input: { runId: string; analysisJobId?: string | null }) {
+export async function runBrandProbeRun(input: { runId: string; analysisJobId?: string | null }): Promise<BrandProbeRun> {
   const prisma = getPrisma();
   const run = await prisma.brandProbeRun.findUnique({
     where: { id: input.runId },
@@ -36,8 +37,8 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
   const controller = new ThroughputController(config);
   const startedAt = Date.now();
   const sample: ThroughputSample = {
-    completedProbes: 0,
-    failedProbes: 0,
+    completedProbes: runRecord.completedProbes,
+    failedProbes: runRecord.failedProbes,
     elapsedMs: 0,
     averageLatencyMs: 0,
     rateLimitErrors: 0,
@@ -121,7 +122,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
           sample.tokensUsedInWindow += result.tokens;
           sample.elapsedMs = Date.now() - startedAt;
           sample.averageLatencyMs = Math.round(latencies.reduce((total, item) => total + item, 0) / Math.max(1, latencies.length));
-          const state = controller.update(sample, probes.length);
+          const state = controller.update(sample, runRecord.totalProbes);
           limiter.update({
             requestsPerMinute: state.requestRateLimit,
             maxConcurrency: state.concurrency,
@@ -149,8 +150,13 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
 
   await Promise.all(Array.from({ length: config.maxConcurrency }, (_, index) => worker(index)));
 
+  const exploration = await advanceSemanticExploration({ runId: runRecord.id, analysisJobId: input.analysisJobId });
+  if (exploration.enabled && exploration.continue) {
+    return runBrandProbeRun(input);
+  }
+
   const latest = await prisma.brandProbeRun.findUnique({ where: { id: runRecord.id } });
-  const status = latest && latest.failedProbes > 0 && latest.completedProbes > 0 ? "completed" : latest?.failedProbes === probes.length ? "failed" : "completed";
+  const status = latest && latest.totalProbes > 0 && latest.failedProbes >= latest.totalProbes ? "failed" : "completed";
   return prisma.brandProbeRun.update({
     where: { id: runRecord.id },
     data: {
@@ -302,7 +308,7 @@ async function executeMicroBatch(input: {
       prompt,
       schema: probeBatchResponseSchema,
       schemaName: "brand_probe_batch_result",
-      jsonSchema: probeBatchResponseJsonSchema,
+      jsonSchema: getSemanticExplorationConfig().enabled ? probeBatchResponseJsonSchema : legacyProbeBatchResponseJsonSchema,
       maxOutputTokens: input.maxOutputTokens,
       temperature: input.temperature,
       metadata: { batchId: input.batch.id, probeIds: input.probes.map((probe) => probe.id), attempt },
@@ -405,7 +411,7 @@ async function executeSingleProbe(input: {
       prompt: `${input.probe.prompt}\n\nprobe_id 必须等于：${input.probe.id}`,
       schema: probeResponseSchema,
       schemaName: "brand_probe_result",
-      jsonSchema: probeResponseJsonSchema,
+      jsonSchema: getSemanticExplorationConfig().enabled ? probeResponseJsonSchema : legacyProbeResponseJsonSchema,
       maxOutputTokens: input.maxOutputTokens,
       temperature: input.temperature,
       metadata: { batchId: input.batch.id, probeId: input.probe.id, attempt },

@@ -114,6 +114,16 @@ export type SemanticNebulaNode = {
     riskContext: boolean;
     missingDesired: boolean;
   };
+  semanticMeta?: {
+    domain: string;
+    type: string;
+    clusterId: string;
+    firstSeenIteration: number;
+    probeOccurrenceCount: number;
+    noveltyScore: number;
+    confidence: number;
+    crossModelOccurrenceCount?: number;
+  };
 };
 
 export type SemanticNebulaEdge = {
@@ -124,6 +134,12 @@ export type SemanticNebulaEdge = {
   weight: number;
   confidence: number;
   evidenceCount: number;
+  semanticMeta?: {
+    canonicalRelation: string;
+    relationDomain: string;
+    confidence: number;
+    negated: boolean;
+  };
 };
 
 export type SemanticNebulaSummary = {

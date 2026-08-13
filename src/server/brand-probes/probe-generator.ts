@@ -2,7 +2,7 @@ import type { Project, ProjectSubject } from "@/generated/prisma/client";
 import { zoneQuotas } from "@/server/brand-probes/config";
 import { scoreProbeQuality } from "@/server/brand-probes/probe-quality-scorer";
 import { renderProbePrompt, semanticTemperatureForZone } from "@/server/brand-probes/probe-templates";
-import { probeResponseJsonSchema, type GeneratedProbe, type ProbeRunConfig, type ProbeZone, type SeedPool } from "@/server/brand-probes/types";
+import { legacyProbeResponseJsonSchema, probeResponseJsonSchema, type GeneratedProbe, type ProbeRunConfig, type ProbeZone, type SeedPool } from "@/server/brand-probes/types";
 
 const zoneQuestionType = {
   core_semantics: "explicit_association",
@@ -69,7 +69,7 @@ export function generateBrandProbes(input: {
         modelTemperature: input.config.modelTemperature,
         language,
         prompt: rendered.prompt,
-        expectedOutputSchema: probeResponseJsonSchema as unknown as Record<string, unknown>,
+        expectedOutputSchema: (process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? probeResponseJsonSchema : legacyProbeResponseJsonSchema) as unknown as Record<string, unknown>,
         variables: rendered.variables,
         qualityScore,
       });

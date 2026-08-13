@@ -62,7 +62,9 @@ export function CognitionUniverse({
 
   // mirror reactive state into a ref the animation loop can read each frame
   const ui = useRef({ typeOn, paused, selected });
-  ui.current = { typeOn, paused, selected };
+  useEffect(() => {
+    ui.current = { typeOn, paused, selected };
+  }, [typeOn, paused, selected]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

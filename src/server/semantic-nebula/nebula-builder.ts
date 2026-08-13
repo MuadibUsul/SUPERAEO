@@ -2,6 +2,7 @@ import type { Prisma, SubjectEntityType } from "@/generated/prisma/client";
 import { getNebulaScopeDefinition } from "@/server/semantic-nebula/nebula-registry";
 import { calculateSemanticGravity } from "@/server/semantic-nebula/semantic-gravity";
 import { extractSemanticTermCandidates } from "@/server/semantic-nebula/semantic-term-extractor";
+import { legacyTermDomain } from "@/server/semantic-nebula/ontology";
 import {
   type NebulaScope,
   type SemanticNebulaBuildResult,
@@ -93,6 +94,15 @@ export function buildSemanticNebula(input: BuildInput, scope: NebulaScope): Sema
           riskContext: candidate.riskContextHits > 0 || ["RISK", "INCORRECT", "UNDESIRED"].includes(candidate.termType),
           missingDesired: candidate.termType === "MISSING",
         },
+        semanticMeta: {
+          ...legacyTermDomain(candidate.termType),
+          clusterId: `legacy:${candidate.normalizedTerm}`,
+          firstSeenIteration: 0,
+          probeOccurrenceCount: candidate.queryIds.size,
+          noveltyScore: 0,
+          confidence: Number((gravity.components.evidenceConfidence / 100).toFixed(3)),
+          crossModelOccurrenceCount: candidate.modelIds.size,
+        },
       };
       return node;
     })
@@ -115,21 +125,27 @@ export function buildSemanticNebula(input: BuildInput, scope: NebulaScope): Sema
 
 function buildEdges(subjectName: string, nodes: SemanticNebulaNode[]): SemanticNebulaEdge[] {
   const subjectId = `subject:${subjectName}`;
-  return nodes.map((node) => ({
-    id: `${subjectId}->${node.normalizedTerm}`,
-    source: subjectId,
-    target: node.normalizedTerm,
-    edgeType: node.context.missingDesired
+  return nodes.map((node) => {
+    const edgeType = node.context.missingDesired
       ? "missing_context"
       : node.context.riskContext
         ? "risk_context"
         : node.context.competitorContext
           ? "competitor_context"
-          : "subject_term",
-    weight: Number((node.semanticGravity / 100).toFixed(3)),
-    confidence: Number((node.evidenceConfidence / 100).toFixed(3)),
-    evidenceCount: node.sourceCount,
-  }));
+          : "subject_term";
+    const canonicalRelation = edgeType === "competitor_context" ? "COMPETES_WITH" : edgeType === "risk_context" ? "ASSOCIATED_WITH" : edgeType === "missing_context" ? "MISSING_ASSOCIATION" : "ASSOCIATED_WITH";
+    const confidence = Number((node.evidenceConfidence / 100).toFixed(3));
+    return {
+      id: `${subjectId}->${node.normalizedTerm}`,
+      source: subjectId,
+      target: node.normalizedTerm,
+      edgeType,
+      weight: Number((node.semanticGravity / 100).toFixed(3)),
+      confidence,
+      evidenceCount: node.sourceCount,
+      semanticMeta: { canonicalRelation, relationDomain: node.semanticMeta?.domain ?? "RELATION", confidence, negated: false },
+    };
+  });
 }
 
 function buildSummary(input: {

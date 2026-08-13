@@ -12,17 +12,20 @@ function resolveLang(language: string): Lang {
 }
 
 function schemaInstruction(lang: Lang) {
+  const semanticInstruction = process.env.SEMANTIC_EXPLORATION_ENABLED === "true";
   return lang === "zh"
     ? [
         "只输出 JSON，不要输出自然语言解释。",
         "reason_tags 必须是短词，不要句子。",
         "keywords 最多 10 个，competitors/scenarios/audiences/risk_words/opportunity_words 最多 5 个。",
+        ...(semanticInstruction ? ["semantic_units 最多 12 个；按语义角色输出 domain/type，并保留 subject/predicate/object、否定、推测、条件、时间、数值和置信度。不要把提问中的假设当成事实。"] : []),
         "无法判断时使用空数组或 null，不要编造长篇理由。",
       ].join("\n")
     : [
         "Output JSON only — no natural-language explanation.",
         "reason_tags must be short keywords, not sentences.",
         "keywords: max 10; competitors/scenarios/audiences/risk_words/opportunity_words: max 5 each.",
+        ...(semanticInstruction ? ["semantic_units: max 12. Classify by semantic role and preserve subject/predicate/object, negation, uncertainty, conditions, time, quantities, and confidence. Never treat a premise in the question as a discovered fact."] : []),
         "When unsure, use an empty array or null — do not fabricate long reasons.",
       ].join("\n");
 }
@@ -83,7 +86,7 @@ export function renderProbePrompt(input: RenderInput): RenderOutput {
   const lang = resolveLang(input.language);
   const variables = { brand: input.brand, scenario, audience, intent, risk, opportunity, warm, cold, competitors, depthLevel, entityType: input.entityType };
   const corePrompt = buildPrompt(input.entityType, input.questionType, variables, depthLevel, lang);
-  const fields = "probe_id, mentioned_brand, recommended_brands, keywords, competitors, scenarios, audiences, risk_words, opportunity_words, sentiment_score, recommendation_score, confidence";
+  const fields = `probe_id, mentioned_brand, recommended_brands, keywords, competitors, scenarios, audiences, risk_words, opportunity_words, sentiment_score, recommendation_score, confidence${process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? ", semantic_units" : ""}`;
   const fieldsLine = lang === "zh" ? `统一输出字段：${fields}。` : `Output these fields: ${fields}.`;
 
   return {

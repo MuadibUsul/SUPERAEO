@@ -26,19 +26,31 @@ type Copy = {
   empty: string;
 };
 
+const DEFAULT_COPY: Copy = {
+  legend: { positive: "Owns", usecase: "Use-cases", competitor: "Competitor", risk: "Risk" },
+  hint: "drag · scroll · click a star",
+  pull: "pull",
+  freq: "freq",
+  empty: "No semantic field yet.",
+};
+
 type Star = UniverseNode & { hue: [number, number, number]; tw: number };
 
 export function CognitionUniverse({
   nodes,
   subjectName,
-  copy,
+  copy = DEFAULT_COPY,
   className,
+  variant = "interactive",
 }: {
   nodes: UniverseNode[];
   subjectName: string;
-  copy: Copy;
+  copy?: Copy;
   className?: string;
+  /** "ambient" = passive background (no chrome, click-through, slow drift). */
+  variant?: "interactive" | "ambient";
 }) {
+  const interactive = variant !== "ambient";
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [typeOn, setTypeOn] = useState<Record<UniverseType, boolean>>({ positive: true, usecase: true, competitor: true, risk: true });
@@ -87,7 +99,7 @@ export function CognitionUniverse({
       raf = requestAnimationFrame(draw);
       const { typeOn, paused, selected } = ui.current;
       const now = performance.now();
-      if (!drag && !paused) cam.yaw += 0.0026;
+      if (!drag && !paused) cam.yaw += interactive ? 0.0026 : 0.0014;
       cam.dist += (cam.tdist - cam.dist) * 0.06;
       look.x += (focus.x - look.x) * 0.08; look.y += (focus.y - look.y) * 0.08; look.z += (focus.z - look.z) * 0.08;
 
@@ -193,12 +205,14 @@ export function CognitionUniverse({
 
     resize();
     window.addEventListener("resize", resize);
-    canvas.addEventListener("mousedown", onDown);
-    window.addEventListener("mouseup", onUp);
-    canvas.addEventListener("mousemove", onMove);
-    canvas.addEventListener("mouseleave", onLeave);
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-    raf = requestAnimationFrame(draw);
+    if (interactive) {
+      canvas.addEventListener("mousedown", onDown);
+      window.addEventListener("mouseup", onUp);
+      canvas.addEventListener("mousemove", onMove);
+      canvas.addEventListener("mouseleave", onLeave);
+      canvas.addEventListener("wheel", onWheel, { passive: false });
+    }
+    draw(); // paint the first frame synchronously (rAF is paused in hidden tabs)
 
     return () => {
       cancelAnimationFrame(raf);
@@ -209,18 +223,27 @@ export function CognitionUniverse({
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("wheel", onWheel);
     };
-  }, [nodes, subjectName]);
+  }, [nodes, subjectName, interactive]);
 
   const toggle = (t: UniverseType) => setTypeOn((s) => ({ ...s, [t]: !s[t] }));
 
   return (
-    <div ref={wrapRef} className={cn("relative overflow-hidden rounded-2xl border border-border bg-[#06070b]", className)}>
-      <canvas ref={canvasRef} className="block h-full w-full" style={{ cursor: "grab" }} />
+    <div
+      ref={wrapRef}
+      className={cn("relative overflow-hidden", interactive && "rounded-2xl border border-border bg-[#06070b]", className)}
+    >
+      <canvas
+        ref={canvasRef}
+        className={cn("block h-full w-full", !interactive && "pointer-events-none")}
+        style={interactive ? { cursor: "grab" } : undefined}
+      />
 
-      {nodes.length === 0 ? (
+      {interactive && nodes.length === 0 ? (
         <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-faint">{copy.empty}</div>
       ) : null}
 
+      {interactive ? (
+        <>
       {/* type filters */}
       <div className="absolute right-3 top-3 grid gap-1.5">
         {(Object.keys(HUE) as UniverseType[]).map((t) => {
@@ -290,6 +313,8 @@ export function CognitionUniverse({
             </div>
           ))}
         </div>
+      ) : null}
+        </>
       ) : null}
     </div>
   );

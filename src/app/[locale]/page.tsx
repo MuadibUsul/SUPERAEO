@@ -16,7 +16,7 @@ export default async function HomePage({ params }: PageProps) {
     <div className="dark cosmic-bg h-screen overflow-hidden text-foreground">
       <SiteHeader locale={locale} variant="cosmic" />
       <main className="h-[calc(100svh-3.5rem)] overflow-hidden">
-        <PublicNebulaHero locale={locale} hero={dictionary.homeHero} demo={dictionary.demoNebula} />
+        <PublicNebulaHero locale={locale} hero={dictionary.homeHero} />
       </main>
     </div>
   );

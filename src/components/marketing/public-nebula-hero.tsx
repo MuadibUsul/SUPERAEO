@@ -1,4 +1,5 @@
-import { DemoSemanticNebulaCanvas } from "@/components/marketing/demo-semantic-nebula-canvas";
+import { CognitionUniverse } from "@/components/semantic-intelligence/cognition-universe";
+import { demoUniverseNodes } from "@/components/semantic-intelligence/demo-universe";
 import type { Locale } from "@/i18n/config";
 import type { getDictionary } from "@/i18n/dictionaries";
 
@@ -7,11 +8,9 @@ type Dictionary = ReturnType<typeof getDictionary>;
 export function PublicNebulaHero({
   locale,
   hero,
-  demo,
 }: {
   locale: Locale;
   hero: Dictionary["homeHero"];
-  demo: Dictionary["demoNebula"];
 }) {
   return (
     <section
@@ -20,7 +19,12 @@ export function PublicNebulaHero({
     >
       {/* Near-black fallback shown only if the canvas fails to draw. */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(60,110,180,0.08)_0%,transparent_46%),linear-gradient(180deg,#020205_0%,#05070e_55%,#010103_100%)]" />
-      <DemoSemanticNebulaCanvas locale={locale} copy={demo} className="absolute inset-0 h-full min-h-full rounded-none" />
+      <CognitionUniverse
+        variant="ambient"
+        nodes={demoUniverseNodes()}
+        subjectName={locale === "zh-CN" ? "你的品牌" : "Your brand"}
+        className="absolute inset-0 h-full w-full"
+      />
       <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_52%_46%,transparent_0%,transparent_56%,rgba(1,1,3,0.34)_100%),linear-gradient(180deg,rgba(1,1,3,0.2)_0%,transparent_32%,transparent_66%,rgba(1,1,3,0.66)_100%)]" />
 
       <div className="pointer-events-none absolute inset-x-0 top-[14%] z-20 flex flex-col items-center px-6 text-center">

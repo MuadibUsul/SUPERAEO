@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeSemanticKeywordsForStorage } from "@/server/workflow/keyword-service";
+import { hasUsableSemanticKeywordBaseline, mergeSemanticKeywordsForStorage } from "@/server/workflow/keyword-service";
 
 test("merges duplicate semantic keywords by normalized keyword before database persistence", () => {
   const result = mergeSemanticKeywordsForStorage([
@@ -34,4 +34,9 @@ test("merges duplicate semantic keywords by normalized keyword before database p
   assert.equal(result.keywords[0].targetWeight, 0.9);
   assert.equal(result.keywords[0].confidence, 0.8);
   assert.deepEqual(result.duplicateSamples, [" low   sugar "]);
+});
+
+test("accepts a deduplicated baseline instead of enforcing an arbitrary concept count", () => {
+  assert.equal(hasUsableSemanticKeywordBaseline(Array.from({ length: 16 })), true);
+  assert.equal(hasUsableSemanticKeywordBaseline([]), false);
 });

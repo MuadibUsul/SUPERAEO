@@ -49,7 +49,7 @@ export async function runFullDiagnosis(input: {
     where: { projectId: input.projectId, OR: [{ subjectId: subject.id }, { subjectId: null }] },
   });
 
-  if (existingKeywordCount < 20) {
+  if (existingKeywordCount === 0) {
     await generateSemanticKeywordsForProject({
       projectId: input.projectId,
       requestedByUserId: input.requestedByUserId,

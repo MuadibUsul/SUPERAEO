@@ -95,3 +95,51 @@ test("keeps every collected semantic cluster in the overall nebula", () => {
   assert.equal(clustered.clusters.length, 240);
   assert.equal(graph.nodes.length, 240);
 });
+
+test("nothing is truncated at production scale", () => {
+  // Real OVERALL snapshots have been measured at ~2100 nodes, so this asserts
+  // above that. A node ceiling reintroduced anywhere near a "safe-looking"
+  // value (1200, 2000) silently drops a third of an ordinary run, which is
+  // exactly what the all_clusters policy exists to prevent.
+  const clusterCount = 2400;
+  const units = Array.from({ length: clusterCount }, (_, index) => extractProbeSemanticUnits({
+    projectId: "project",
+    subjectId: "subject",
+    runId: "probe-run",
+    probeId: `probe-${index}`,
+    responseId: `response-${index}`,
+    model: "model-a",
+    zone: "core_semantics",
+    data: { semantic_units: [{ domain: "ATTRIBUTE", type: "PROPERTY", canonicalLabel: `concept-${index}`, confidence: 0.7 }] },
+  })[0]);
+
+  // Synthesised directly rather than via clusterSemanticUnits: this test is
+  // about the builder's output, and one-hot vectors at this width would cost
+  // millions of comparisons for no added coverage.
+  const clusters = units.map((unit, index) => ({
+    id: `cluster-${index}`,
+    domain: "ATTRIBUTE" as const,
+    representativeLabel: `concept-${index}`,
+    centroid: [],
+    memberCount: 1,
+    probeOccurrenceCount: 1,
+    relationTypes: [],
+    firstSeenIteration: 1,
+    lastSeenIteration: 1,
+    modelIds: ["model-a"],
+    memberIds: [unit.id],
+  }));
+
+  const graph = buildStructuredSemanticNebula({
+    subjectName: "Subject",
+    entityType: "BRAND",
+    scope: "OVERALL",
+    iteration: 1,
+    units,
+    clusters,
+  });
+
+  assert.equal(graph.nodes.length, clusterCount);
+  assert.equal(graph.summary.totalTerms, clusterCount);
+  assert.equal(graph.summary.nodePolicy, "all_clusters");
+});

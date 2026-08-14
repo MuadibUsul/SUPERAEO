@@ -5,7 +5,6 @@ import type { SemanticCluster } from "@/server/semantic-nebula/semantic-clusteri
 import type { SemanticUnit } from "@/server/semantic-nebula/semantic-unit";
 import {
   semanticNebulaVersion,
-  semanticNebulaMaxNodes,
   semanticNebulaNodePolicy,
   type NebulaScope,
   type SemanticEvidenceItem,
@@ -37,7 +36,7 @@ export function buildStructuredSemanticNebula(input: {
   const allNodes = input.clusters
     .map((cluster) => buildNode(cluster, unitsById, maxProbeOccurrences, input.iteration, input.evidenceByResponseId))
     .sort((a, b) => b.semanticGravity - a.semanticGravity);
-  const nodes = allNodes.filter(getNebulaScopeDefinition(input.scope).filter).slice(0, semanticNebulaMaxNodes);
+  const nodes = allNodes.filter(getNebulaScopeDefinition(input.scope).filter);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const subjectId = `subject:${input.subjectName}`;
   const edges = input.clusters.flatMap((cluster) => {

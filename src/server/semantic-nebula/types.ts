@@ -1,19 +1,17 @@
 import type { SubjectEntityType } from "@/generated/prisma/client";
 
 export const semanticNebulaVersion = "2026-08-14.v3";
-export const semanticNebulaNodePolicy = "all_clusters" as const;
-
 /**
- * Hard ceiling on nodes persisted in a snapshot, applied after gravity sorting.
+ * Every collected cluster is kept — deliberately uncapped.
  *
- * The intent of `all_clusters` is that no *meaningful* cluster gets truncated
- * away, which the old 140-node cap violated. But with no ceiling at all the
- * snapshot JSON, the SSR payload and the canvas per-frame sort are unbounded in
- * the number of probes a run happens to produce. This sits far above any
- * observed real run, so it changes nothing in practice and only stops a
- * pathological run from taking the page down.
+ * Real OVERALL snapshots reach ~2100 nodes, so any ceiling low enough to be a
+ * meaningful safety net also truncates ordinary runs. The resource concerns a
+ * cap would have addressed are handled where they actually arise instead:
+ * the page adapts nodes with `includeExamples: false` and fetches evidence per
+ * node on demand (a measured 6.9MB -> 586KB at 1701 nodes), and the canvas
+ * bounds its own per-frame work via DETAIL_NODE_LIMIT rather than by node count.
  */
-export const semanticNebulaMaxNodes = 1200;
+export const semanticNebulaNodePolicy = "all_clusters" as const;
 
 export const nebulaScopes = [
   "OVERALL",

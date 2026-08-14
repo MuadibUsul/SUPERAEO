@@ -39,9 +39,9 @@ export type SemanticExplorationConfig = {
 
 const embeddingCache = new Map<string, number[]>();
 
-export function getSemanticExplorationConfig(): SemanticExplorationConfig {
+export function getSemanticExplorationConfig(enabledOverride?: boolean): SemanticExplorationConfig {
   return {
-    enabled: process.env.SEMANTIC_EXPLORATION_ENABLED === "true",
+    enabled: enabledOverride ?? process.env.SEMANTIC_EXPLORATION_ENABLED === "true",
     maxIterations: intEnv("SEMANTIC_EXPLORATION_MAX_ITERATIONS", 8),
     maxAdditionalProbes: intEnv("SEMANTIC_EXPLORATION_MAX_ADDITIONAL_PROBES", 40),
     probesPerIteration: intEnv("SEMANTIC_EXPLORATION_PROBES_PER_ITERATION", 8),
@@ -55,8 +55,8 @@ export function getSemanticExplorationConfig(): SemanticExplorationConfig {
   };
 }
 
-export async function advanceSemanticExploration(input: { runId: string; analysisJobId?: string | null }) {
-  const config = getSemanticExplorationConfig();
+export async function advanceSemanticExploration(input: { runId: string; analysisJobId?: string | null; enabled?: boolean }) {
+  const config = getSemanticExplorationConfig(input.enabled);
   if (!config.enabled) return { enabled: false as const, continue: false as const, createdProbeCount: 0 };
 
   const prisma = getPrisma();
@@ -117,7 +117,44 @@ export async function advanceSemanticExploration(input: { runId: string; analysi
     return [modelId!, calculateExplorationMetrics({ iteration, totalProbes: run.totalProbes, units: modelUnits, clusters: result.clusters, entityType: subject.entityType })];
   }));
 
-  await prisma.semanticCoverageSnapshot.create({
+  const coverageEvidence = {
+    schemaVersion: semanticCoverageSchemaVersion,
+    subjectId: subject.id,
+    brandProbeRunId: run.id,
+    overall: {
+      observedCoverage: metrics.observedCoverage,
+      estimatedCoverage: metrics.estimatedCoverage,
+      saturationScore: metrics.saturationScore,
+    },
+    exploration: {
+      status: stopReason ? "COMPLETED" : "EXPLORING",
+      iterations: iteration,
+      totalProbes: run.totalProbes,
+      stopReason: stopReason ?? null,
+      rolling: saturation.rolling,
+      underexploredCriticalDomains: saturation.underexploredCriticalDomains,
+    },
+    semantic: {
+      uniqueTerms: metrics.uniqueTerms,
+      semanticUnits: metrics.semanticUnits,
+      clusters: metrics.semanticClusters,
+      relationTypes: metrics.relationTypes,
+      exactDuplicates: clustered.exactDuplicates,
+      semanticDuplicates: clustered.semanticDuplicates,
+      annMatches: ann.matches,
+    },
+    novelty: metrics.novelty,
+    estimate: { observedClusters: metrics.observedClusters, estimatedClusters: metrics.estimatedClusters },
+    domains: metrics.domains,
+    gaps,
+    history: nextHistory,
+    coverageByDepth: coverageByDepth(units, clustered.assignments),
+    perModel,
+    units,
+    clusters: clustered.clusters.map((cluster) => ({ ...cluster, centroid: undefined, crossModelOccurrenceCount: cluster.modelIds.length })),
+    embedding: { model: embedding.model, version: embedding.version, dimensions: embedding.dimensions, fallback: embedding.fallback },
+  };
+  const coverageSnapshot = await prisma.semanticCoverageSnapshot.create({
     data: {
       projectId: run.projectId,
       topicBreadth: Object.values(metrics.domains).filter((domain) => domain.clusterCount > 0).length / Object.keys(metrics.domains).length,
@@ -127,43 +164,7 @@ export async function advanceSemanticExploration(input: { runId: string; analysi
       overallCoverage: metrics.estimatedCoverage,
       missingConcepts: gaps as unknown as Prisma.InputJsonValue,
       competitorGaps: gaps.filter((gap) => gap.domain === "RELATION" || gap.domain === "ENTITY") as unknown as Prisma.InputJsonValue,
-      evidence: {
-        schemaVersion: semanticCoverageSchemaVersion,
-        subjectId: subject.id,
-        brandProbeRunId: run.id,
-        overall: {
-          observedCoverage: metrics.observedCoverage,
-          estimatedCoverage: metrics.estimatedCoverage,
-          saturationScore: metrics.saturationScore,
-        },
-        exploration: {
-          status: stopReason ? "COMPLETED" : "EXPLORING",
-          iterations: iteration,
-          totalProbes: run.totalProbes,
-          stopReason: stopReason ?? null,
-          rolling: saturation.rolling,
-          underexploredCriticalDomains: saturation.underexploredCriticalDomains,
-        },
-        semantic: {
-          uniqueTerms: metrics.uniqueTerms,
-          semanticUnits: metrics.semanticUnits,
-          clusters: metrics.semanticClusters,
-          relationTypes: metrics.relationTypes,
-          exactDuplicates: clustered.exactDuplicates,
-          semanticDuplicates: clustered.semanticDuplicates,
-          annMatches: ann.matches,
-        },
-        novelty: metrics.novelty,
-        estimate: { observedClusters: metrics.observedClusters, estimatedClusters: metrics.estimatedClusters },
-        domains: metrics.domains,
-        gaps,
-        history: nextHistory,
-        coverageByDepth: coverageByDepth(units, clustered.assignments),
-        perModel,
-        units,
-        clusters: clustered.clusters.map((cluster) => ({ ...cluster, centroid: undefined, crossModelOccurrenceCount: cluster.modelIds.length })),
-        embedding: { model: embedding.model, version: embedding.version, dimensions: embedding.dimensions, fallback: embedding.fallback },
-      } as unknown as Prisma.InputJsonValue,
+      evidence: coverageEvidence as unknown as Prisma.InputJsonValue,
     },
   });
 
@@ -209,6 +210,15 @@ export async function advanceSemanticExploration(input: { runId: string; analysi
     })));
   }
   if (rejectedDuplicates > 0) await recordTraceEvent({ severity: "info", eventType: "adaptive_probe_rejected_duplicate", subsystem: "brand_probe", operation: "adaptive_probe_planning", status: "filtered", projectId: run.projectId, runId: run.id, metadata: { iteration: iteration + 1, count: rejectedDuplicates } });
+
+  if (finalStopReason && finalStopReason !== stopReason) {
+    coverageEvidence.exploration.status = "COMPLETED";
+    coverageEvidence.exploration.stopReason = finalStopReason;
+    await prisma.semanticCoverageSnapshot.update({
+      where: { id: coverageSnapshot.id },
+      data: { evidence: coverageEvidence as unknown as Prisma.InputJsonValue },
+    });
+  }
 
   const nextConfig = {
     ...previousConfig,

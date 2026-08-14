@@ -11,8 +11,8 @@ function resolveLang(language: string): Lang {
   return language.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-function schemaInstruction(lang: Lang) {
-  const semanticInstruction = process.env.SEMANTIC_EXPLORATION_ENABLED === "true";
+function schemaInstruction(lang: Lang, semanticExploration?: boolean) {
+  const semanticInstruction = semanticExploration || process.env.SEMANTIC_EXPLORATION_ENABLED === "true";
   return lang === "zh"
     ? [
         "只输出 JSON，不要输出自然语言解释。",
@@ -55,6 +55,7 @@ export type RenderInput = {
   entityType: EntityType;
   /** Monotonic seed; decoupled per-variable so combinations spread out. */
   index: number;
+  semanticExploration?: boolean;
 };
 
 export type RenderOutput = {
@@ -86,11 +87,11 @@ export function renderProbePrompt(input: RenderInput): RenderOutput {
   const lang = resolveLang(input.language);
   const variables = { brand: input.brand, scenario, audience, intent, risk, opportunity, warm, cold, competitors, depthLevel, entityType: input.entityType };
   const corePrompt = buildPrompt(input.entityType, input.questionType, variables, depthLevel, lang);
-  const fields = `probe_id, mentioned_brand, recommended_brands, keywords, competitors, scenarios, audiences, risk_words, opportunity_words, sentiment_score, recommendation_score, confidence${process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? ", semantic_units" : ""}`;
+  const fields = `probe_id, mentioned_brand, recommended_brands, keywords, competitors, scenarios, audiences, risk_words, opportunity_words, sentiment_score, recommendation_score, confidence${input.semanticExploration || process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? ", semantic_units" : ""}`;
   const fieldsLine = lang === "zh" ? `统一输出字段：${fields}。` : `Output these fields: ${fields}.`;
 
   return {
-    prompt: `${corePrompt}\n\n${fieldsLine}\n${schemaInstruction(lang)}`,
+    prompt: `${corePrompt}\n\n${fieldsLine}\n${schemaInstruction(lang, input.semanticExploration)}`,
     corePrompt,
     depthLevel,
     variables,

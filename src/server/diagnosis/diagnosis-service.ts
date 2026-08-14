@@ -1,17 +1,16 @@
-import { randomUUID } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 
+import { materializeBrandProbeRunForDiagnosis } from "@/server/brand-probes/diagnosis-adapter";
+import { createBrandProbeRunForProject } from "@/server/brand-probes/brand-probe-service";
+import { runBrandProbeRun } from "@/server/brand-probes/probe-runner";
 import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
 import { getAIReadiness } from "@/server/ai/readiness";
 import { generateLongTailOpportunitySnapshot } from "@/server/opportunity/opportunity-service";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { buildReportSnapshot } from "@/server/report/report-snapshot";
-import { executeSamplingRun } from "@/server/sampling/execute-run";
-import { buildSemanticNebulaSnapshots } from "@/server/semantic-nebula/nebula-service";
-import { generateQueriesRequestSchema } from "@/server/validation/workflow";
+import { buildSemanticNebulaSnapshotsFromExploration } from "@/server/semantic-nebula/nebula-service";
 import { generateSemanticKeywordsForProject } from "@/server/workflow/keyword-service";
-import { generateQueriesForProject } from "@/server/workflow/query-service";
 
 export const diagnosisStages = [
   "DIAGNOSIS_UNDERSTANDING_ENTITY",
@@ -23,15 +22,6 @@ export const diagnosisStages = [
 ] as const;
 
 export type DiagnosisStage = (typeof diagnosisStages)[number];
-
-const defaultQueryOptions = generateQueriesRequestSchema.parse({
-  minQueries: 24,
-  maxQueries: 36,
-  personaTypes: ["buyer", "marketer", "consumer"],
-  regions: ["US"],
-  contextModes: ["cold_start", "competitive_context"],
-  queryDepthLevels: ["primary", "decision", "comparison", "risk"],
-});
 
 export async function runFullDiagnosis(input: {
   projectId: string;
@@ -67,71 +57,43 @@ export async function runFullDiagnosis(input: {
   }
 
   await setStage(input.analysisJobId, "DIAGNOSIS_BUILDING_QUESTION_MAP", {
-    message: "Building a question map that reflects real AI answer scenarios.",
+    message: "Building structured seed probes across semantic units, relations, contexts, evidence, and risks.",
     metadata: { existingKeywordCount },
   });
 
-  const existingQueryCount = await prisma.aeoQuery.count({
-    where: { projectId: input.projectId, OR: [{ subjectId: subject.id }, { subjectId: null }] },
+  const createdProbeRun = await createBrandProbeRunForProject({
+    projectId: input.projectId,
+    semanticExploration: true,
+    analysisJobId: input.analysisJobId,
   });
-
-  if (existingQueryCount < 10) {
-    await generateQueriesForProject({
-      projectId: input.projectId,
-      requestedByUserId: input.requestedByUserId,
-      options: defaultQueryOptions,
-    });
-  }
-
-  const queries = await prisma.aeoQuery.findMany({
-    where: { projectId: input.projectId, OR: [{ subjectId: subject.id }, { subjectId: null }] },
-    select: { id: true },
-    orderBy: { createdAt: "asc" },
-    take: 36,
-  });
-
-  if (queries.length === 0) {
-    throw new Error("No questions are available for sampling after query generation.");
-  }
+  if (createdProbeRun.run.totalProbes === 0) throw new Error("No structured seed probes were generated.");
 
   await setStage(input.analysisJobId, "DIAGNOSIS_SAMPLING_AI_ANSWERS", {
-    message: "Sampling observable AI answers for the question map.",
-    metadata: { queryCount: queries.length },
-  });
-
-  const run = await prisma.samplingRun.create({
-    data: {
-      projectId: input.projectId,
-      subjectId: subject.id,
-      runType: "baseline",
-      status: "running",
-      platforms: ["openai"],
-      sampleCountPerQuery: 1,
-      selectedQueryIds: queries.map((query) => query.id),
-      sampleCount: queries.length,
-      samplingStrategy: {
-        personas: ["buyer", "marketer", "consumer"],
-        regions: ["US"],
-        contextModes: ["cold_start", "competitive_context"],
-        routingTier: "low_cost_sampling",
-        source: "full_diagnosis",
-      },
-      scheduledAt: new Date(),
-      traceId: randomUUID(),
+    message: "Executing seed probes, measuring coverage gaps, and adding adaptive probes until saturation or budget stop.",
+    metadata: {
+      brandProbeRunId: createdProbeRun.run.id,
+      seedProbeCount: createdProbeRun.run.totalProbes,
+      algorithm: "seed_execute_gap_adapt_repeat",
     },
   });
 
-  const executedRun = await executeSamplingRun(run.id, input.requestedByUserId);
+  const brandProbeRun = await runBrandProbeRun({
+    runId: createdProbeRun.run.id,
+    analysisJobId: input.analysisJobId,
+  });
+  if (brandProbeRun.status === "failed") throw new Error("Structured semantic exploration failed.");
+  const executedRun = await materializeBrandProbeRunForDiagnosis(brandProbeRun.id);
 
   await setStage(input.analysisJobId, "DIAGNOSIS_MAPPING_SEMANTIC_FIELD", {
-    message: "Mapping the entity semantic field from sampled answer evidence.",
-    metadata: { runId: executedRun.id, runStatus: executedRun.status },
+    message: "Mapping the entity semantic field directly from structured units, relations, clusters, and evidence.",
+    metadata: { runId: executedRun.id, brandProbeRunId: brandProbeRun.id, runStatus: executedRun.status },
   });
 
-  const nebulaSnapshots = await buildSemanticNebulaSnapshots({
+  const nebulaSnapshots = await buildSemanticNebulaSnapshotsFromExploration({
     projectId: input.projectId,
     subjectId: subject.id,
-    runId: executedRun.id,
+    brandProbeRunId: brandProbeRun.id,
+    samplingRunId: executedRun.id,
     analysisJobId: input.analysisJobId,
   });
 
@@ -166,6 +128,7 @@ export async function runFullDiagnosis(input: {
     projectId: input.projectId,
     subjectId: subject.id,
     runId: executedRun.id,
+    brandProbeRunId: brandProbeRun.id,
     reportId: report.id,
     semanticNebulaSnapshotIds: nebulaSnapshots.map((snapshot) => snapshot.id),
     opportunitySnapshotId: opportunityResult.snapshot.id,

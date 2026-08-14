@@ -1,4 +1,4 @@
-import type { Competitor, Project, ProjectSubject } from "@/generated/prisma/client";
+import type { Competitor, Project, ProjectSubject, SemanticKeyword } from "@/generated/prisma/client";
 import type { SeedPool } from "@/server/brand-probes/types";
 
 const beverageHints = [
@@ -15,6 +15,7 @@ export function buildSeedPool(input: {
   project: Project;
   subject?: ProjectSubject | null;
   competitors: Pick<Competitor, "name" | "category">[];
+  keywords?: Pick<SemanticKeyword, "keyword" | "keywordType">[];
 }): SeedPool {
   const lang = resolveLang(input.subject?.language || input.project.language || "zh-CN");
   const zh = lang === "zh";
@@ -22,7 +23,9 @@ export function buildSeedPool(input: {
   const aliases = aliasesFromSubject(input.subject, brand);
   const industry = input.project.industry || input.project.domain || (zh ? "消费品牌" : "consumer brand");
   const targetMarket = input.project.targetMarket || (zh ? "目标用户" : "target audience");
-  const competitors = unique(input.competitors.map((item) => item.name));
+  const keywordsByType = (type: SemanticKeyword["keywordType"]) =>
+    unique((input.keywords ?? []).filter((item) => item.keywordType === type).map((item) => item.keyword));
+  const competitors = unique([...input.competitors.map((item) => item.name), ...keywordsByType("competitor")]);
   const isBeverage = beverageHints.some((hint) => `${industry} ${brand}`.toLowerCase().includes(hint.toLowerCase()));
 
   const categoryTerms = isBeverage
@@ -33,16 +36,25 @@ export function buildSeedPool(input: {
       ? [industry, targetMarket, "用户选择", "口碑", "信任", "场景匹配", "替代方案", "推荐理由"]
       : [industry, targetMarket, "user choice", "word of mouth", "trust", "scenario fit", "alternative", "reason to recommend"];
 
-  const hotTerms = unique([...aliases, industry, ...categoryTerms.slice(0, 8)]).filter((term) => !genericStop.has(term));
-  const warmTerms = unique(
-    isBeverage
+  const hotTerms = unique([
+    ...aliases,
+    industry,
+    ...keywordsByType("category"),
+    ...keywordsByType("attribute"),
+    ...keywordsByType("intent"),
+    ...categoryTerms.slice(0, 8),
+  ]).filter((term) => !genericStop.has(term));
+  const warmTerms = unique([
+    ...keywordsByType("scenario"),
+    ...keywordsByType("intent"),
+    ...(isBeverage
       ? zh
         ? ["低糖生活", "年轻潮流", "办公室下午", "不喝酒聚会", "拍照分享", "火锅搭配", "露营", "节日限定", "小众替代"]
         : ["low-sugar lifestyle", "youth trend", "office afternoon", "alcohol-free gathering", "photo sharing", "hotpot pairing", "camping", "seasonal edition", "niche alternative"]
       : zh
         ? ["细分场景", "小众替代", "专业可信", "高意图咨询", "真实用户问题", "内容证据", "对比选择", "长期关注"]
-        : ["niche scenario", "niche alternative", "credible expertise", "high-intent inquiry", "real user questions", "content evidence", "comparison choice", "long-term tracking"],
-  );
+        : ["niche scenario", "niche alternative", "credible expertise", "high-intent inquiry", "real user questions", "content evidence", "comparison choice", "long-term tracking"]),
+  ]);
   const coldTerms = unique(
     isBeverage
       ? zh
@@ -77,13 +89,13 @@ export function buildSeedPool(input: {
     coreCompetitors,
     adjacentCompetitors,
     substitutionCompetitors,
-    scenarios: isBeverage
+    scenarios: unique([...keywordsByType("scenario"), ...(isBeverage
       ? zh
         ? ["大学生周末聚会", "12 人火锅聚餐", "办公室下午犯困", "不喝酒成年人聚会", "便利店随手买", "减脂期想喝甜饮", "露营拍照", "看电影配餐", "夏天运动后解渴", "加班深夜提神", "家庭聚餐囤货", "送礼伴手礼", "约会餐厅佐餐", "通勤路上", "考试复习陪伴"]
         : ["college weekend party", "hotpot dinner for 12", "afternoon office slump", "alcohol-free adult gathering", "grab-and-go at a convenience store", "a sweet drink while cutting calories", "camping photos", "movie-night pairing", "rehydrating after summer exercise", "late-night overtime focus", "family dinner stock-up", "gift / hostess present", "dinner-date restaurant pairing", "commuting", "study/exam companion"]
       : zh
         ? ["购买前比较", "替代头部品牌", "小团队选型", "新手入门", "专家推荐", "低预算选择", "高信任决策", "风险顾虑", "迁移已有方案", "规模化扩张", "合规与安全评估", "试用后转正", "年度续费决策", "向上汇报立项"]
-        : ["pre-purchase comparison", "replacing the incumbent leader", "small-team selection", "beginner onboarding", "expert recommendation", "low-budget choice", "high-trust decision", "risk concerns", "migrating from an existing solution", "scaling up", "compliance & security review", "trial-to-paid", "annual renewal decision", "building the case to leadership"],
+        : ["pre-purchase comparison", "replacing the incumbent leader", "small-team selection", "beginner onboarding", "expert recommendation", "low-budget choice", "high-trust decision", "risk concerns", "migrating from an existing solution", "scaling up", "compliance & security review", "trial-to-paid", "annual renewal decision", "building the case to leadership"])]),
     audiences: isBeverage
       ? zh
         ? ["大学生", "上班族", "控糖人群", "年轻消费者", "家庭用户", "不喝酒成年人", "便利店用户", "聚会组织者", "健身人群", "宝妈", "夜班工作者", "Z世代潮人"]
@@ -91,20 +103,20 @@ export function buildSeedPool(input: {
       : zh
         ? ["创始人", "市场负责人", "新手用户", "专业买家", "预算敏感用户", "高意图咨询者", "技术决策者", "代理商", "内容团队", targetMarket]
         : ["founders", "marketing leads", "new users", "professional buyers", "budget-sensitive users", "high-intent researchers", "technical decision-makers", "agencies", "content teams", targetMarket],
-    intents: isBeverage
+    intents: unique([...keywordsByType("intent"), ...(isBeverage
       ? zh
         ? ["解腻", "大家都接受", "低糖", "便宜", "有满足感", "适合拍照", "替代酒精", "适合囤货", "健康一点", "提神醒脑", "好喝不踩雷", "够独特有面子"]
         : ["cuts grease", "broadly accepted", "low sugar", "affordable", "satisfying", "photo-friendly", "an alcohol alternative", "good to stock up", "a bit healthier", "refreshing and energizing", "tasty and a safe bet", "unique and impressive"]
       : zh
         ? ["可信推荐", "替代方案", "降低风险", "快速判断", "对比选择", "高性价比", "专业背书", "长期使用"]
-        : ["a trustworthy recommendation", "an alternative", "lower risk", "a quick judgment", "a comparison", "high value for money", "expert endorsement", "long-term use"],
-    risks: isBeverage
+        : ["a trustworthy recommendation", "an alternative", "lower risk", "a quick judgment", "a comparison", "high value for money", "expert endorsement", "long-term use"])]),
+    risks: unique([...keywordsByType("risk"), ...(isBeverage
       ? zh
         ? ["高糖", "控糖减脂", "牙齿健康", "儿童饮用", "咖啡因", "环保包装"]
         : ["high sugar", "sugar control / weight loss", "dental health", "children drinking it", "caffeine", "eco-friendly packaging"]
       : zh
         ? ["过度承诺", "数据不透明", "安全顾虑", "学习成本", "供应商锁定", "可信度不足"]
-        : ["overpromising", "opaque data", "security concerns", "the learning curve", "vendor lock-in", "insufficient credibility"],
+        : ["overpromising", "opaque data", "security concerns", "the learning curve", "vendor lock-in", "insufficient credibility"])]),
     opportunities: warmTerms,
   };
 }

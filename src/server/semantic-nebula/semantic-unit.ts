@@ -110,7 +110,12 @@ export function buildSemanticUnit(input: SemanticUnitInput, context: SemanticUni
 
 export function extractProbeSemanticUnits(input: ProbeSemanticUnitSource): SemanticUnit[] {
   const structured = z.array(semanticUnitInputSchema).safeParse(input.data.semantic_units ?? []);
-  const rawUnits = structured.success && structured.data.length > 0 ? structured.data : fallbackUnits(input.zone, input.data);
+  const structuredUnits = structured.success ? structured.data : [];
+  const wordUnits = fallbackUnits(input.zone, input.data);
+  const structuredLabels = new Set(structuredUnits.map(unitInputLabel).filter(Boolean).map(canonicalizeSemanticLabel));
+  const rawUnits = structuredUnits.length > 0
+    ? [...structuredUnits, ...wordUnits.filter((unit) => !structuredLabels.has(canonicalizeSemanticLabel(unitInputLabel(unit))))]
+    : wordUnits;
   const units = rawUnits.map((unit) => buildSemanticUnit(unit, input));
   return Array.from(new Map(units.map((unit) => [semanticUnitKey(unit), unit])).values());
 }
@@ -137,4 +142,8 @@ function fallbackUnits(zone: string, data: ProbeSemanticUnitSource["data"]): Sem
     units.push({ domain: "EVALUATION", type: "RECOMMENDATION", canonicalLabel: brand.brand, surfaceForm: brand.brand, object: brand.brand, predicate: "RECOMMENDS", confidence, intensity: typeof brand.score === "number" ? brand.score / 100 : undefined, description: brand.reason_tags?.join(", ") });
   }
   return units;
+}
+
+function unitInputLabel(unit: SemanticUnitInput) {
+  return unit.canonicalLabel || unit.object || unit.surfaceForm || unit.description || String(unit.value ?? unit.type);
 }

@@ -31,6 +31,7 @@ export function generateBrandProbes(input: {
   subject?: ProjectSubject | null;
   seedPool: SeedPool;
   config: ProbeRunConfig;
+  semanticExploration?: boolean;
 }) {
   const quotas = zoneQuotas[input.config.mode];
   const brand = input.subject?.displayName || input.project.brandName;
@@ -49,6 +50,7 @@ export function generateBrandProbes(input: {
         questionType,
         entityType,
         index,
+        semanticExploration: input.semanticExploration,
       });
       const qualityScore = scoreProbeQuality({
         zone,
@@ -69,7 +71,7 @@ export function generateBrandProbes(input: {
         modelTemperature: input.config.modelTemperature,
         language,
         prompt: rendered.prompt,
-        expectedOutputSchema: (process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? probeResponseJsonSchema : legacyProbeResponseJsonSchema) as unknown as Record<string, unknown>,
+        expectedOutputSchema: (input.semanticExploration || process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? probeResponseJsonSchema : legacyProbeResponseJsonSchema) as unknown as Record<string, unknown>,
         variables: rendered.variables,
         qualityScore,
       });

@@ -24,6 +24,9 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
   });
   if (!run) throw new Error("Brand probe run not found.");
   const runRecord = run;
+  const semanticExplorationEnabled =
+    asRecord(asRecord(runRecord.configJson).semanticExploration).enabled === true ||
+    getSemanticExplorationConfig().enabled;
 
   const config = getProbeRunConfig({
     mode: runRecord.mode,
@@ -112,6 +115,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
             maxOutputTokens: batchProbes.length === 1 ? config.singleMaxOutputTokens : config.batchMaxOutputTokens,
             temperature: config.modelTemperature,
             brandAliases: [runRecord.subject?.displayName || runRecord.project.brandName, runRecord.subject?.canonicalName || runRecord.project.brandName],
+            semanticExplorationEnabled,
           });
           const latency = Date.now() - before;
           latencies.push(latency);
@@ -150,7 +154,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
 
   await Promise.all(Array.from({ length: config.maxConcurrency }, (_, index) => worker(index)));
 
-  const exploration = await advanceSemanticExploration({ runId: runRecord.id, analysisJobId: input.analysisJobId });
+  const exploration = await advanceSemanticExploration({ runId: runRecord.id, analysisJobId: input.analysisJobId, enabled: semanticExplorationEnabled });
   if (exploration.enabled && exploration.continue) {
     return runBrandProbeRun(input);
   }
@@ -161,7 +165,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
     where: { id: runRecord.id },
     data: {
       status,
-      currentStage: "PROBE_COMPLETED",
+      currentStage: exploration.enabled ? "SEMANTIC_EXPLORATION_COMPLETED" : "PROBE_COMPLETED",
       finishedAt: new Date(),
     },
   }).then(async (updated) => {
@@ -213,6 +217,7 @@ async function executeBatch(input: {
   maxOutputTokens: number;
   temperature: number;
   brandAliases: string[];
+  semanticExplorationEnabled: boolean;
 }) {
   const prisma = getPrisma();
   await recordTraceEvent({
@@ -283,6 +288,7 @@ async function executeMicroBatch(input: {
   maxOutputTokens: number;
   temperature: number;
   brandAliases: string[];
+  semanticExplorationEnabled: boolean;
 }) {
   const started = Date.now();
   const prompt = JSON.stringify({
@@ -308,7 +314,7 @@ async function executeMicroBatch(input: {
       prompt,
       schema: probeBatchResponseSchema,
       schemaName: "brand_probe_batch_result",
-      jsonSchema: getSemanticExplorationConfig().enabled ? probeBatchResponseJsonSchema : legacyProbeBatchResponseJsonSchema,
+      jsonSchema: input.semanticExplorationEnabled ? probeBatchResponseJsonSchema : legacyProbeBatchResponseJsonSchema,
       maxOutputTokens: input.maxOutputTokens,
       temperature: input.temperature,
       metadata: { batchId: input.batch.id, probeIds: input.probes.map((probe) => probe.id), attempt },
@@ -395,6 +401,7 @@ async function executeSingleProbe(input: {
   maxOutputTokens: number;
   temperature: number;
   brandAliases: string[];
+  semanticExplorationEnabled: boolean;
   retryCount: number;
 }) {
   const started = Date.now();
@@ -411,7 +418,7 @@ async function executeSingleProbe(input: {
       prompt: `${input.probe.prompt}\n\nprobe_id 必须等于：${input.probe.id}`,
       schema: probeResponseSchema,
       schemaName: "brand_probe_result",
-      jsonSchema: getSemanticExplorationConfig().enabled ? probeResponseJsonSchema : legacyProbeResponseJsonSchema,
+      jsonSchema: input.semanticExplorationEnabled ? probeResponseJsonSchema : legacyProbeResponseJsonSchema,
       maxOutputTokens: input.maxOutputTokens,
       temperature: input.temperature,
       metadata: { batchId: input.batch.id, probeId: input.probe.id, attempt },
@@ -440,6 +447,10 @@ function normalizeSingleResult(result: { completed: number; failed: number; toke
     error: result.failed ? "single_probe_failed" : null,
     splitReason: null,
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 async function persistProbeSuccess(input: {

@@ -101,6 +101,35 @@ test("probe prompts follow the subject's input language (English)", () => {
   assert.ok(!/[一-鿿]/u.test(all), "English-language probes must not contain Chinese characters");
 });
 
+test("full diagnosis can require structured semantic units without an environment flag", () => {
+  const enProject = { ...project, language: "en", industry: "chips", brandName: "NVIDIA", targetMarket: "global" };
+  const enSubject = { ...subject, language: "en", displayName: "NVIDIA", canonicalName: "nvidia", profileJson: {} };
+  const config = getProbeRunConfig({ mode: "standard" });
+  const seedPool = buildSeedPool({ project: enProject, subject: enSubject, competitors: [] });
+  const [probe] = generateBrandProbes({ project: enProject, subject: enSubject, seedPool, config, semanticExploration: true });
+
+  assert.ok(probe.prompt.includes("semantic_units"));
+  assert.ok(probe.prompt.includes("subject/predicate/object"));
+  assert.ok("semantic_units" in (probe.expectedOutputSchema.properties as Record<string, unknown>));
+});
+
+test("generated semantic keywords feed the diagnosis seed pool", () => {
+  const seedPool = buildSeedPool({
+    project,
+    subject,
+    competitors: [],
+    keywords: [
+      { keyword: "supply chain resilience", keywordType: "attribute" },
+      { keyword: "export control exposure", keywordType: "risk" },
+      { keyword: "data-center procurement", keywordType: "scenario" },
+    ],
+  });
+
+  assert.ok(seedPool.hotTerms.includes("supply chain resilience"));
+  assert.ok(seedPool.risks.includes("export control exposure"));
+  assert.ok(seedPool.scenarios.includes("data-center procurement"));
+});
+
 test("max1000 mode produces 1000 probes balanced across priority/breadth/depth", () => {
   const config = getProbeRunConfig({ mode: "max1000" });
   const seedPool = buildSeedPool({

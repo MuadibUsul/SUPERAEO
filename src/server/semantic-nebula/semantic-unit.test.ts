@@ -59,3 +59,18 @@ test("a probe premise is not a discovery until a response supplies a semantic un
   });
   assert.deepEqual(units, []);
 });
+
+test("word fields remain audit evidence alongside structured semantic units", () => {
+  const units = extractProbeSemanticUnits({
+    projectId: "project-1", subjectId: "subject-1", runId: "run-1", probeId: "probe-1", responseId: "response-1", model: "model-a", zone: "core_semantics",
+    data: {
+      semantic_units: [{ domain: "ATTRIBUTE", type: "CAPABILITY", canonicalLabel: "AI acceleration", confidence: 0.9 }],
+      keywords: ["AI acceleration", "CUDA ecosystem"],
+      scenarios: ["model training"],
+    },
+  });
+
+  assert.equal(units.filter((unit) => unit.canonicalLabel === "ai acceleration").length, 1);
+  assert.ok(units.some((unit) => unit.canonicalLabel === "cuda ecosystem"));
+  assert.ok(units.some((unit) => unit.canonicalLabel === "model training" && unit.domain === "CONTEXT"));
+});

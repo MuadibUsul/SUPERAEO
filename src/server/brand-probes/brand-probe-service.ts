@@ -28,20 +28,33 @@ export type BrandProbeRunCreateInput = {
   maxConcurrency?: number;
   tokensPerMinuteBudget?: number;
   model?: string;
+  semanticExploration?: boolean;
+  analysisJobId?: string;
 };
 
 export async function createBrandProbeRun(input: BrandProbeRunCreateInput, session: AuthSession) {
-  const prisma = getPrisma();
   const project = input.projectId
-    ? await prisma.project.findFirst({
-        where: { id: input.projectId },
-        include: { subjects: true, competitors: true },
-      })
+    ? await findProjectForProbeRun(input.projectId)
     : await createProjectForBrand(input, session);
 
   if (!project) {
     return { ok: false as const, status: 404, error: "Project was not found." };
   }
+
+  return persistBrandProbeRun(project, input);
+}
+
+export async function createBrandProbeRunForProject(input: Omit<BrandProbeRunCreateInput, "brand"> & { projectId: string }) {
+  const project = await findProjectForProbeRun(input.projectId);
+  if (!project) throw new Error("Project was not found.");
+  return persistBrandProbeRun(project, input);
+}
+
+async function persistBrandProbeRun(
+  project: NonNullable<Awaited<ReturnType<typeof findProjectForProbeRun>>>,
+  input: Omit<BrandProbeRunCreateInput, "brand"> | BrandProbeRunCreateInput,
+) {
+  const prisma = getPrisma();
 
   const subject = project.subjects.find((item) => item.isPrimary && item.entityType === "BRAND") ?? project.subjects[0] ?? null;
   const config = getProbeRunConfig({
@@ -54,13 +67,14 @@ export async function createBrandProbeRun(input: BrandProbeRunCreateInput, sessi
     tokensPerMinuteBudget: input.tokensPerMinuteBudget,
     defaultModel: input.model,
   } as Partial<ProbeRunConfig>);
-  const seedPool = buildSeedPool({ project, subject, competitors: project.competitors });
-  const generated = generateBrandProbes({ project, subject, seedPool, config });
+  const seedPool = buildSeedPool({ project, subject, competitors: project.competitors, keywords: project.keywords });
+  const generated = generateBrandProbes({ project, subject, seedPool, config, semanticExploration: input.semanticExploration });
 
   const run = await prisma.brandProbeRun.create({
     data: {
       projectId: project.id,
       subjectId: subject?.id,
+      analysisJobId: input.analysisJobId,
       mode: config.mode,
       executionMode: config.executionMode,
       targetProbeCount: generated.length,
@@ -73,7 +87,13 @@ export async function createBrandProbeRun(input: BrandProbeRunCreateInput, sessi
       currentBatchSize: config.microBatchSize,
       tokensPerMinuteBudget: config.tokensPerMinuteBudget,
       totalProbes: generated.length,
-      configJson: { ...config, seedPool },
+      configJson: {
+        ...config,
+        seedPool,
+        ...(input.semanticExploration
+          ? { semanticExploration: { enabled: true, source: "full_diagnosis" } }
+          : {}),
+      },
       schedulerStatsJson: {
         targetRequestsPerMinute: Math.ceil(config.targetThroughputPerMinute / config.microBatchSize),
       },
@@ -103,6 +123,13 @@ export async function createBrandProbeRun(input: BrandProbeRunCreateInput, sessi
   });
 
   return { ok: true as const, project, run, config };
+}
+
+function findProjectForProbeRun(projectId: string) {
+  return getPrisma().project.findFirst({
+    where: { id: projectId },
+    include: { subjects: true, competitors: true, keywords: true },
+  });
 }
 
 export async function getBrandProbeRun(runId: string, session: AuthSession) {
@@ -178,6 +205,6 @@ async function createProjectForBrand(input: BrandProbeRunCreateInput, session: A
         },
       },
     },
-    include: { subjects: true, competitors: true },
+    include: { subjects: true, competitors: true, keywords: true },
   });
 }

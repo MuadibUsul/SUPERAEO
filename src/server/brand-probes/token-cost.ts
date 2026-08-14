@@ -24,6 +24,22 @@ export function usageNumbers(usage: unknown, model?: string) {
   };
 }
 
+export function mergeUsageNumbers(...values: unknown[]) {
+  const usages = values.map((value) => usageNumbers(value));
+  const sum = (key: "promptTokens" | "completionTokens" | "totalTokens" | "cachedInputTokens" | "reasoningTokens") => {
+    const numbers = usages.map((usage) => usage[key]).filter((value): value is number => value !== undefined);
+    return numbers.length > 0 ? numbers.reduce((total, value) => total + value, 0) : undefined;
+  };
+
+  return {
+    promptTokens: sum("promptTokens"),
+    completionTokens: sum("completionTokens"),
+    totalTokens: sum("totalTokens"),
+    cachedInputTokens: sum("cachedInputTokens"),
+    reasoningTokens: sum("reasoningTokens"),
+  };
+}
+
 export function allocateUsageAcrossProbes(usage: ReturnType<typeof usageNumbers>, probeCount: number) {
   const divisor = Math.max(1, probeCount);
   const divide = (value: number | undefined) => value === undefined ? undefined : Math.ceil(value / divisor);

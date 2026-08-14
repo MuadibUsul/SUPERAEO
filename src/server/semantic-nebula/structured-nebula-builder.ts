@@ -5,6 +5,7 @@ import type { SemanticCluster } from "@/server/semantic-nebula/semantic-clusteri
 import type { SemanticUnit } from "@/server/semantic-nebula/semantic-unit";
 import {
   semanticNebulaVersion,
+  semanticNebulaNodePolicy,
   type NebulaScope,
   type SemanticEvidenceItem,
   type SemanticNebulaBuildResult,
@@ -36,14 +37,14 @@ export function buildStructuredSemanticNebula(input: {
     .map((cluster) => buildNode(cluster, unitsById, maxProbeOccurrences, input.iteration, input.evidenceByResponseId))
     .sort((a, b) => b.semanticGravity - a.semanticGravity);
   const nodes = allNodes.filter(getNebulaScopeDefinition(input.scope).filter);
-  const visibleIds = new Set(nodes.map((node) => node.id));
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const subjectId = `subject:${input.subjectName}`;
   const edges = input.clusters.flatMap((cluster) => {
-    if (!visibleIds.has(cluster.id)) return [];
+    const node = nodeById.get(cluster.id);
+    if (!node) return [];
     const members = cluster.memberIds.map((id) => unitsById.get(id)).filter((unit): unit is SemanticUnit => Boolean(unit));
     const predicates = Array.from(new Set(members.map((unit) => unit.predicate).filter((value): value is string => Boolean(value))));
     const relation = predicates[0] ?? "ASSOCIATED_WITH";
-    const node = nodes.find((item) => item.id === cluster.id)!;
     return [{
       id: `${subjectId}->${cluster.id}:${relation}`,
       source: subjectId,
@@ -70,6 +71,7 @@ export function buildStructuredSemanticNebula(input: {
     summary: {
       scope: input.scope,
       version: semanticNebulaVersion,
+      nodePolicy: semanticNebulaNodePolicy,
       entityType: input.entityType,
       subjectName: input.subjectName,
       totalTerms: nodes.length,

@@ -1,6 +1,17 @@
 import type { SubjectEntityType } from "@/generated/prisma/client";
 
-export const semanticNebulaVersion = "2026-06-08.v2";
+export const semanticNebulaVersion = "2026-08-14.v3";
+/**
+ * Every collected cluster is kept — deliberately uncapped.
+ *
+ * Real OVERALL snapshots reach ~2100 nodes, so any ceiling low enough to be a
+ * meaningful safety net also truncates ordinary runs. The resource concerns a
+ * cap would have addressed are handled where they actually arise instead:
+ * the page adapts nodes with `includeExamples: false` and fetches evidence per
+ * node on demand (a measured 6.9MB -> 586KB at 1701 nodes), and the canvas
+ * bounds its own per-frame work via DETAIL_NODE_LIMIT rather than by node count.
+ */
+export const semanticNebulaNodePolicy = "all_clusters" as const;
 
 export const nebulaScopes = [
   "OVERALL",
@@ -79,6 +90,13 @@ export type SemanticTermCandidate = {
   scenarios: Set<string>;
   personas: Set<string>;
   probeFamilies: Set<string>;
+  /**
+   * "<contextFlag>:<responseId>" pairs already counted. One response can surface
+   * the same term through several extraction paths (matched keyword, then named
+   * competitor); the context counters below must credit each distinct response
+   * once per context, not once per path and not only on the very first path.
+   */
+  contextSightings: Set<string>;
   recommendationHits: number;
   competitorContextHits: number;
   riskContextHits: number;
@@ -145,6 +163,7 @@ export type SemanticNebulaEdge = {
 export type SemanticNebulaSummary = {
   scope: NebulaScope;
   version: string;
+  nodePolicy: typeof semanticNebulaNodePolicy;
   entityType: SubjectEntityType;
   subjectName: string;
   totalTerms: number;

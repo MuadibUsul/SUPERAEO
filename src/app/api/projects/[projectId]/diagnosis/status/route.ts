@@ -4,7 +4,8 @@ import { requireApiSession } from "@/server/auth/session";
 import { getProject } from "@/server/data/projects";
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { withApiTrace } from "@/server/observability/api-wrapper";
-import { getWorkerHealth } from "@/server/queue/worker-health";
+import { getWorkerHealth, isWorkerVersionCompatible, WORKER_PROTOCOL_VERSION } from "@/server/queue/worker-health";
+import { getAuditUsageSummary } from "@/server/ai/usage-summary";
 
 type Context = {
   params: Promise<{ projectId: string }>;
@@ -84,7 +85,17 @@ export const GET = withApiTrace<Context>({ subsystem: "diagnosis", operation: "d
       }
     : latestSamplingRun;
 
-  return NextResponse.json({ job, latestRun, latestReport, workerAlive: workerHealth.alive });
+  const usageSummary = job ? await getAuditUsageSummary(projectId, job.traceId) : null;
+
+  return NextResponse.json({
+    job,
+    latestRun,
+    latestReport,
+    usageSummary,
+    workerAlive: isWorkerVersionCompatible(workerHealth),
+    workerVersion: workerHealth.version,
+    expectedWorkerVersion: WORKER_PROTOCOL_VERSION,
+  });
 });
 
 function semanticExplorationSummary(value: unknown) {

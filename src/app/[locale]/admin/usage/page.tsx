@@ -36,6 +36,7 @@ export default async function AdminUsagePage() {
                 <TableHead>Operation</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Tokens</TableHead>
+                <TableHead>Cost</TableHead>
                 <TableHead>Latency</TableHead>
                 <TableHead>Project</TableHead>
                 <TableHead>Error</TableHead>
@@ -53,6 +54,7 @@ export default async function AdminUsagePage() {
                     <Badge variant={log.status === "failed" ? "destructive" : "secondary"}>{log.status}</Badge>
                   </TableCell>
                   <TableCell className="font-mono">{log.totalTokens ?? "-"}</TableCell>
+                  <TableCell className="font-mono">{log.costUsd == null ? "-" : `$${log.costUsd.toFixed(6)}`}</TableCell>
                   <TableCell className="font-mono">{log.latencyMs ? `${log.latencyMs}ms` : "-"}</TableCell>
                   <TableCell className="whitespace-normal">{log.project?.name ?? log.organization?.name ?? "-"}</TableCell>
                   <TableCell className="max-w-sm whitespace-normal text-muted-foreground">{log.error ?? "-"}</TableCell>
@@ -65,4 +67,3 @@ export default async function AdminUsagePage() {
     </div>
   );
 }
-

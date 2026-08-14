@@ -39,11 +39,7 @@ export const GET = withApiTrace<Context>({ subsystem: "opportunity", operation: 
   return NextResponse.json({ snapshot, territorySnapshot, latestJob });
 });
 
-export const POST = withApiTrace<Context>({ subsystem: "opportunity", operation: "opportunities.generate" }, async function POST(_request: Request, context: Context) {
-  return generateOpportunitiesResponse(context);
-});
-
-export async function generateOpportunitiesResponse({ params }: Context) {
+export const POST = withApiTrace<Context>({ subsystem: "opportunity", operation: "opportunities.generate" }, async function POST(_request: Request, { params }: Context) {
   const auth = await requireApiSession();
   if (!auth.ok) return auth.response;
   if (!isDatabaseConfigured()) {
@@ -104,4 +100,4 @@ export async function generateOpportunitiesResponse({ params }: Context) {
     });
     throw error;
   }
-}
+});

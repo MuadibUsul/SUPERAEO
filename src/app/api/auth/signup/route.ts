@@ -5,6 +5,7 @@ import { createSession, resolveSignedInDestination, setSessionCookie } from "@/s
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { withApiTrace } from "@/server/observability/api-wrapper";
 import { recordTraceEvent } from "@/server/observability/event-log";
+import { enforceRateLimits, requestClientIdentity } from "@/server/security/rate-limit";
 import { slugify } from "@/server/utils/slug";
 import { signupSchema } from "@/server/validation/auth";
 
@@ -34,6 +35,17 @@ export const POST = withApiTrace({ subsystem: "auth", operation: "auth.signup" }
   }
 
   const input = parsed.data;
+  const blocked = await enforceRateLimits([
+    { namespace: "signup:ip", identity: requestClientIdentity(request), limit: 5, windowMs: 60 * 60_000 },
+    { namespace: "signup:account", identity: input.email.toLowerCase(), limit: 3, windowMs: 60 * 60_000 },
+  ]);
+  if (blocked) {
+    return NextResponse.json(
+      { error: blocked.unavailable ? "Signup protection is temporarily unavailable." : "Too many signup attempts." },
+      { status: blocked.unavailable ? 503 : 429, headers: { "Retry-After": String(blocked.retryAfterSeconds) } },
+    );
+  }
+
   const prisma = getPrisma();
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
 

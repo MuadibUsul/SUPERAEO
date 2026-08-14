@@ -80,6 +80,14 @@ const genericPhrases = new Set([
   "the answer",
   "the short answer is",
   "there are several options",
+  "\u7ed9\u4f60\u4e00\u70b9\u9009\u8d2d\u5efa\u8bae",
+  "其他",
+  "总结",
+  "特点",
+  "注意事项",
+  "结论",
+  "建议",
+  "推荐",
 ]);
 
 export function extractSemanticTermCandidates(input: {
@@ -118,7 +126,9 @@ export function extractSemanticTermCandidates(input: {
       }
     }
 
-    for (const term of asStringArray(analysis?.matchedKeywords)) {
+    for (const rawTerm of asStringArray(analysis?.matchedKeywords)) {
+      const term = cleanModelKeyword(rawTerm);
+      if (!term) continue;
       addEvidenceTerm({
         candidates,
         term,
@@ -135,57 +145,60 @@ export function extractSemanticTermCandidates(input: {
     }
 
     for (const entity of asRecordArray(asRecord(analysis?.rawAnalysis)?.mentionedEntities)) {
-      const term = stringValue(entity.name);
       const role = stringValue(entity.role);
-      if (!term || role === "target") continue;
+      if (role === "target") continue;
       const isComparison = role === "comparison";
-      addEvidenceTerm({
-        candidates,
-        term,
-        keywordType: isComparison ? "competitor" : role === "concept" ? "category" : undefined,
-        response,
-        answer,
-        subjectName: input.subjectName,
-        subjectAliases: input.subjectAliases,
-        competitors: input.competitors,
-        desiredTerms: input.desiredTerms,
-        undesiredTerms: input.undesiredTerms,
-        contextFlags: isComparison ? [...baseFlags, "competitor"] : baseFlags,
-      });
+      for (const term of splitEntityTerms(stringValue(entity.name))) {
+        addEvidenceTerm({
+          candidates,
+          term,
+          keywordType: isComparison ? "competitor" : role === "concept" ? "category" : undefined,
+          response,
+          answer,
+          subjectName: input.subjectName,
+          subjectAliases: input.subjectAliases,
+          competitors: input.competitors,
+          desiredTerms: input.desiredTerms,
+          undesiredTerms: input.undesiredTerms,
+          contextFlags: isComparison ? [...baseFlags, "competitor"] : baseFlags,
+        });
+      }
     }
 
-    for (const term of asStringArray(analysis?.competitorsMentioned)) {
-      addEvidenceTerm({
-        candidates,
-        term,
-        keywordType: "competitor",
-        response,
-        answer,
-        subjectName: input.subjectName,
-        subjectAliases: input.subjectAliases,
-        competitors: input.competitors,
-        desiredTerms: input.desiredTerms,
-        undesiredTerms: input.undesiredTerms,
-        contextFlags: [...baseFlags, "competitor"],
-      });
+    for (const rawTerm of asStringArray(analysis?.competitorsMentioned)) {
+      for (const term of splitEntityTerms(rawTerm)) {
+        addEvidenceTerm({
+          candidates,
+          term,
+          keywordType: "competitor",
+          response,
+          answer,
+          subjectName: input.subjectName,
+          subjectAliases: input.subjectAliases,
+          competitors: input.competitors,
+          desiredTerms: input.desiredTerms,
+          undesiredTerms: input.undesiredTerms,
+          contextFlags: [...baseFlags, "competitor"],
+        });
+      }
     }
 
     if (analysis?.recommendationWinner) {
-      addEvidenceTerm({
-        candidates,
-        term: analysis.recommendationWinner,
-        keywordType: input.competitors.map(normalizeTerm).includes(normalizeTerm(analysis.recommendationWinner))
-          ? "competitor"
-          : undefined,
-        response,
-        answer,
-        subjectName: input.subjectName,
-        subjectAliases: input.subjectAliases,
-        competitors: input.competitors,
-        desiredTerms: input.desiredTerms,
-        undesiredTerms: input.undesiredTerms,
-        contextFlags: [...baseFlags, "recommendation"],
-      });
+      for (const term of splitEntityTerms(analysis.recommendationWinner)) {
+        addEvidenceTerm({
+          candidates,
+          term,
+          keywordType: input.competitors.map(normalizeTerm).includes(normalizeTerm(term)) ? "competitor" : undefined,
+          response,
+          answer,
+          subjectName: input.subjectName,
+          subjectAliases: input.subjectAliases,
+          competitors: input.competitors,
+          desiredTerms: input.desiredTerms,
+          undesiredTerms: input.undesiredTerms,
+          contextFlags: [...baseFlags, "recommendation"],
+        });
+      }
     }
 
     for (const hallucination of asRecordArray(analysis?.possibleHallucinations)) {
@@ -250,6 +263,7 @@ export function extractSemanticTermCandidates(input: {
         scenarios: new Set(),
         personas: new Set(),
         probeFamilies: new Set(["gap_analysis"]),
+        contextSightings: new Set(),
         recommendationHits: 0,
         competitorContextHits: 0,
         riskContextHits: 0,
@@ -311,6 +325,7 @@ function addEvidenceTerm(input: {
       scenarios: new Set<string>(),
       personas: new Set<string>(),
       probeFamilies: new Set<string>(),
+      contextSightings: new Set<string>(),
       recommendationHits: 0,
       competitorContextHits: 0,
       riskContextHits: 0,
@@ -318,7 +333,12 @@ function addEvidenceTerm(input: {
       evidence: [],
     } satisfies SemanticTermCandidate);
 
-  candidate.occurrences += 1;
+  const isNewResponseEvidence = !candidate.responseIds.has(input.response.id);
+  if (existing && ["COMPETITOR", "RISK", "INCORRECT"].includes(classification.termType)) {
+    candidate.termType = classification.termType;
+    candidate.polarity = classification.polarity;
+  }
+  if (isNewResponseEvidence) candidate.occurrences += 1;
   candidate.responseIds.add(input.response.id);
   candidate.queryIds.add(input.response.query.id);
   candidate.runIds.add(input.response.runId);
@@ -330,20 +350,33 @@ function addEvidenceTerm(input: {
   candidate.firstSeenAt = minDate(candidate.firstSeenAt, input.response.createdAt);
   candidate.lastSeenAt = maxDate(candidate.lastSeenAt, input.response.createdAt);
 
-  if (input.contextFlags.includes("recommendation") || input.response.analysis?.brandRecommended) {
+  // Each counter means "distinct responses that showed this term in that
+  // context". Deduplicating per (context, response) credits a response whose
+  // later extraction path adds a context the first path did not carry, without
+  // double-counting one answer that names the same term twice.
+  const countContext = (flag: string) => {
+    const sighting = `${flag}:${input.response.id}`;
+    if (candidate.contextSightings.has(sighting)) return false;
+    candidate.contextSightings.add(sighting);
+    return true;
+  };
+
+  if ((input.contextFlags.includes("recommendation") || input.response.analysis?.brandRecommended) && countContext("recommendation")) {
     candidate.recommendationHits += 1;
   }
-  if (input.contextFlags.includes("competitor")) {
+  if (input.contextFlags.includes("competitor") && countContext("competitor")) {
     candidate.competitorContextHits += 1;
   }
-  if (input.contextFlags.includes("risk")) {
+  if (input.contextFlags.includes("risk") && countContext("risk")) {
     candidate.riskContextHits += 1;
   }
 
-  candidate.subjectCoMentionScores.push(
-    calculateCoMentionScore(input.answer, input.term, [input.subjectName, ...(input.subjectAliases ?? [])], Boolean(input.response.analysis?.brandMentioned)),
-  );
-  candidate.evidence.push(buildEvidence(input, input.excerptOverride));
+  if (isNewResponseEvidence) {
+    candidate.subjectCoMentionScores.push(
+      calculateCoMentionScore(input.answer, input.term, [input.subjectName, ...(input.subjectAliases ?? [])], Boolean(input.response.analysis?.brandMentioned)),
+    );
+    candidate.evidence.push(buildEvidence(input, input.excerptOverride));
+  }
 
   input.candidates.set(normalizedTerm, candidate);
 }
@@ -417,6 +450,7 @@ export function extractConstrainedAnswerTerms(answer: string, subjectName: strin
     ...matchGroups(answer, /^(?:[-*+]\s+|\d+[.)]\s+)?(?:\*\*)?([^:\n：]{2,48})(?:\*\*)?\s*[:：]/gm),
   ]
     .map(cleanPhrase)
+    .flatMap((phrase) => phrase.split("/").map(cleanPhrase))
     .filter((phrase) => isConstrainedSemanticPhrase(phrase, lowerSubject, competitorSet));
 
   const counts = new Map<string, { term: string; count: number }>();
@@ -438,7 +472,9 @@ function matchGroups(value: string, pattern: RegExp) {
 function cleanPhrase(value: string) {
   return value
     .replace(/^[\s#>*_`'"“”‘’()[\]{}-]+|[\s#>*_`'"“”‘’()[\]{}.,!?;:，。！？；：-]+$/gu, "")
+    .replace(/\s*[（(][^()（）]*[)）]\s*$/u, "")
     .replace(/\s+/g, " ")
+    .replace(/[\u0022\u0027\u2018\u2019\u201c\u201d]/gu, "")
     .trim();
 }
 
@@ -446,7 +482,7 @@ function isConstrainedSemanticPhrase(phrase: string, subject: string, competitor
   const normalized = normalizeTerm(phrase);
   if (!normalized || normalized === subject || competitors.has(normalized)) return false;
   if (stopwords.has(normalized) || genericPhrases.has(normalized) || !isUsableTerm(phrase)) return false;
-  if (phrase.length > 72 || /[.!?。！？；;]/u.test(phrase)) return false;
+  if (phrase.length > 72 || /[,.!?，。！？；;、]/u.test(phrase)) return false;
 
   const latinWords = phrase.match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) ?? [];
   const containsCjk = /[\p{Script=Han}]/u.test(phrase);
@@ -456,6 +492,23 @@ function isConstrainedSemanticPhrase(phrase: string, subject: string, competitor
   const first = normalizeTerm(latinWords[0] ?? "");
   const last = normalizeTerm(latinWords.at(-1) ?? "");
   return !stopwords.has(first) && !stopwords.has(last);
+}
+
+function cleanModelKeyword(value: string) {
+  const phrase = cleanPhrase(value);
+  if (!phrase || genericPhrases.has(normalizeTerm(phrase)) || /[,.!?，。！？；;、/]/u.test(phrase)) return null;
+  const containsCjk = /[\p{Script=Han}]/u.test(phrase);
+  const wordCount = phrase.match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu)?.length ?? 0;
+  if (containsCjk && phrase.length > 14) return null;
+  if (!containsCjk && wordCount > 6) return null;
+  return isUsableTerm(phrase) ? phrase : null;
+}
+
+function splitEntityTerms(value: string) {
+  return cleanPhrase(value)
+    .split(/[、,，/]/u)
+    .map(cleanPhrase)
+    .filter((term) => term && !genericPhrases.has(normalizeTerm(term)) && isUsableTerm(term));
 }
 
 function constrainRiskTerm(claim: string, subjectName: string, competitors: string[]) {

@@ -8,11 +8,9 @@ import {
   type SemanticNebulaBuildResult,
   type SemanticNebulaEdge,
   type SemanticNebulaNode,
+  semanticNebulaNodePolicy,
   semanticNebulaVersion,
 } from "@/server/semantic-nebula/types";
-
-const MAX_NEBULA_CANDIDATES = 180;
-const MAX_SCOPE_NODES = 140;
 
 type BuildInput = {
   subject: {
@@ -106,11 +104,10 @@ export function buildSemanticNebula(input: BuildInput, scope: NebulaScope): Sema
       };
       return node;
     })
-    .sort((a, b) => b.semanticGravity - a.semanticGravity)
-    .slice(0, MAX_NEBULA_CANDIDATES);
+    .sort((a, b) => b.semanticGravity - a.semanticGravity);
 
   const scopeDefinition = getNebulaScopeDefinition(scope);
-  const nodes = allNodes.filter(scopeDefinition.filter).slice(0, MAX_SCOPE_NODES);
+  const nodes = allNodes.filter(scopeDefinition.filter);
   const edges = buildEdges(input.subject.displayName, nodes);
   const evidence = Object.fromEntries(nodes.map((node) => [node.normalizedTerm, node.examples]));
   const summary = buildSummary({
@@ -163,6 +160,7 @@ function buildSummary(input: {
   return {
     scope: input.scope,
     version: semanticNebulaVersion,
+    nodePolicy: semanticNebulaNodePolicy,
     entityType: input.entityType,
     subjectName: input.subjectName,
     totalTerms: input.nodes.length,

@@ -74,7 +74,47 @@ test("extracts only bounded semantic phrases instead of fixed-width answer chunk
   assert.equal(terms.some((term) => term.includes("response sto") || term === "rage"), false);
 });
 
-test("retains more than eighty scored nodes when evidence supports it", () => {
+test("cleans model keywords and does not turn the subject into its own semantic node", () => {
+  const graph = buildSemanticNebula(
+    {
+      subject: {
+        id: "subject-1",
+        entityType: "BRAND",
+        displayName: "元气森林",
+        canonicalName: "元气森林",
+        profileJson: null,
+      },
+      competitors: [],
+      keywords: [],
+      responses: [
+        {
+          id: "response-1",
+          runId: "run-1",
+          model: "model-a",
+          rawResponse: "元气森林主打清爽口感，也常被放在平价品牌里讨论。",
+          createdAt: new Date("2026-08-14T00:00:00Z"),
+          query: { id: "query-1", queryText: "如何评价？", queryType: "comparison" },
+          analysis: {
+            brandMentioned: true,
+            brandRecommended: false,
+            sentiment: "neutral",
+            matchedKeywords: ["主打0糖0卡，用的是赤藓糖醇", "平价品牌（如盒马、山姆自营）", "清爽口感"],
+            competitorsMentioned: [],
+            rawAnalysis: { mentionedEntities: [{ name: "元气森林", role: "unknown" }] },
+          },
+        },
+      ],
+    },
+    "OVERALL",
+  );
+
+  assert.equal(graph.nodes.some((node) => node.term === "元气森林"), false);
+  assert.equal(graph.nodes.some((node) => node.term.includes("用的是")), false);
+  assert.ok(graph.nodes.some((node) => node.term === "平价品牌"));
+  assert.ok(graph.nodes.some((node) => node.term === "清爽口感"));
+});
+
+test("retains every scored node when evidence supports it", () => {
   const responses = Array.from({ length: 180 }, (_, index) => ({
     id: `response-${index}`,
     runId: "run-1",
@@ -122,6 +162,6 @@ test("retains more than eighty scored nodes when evidence supports it", () => {
     "OVERALL",
   );
 
-  assert.ok(graph.nodes.length > 80);
-  assert.ok(graph.nodes.length <= 140);
+  assert.ok(graph.nodes.length >= 180);
+  assert.equal(graph.summary.nodePolicy, "all_clusters");
 });

@@ -37,20 +37,19 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
 
   const runsReady = state.data._count.runs > 0;
   const subject = state.data.subjects[0];
-  const [snapshots, latestJob] = await Promise.all([
+  const [overall, latestJob] = await Promise.all([
     subject
-      ? getPrisma().semanticNebulaSnapshot.findMany({
-          where: { projectId, subjectId: subject.id },
-          orderBy: [{ scope: "asc" }, { createdAt: "desc" }],
+      ? getPrisma().semanticNebulaSnapshot.findFirst({
+          where: { projectId, subjectId: subject.id, scope: "OVERALL" },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, nodeJson: true, summaryJson: true },
         })
-      : [],
+      : null,
     getPrisma().analysisJob.findFirst({
       where: { projectId, jobType: "semantic_nebula_build" },
       orderBy: { createdAt: "desc" },
     }),
   ]);
-  const latestByScope = dedupeLatestSnapshotsByScope(snapshots);
-  const overall = latestByScope.find((snapshot) => snapshot.scope === "OVERALL") ?? latestByScope[0];
   const summary = asRecord(overall?.summaryJson);
 
   return (
@@ -82,7 +81,7 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>{dictionary.semanticIntelligence.concepts.observableAnswerSpace}</CardTitle>
           <SemanticJobAction
-            endpoint={`/api/projects/${projectId}/semantic-nebula/build`}
+            endpoint={`/api/projects/${projectId}/semantic-nebula`}
             label={dictionary.semanticIntelligence.actions.buildNebula}
             disabled={!runsReady}
             latestJob={latestJob}
@@ -95,7 +94,8 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
         <CardContent>
           <CognitionUniverse
             subjectName={subject?.displayName ?? state.data.brandName}
-            nodes={adaptNebulaNodes(overall?.nodeJson)}
+            nodes={adaptNebulaNodes(overall?.nodeJson, Number.POSITIVE_INFINITY, undefined, false)}
+            evidenceEndpoint={overall ? `/api/projects/${projectId}/semantic-nebula/evidence?snapshotId=${overall.id}` : undefined}
             className="h-[560px]"
             copy={{
               legend:
@@ -133,14 +133,4 @@ function MetricTile({ label, value }: { label: string; value: unknown }) {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function dedupeLatestSnapshotsByScope<T extends { scope: string }>(snapshots: T[]) {
-  const latest = new Map<string, T>();
-  for (const snapshot of snapshots) {
-    if (!latest.has(snapshot.scope)) {
-      latest.set(snapshot.scope, snapshot);
-    }
-  }
-  return Array.from(latest.values());
 }

@@ -814,6 +814,7 @@ model PromptRun {
   projectId       String?         @map("project_id")
   subjectId       String?         @map("subject_id")
   providerId      String?         @map("provider_id")
+  traceId         String?         @map("trace_id")
   promptName      String          @map("prompt_name")
   promptVersion   String          @map("prompt_version")
   model           String
@@ -833,6 +834,7 @@ model PromptRun {
   @@index([projectId, promptName])
   @@index([subjectId, promptName])
   @@index([providerId])
+  @@index([projectId, traceId])
   @@map("prompt_runs")
 }
 
@@ -927,6 +929,7 @@ model AIUsageLog {
   projectId        String?       @map("project_id")
   organizationId   String?       @map("organization_id")
   userId           String?       @map("user_id")
+  traceId          String?       @map("trace_id")
   operation        String
   status           AIUsageStatus
   promptTokens     Int?          @map("prompt_tokens")
@@ -946,6 +949,7 @@ model AIUsageLog {
   @@index([providerId, createdAt])
   @@index([projectId, createdAt])
   @@index([organizationId, createdAt])
+  @@index([projectId, traceId])
   @@map("ai_usage_logs")
 }
 
@@ -1436,6 +1440,8 @@ model AnalysisJob {
   @@index([projectId, status])
   @@index([queueName, queueJobId])
   @@index([traceId])
+  @@index([projectId, jobType, createdAt])
+  @@index([jobType, createdAt])
   @@map("analysis_jobs")
 }
 

@@ -4,7 +4,10 @@ import { getPrisma } from "@/server/db";
 import { decryptSecret } from "@/server/security/encryption";
 import type { AIJsonInput, AITextInput, AITextResult, ProviderRuntime } from "@/server/ai/types";
 import { getDefaultEnabledProvider, validateProviderCompatibility } from "@/server/ai/provider-config";
-import { asArray, asRecord } from "@/server/utils/coerce";
+import { acquireProviderPermit, releaseProviderPermit, settleProviderPermit } from "@/server/ai/provider-guard";
+import { asRecord } from "@/server/utils/coerce";
+import { usageNumbers } from "@/server/brand-probes/token-cost";
+import { getTraceContext } from "@/server/observability/trace-context";
 import {
   anthropicText,
   chatCompletionText,
@@ -50,7 +53,36 @@ function createRuntime(context: ProviderContext): ProviderRuntime {
   const { provider, apiKey } = context;
   const baseUrl = trimSlash(context.baseUrl);
 
+  /**
+   * Every outbound provider call reserves against the provider's per-minute rate
+   * limit and monthly budget before it is sent, and settles the reservation to
+   * the real cost afterwards. Without this the `rateLimitPerMinute` and
+   * `monthlyBudget` columns on AIProvider are decorative.
+   */
+  async function withPermit<T extends AITextResult>(input: AITextInput, send: () => Promise<T>): Promise<T> {
+    const permit = await acquireProviderPermit({
+      provider,
+      model: input.model,
+      prompt: input.prompt,
+      system: input.system,
+      maxOutputTokens: input.maxOutputTokens,
+    });
+
+    try {
+      const result = await send();
+      await settleProviderPermit(permit, result.usage);
+      return result;
+    } catch (error) {
+      await releaseProviderPermit(permit);
+      throw error;
+    }
+  }
+
   async function generateText(input: AITextInput): Promise<AITextResult> {
+    return withPermit(input, () => sendText(input));
+  }
+
+  async function sendText(input: AITextInput): Promise<AITextResult> {
     if (provider.providerType === "openai_responses") {
       const raw = await postJson(`${baseUrl}/responses`, apiKey, {
         model: input.model ?? provider.defaultModel,
@@ -160,6 +192,10 @@ function createRuntime(context: ProviderContext): ProviderRuntime {
   }
 
   async function generateJson(input: AIJsonInput): Promise<AITextResult> {
+    return withPermit(input, () => sendJson(input));
+  }
+
+  async function sendJson(input: AIJsonInput): Promise<AITextResult> {
     if (provider.providerType === "openai_responses") {
       const raw = await postJson(`${baseUrl}/responses`, apiKey, {
         model: input.model ?? provider.defaultModel,
@@ -208,7 +244,9 @@ function createRuntime(context: ProviderContext): ProviderRuntime {
       };
     }
 
-    return generateText({
+    // sendText, not generateText: the permit for this call is already held by
+    // the generateJson wrapper.
+    return sendText({
       ...input,
       prompt: `${input.prompt}\n\nReturn strict JSON only. Schema name: ${input.schemaName}.`,
     });
@@ -301,12 +339,18 @@ export async function logAIUsage(input: {
   organizationId?: string;
   userId?: string;
   operation: string;
+  model?: string;
   status: "success" | "failed";
   usage?: AITextResult["usage"];
   latencyMs?: number;
   error?: string;
   metadata?: unknown;
 }) {
+  const normalizedUsage = usageNumbers(input.usage, input.model);
+  // Every AI call belongs to the trace of whatever job triggered it. Reading it
+  // from the ambient context means callers cannot forget to pass it, which is
+  // how answer sampling silently dropped out of the per-audit usage summary.
+  const traceId = getTraceContext()?.traceId;
   return getPrisma().aIUsageLog.create({
     data: {
       providerId: input.providerId,
@@ -314,17 +358,19 @@ export async function logAIUsage(input: {
       projectId: input.projectId,
       organizationId: input.organizationId,
       userId: input.userId,
+      traceId,
       operation: input.operation,
       status: input.status,
       promptTokens: input.usage?.promptTokens,
       completionTokens: input.usage?.completionTokens,
       totalTokens: input.usage?.totalTokens,
+      costUsd: normalizedUsage.estimatedCostUsd,
       latencyMs: input.latencyMs,
       error: input.error,
       metadata:
         input.metadata === undefined
           ? undefined
-          : (input.metadata as Prisma.InputJsonValue),
+          : ({ ...asRecord(input.metadata), ...(input.model ? { model: input.model } : {}) } as Prisma.InputJsonValue),
     },
     select: { id: true },
   });

@@ -32,11 +32,7 @@ export const GET = withApiTrace<Context>({ subsystem: "semantic_nebula", operati
   return NextResponse.json({ snapshots, latestJob });
 });
 
-export const POST = withApiTrace<Context>({ subsystem: "semantic_nebula", operation: "semantic_nebula.build" }, async function POST(_request: Request, context: Context) {
-  return buildNebulaResponse(context);
-});
-
-export async function buildNebulaResponse({ params }: Context) {
+export const POST = withApiTrace<Context>({ subsystem: "semantic_nebula", operation: "semantic_nebula.build" }, async function POST(_request: Request, { params }: Context) {
   const auth = await requireApiSession();
   if (!auth.ok) return auth.response;
 
@@ -94,4 +90,4 @@ export async function buildNebulaResponse({ params }: Context) {
     });
     throw error;
   }
-}
+});

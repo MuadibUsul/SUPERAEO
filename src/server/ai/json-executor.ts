@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
 import { getProviderRuntimeContext, logAIUsage } from "@/server/ai/provider-registry";
+import { mergeUsageNumbers } from "@/server/brand-probes/token-cost";
 import { getPrisma } from "@/server/db";
 import { recordTraceEvent } from "@/server/observability/event-log";
 import { getTraceContext } from "@/server/observability/trace-context";
@@ -129,7 +130,7 @@ export async function runJsonPrompt<T>({
         temperature,
       });
       rawOutput = repair.text;
-      usage = repair.usage ?? usage;
+      usage = mergeUsageNumbers(usage, repair.usage);
       validation = parseAndValidate(rawOutput, schema);
     }
 
@@ -140,6 +141,7 @@ export async function runJsonPrompt<T>({
           projectId,
           subjectId,
           providerId,
+          traceId: traceContext?.traceId,
           promptName,
           promptVersion,
           model: providerModel ?? "unconfigured",
@@ -159,6 +161,7 @@ export async function runJsonPrompt<T>({
         organizationId,
         userId,
         operation: promptName,
+        model: providerModel,
         status: "failed",
         usage: usage as never,
         latencyMs: Date.now() - started,
@@ -199,6 +202,7 @@ export async function runJsonPrompt<T>({
         projectId,
         subjectId,
         providerId,
+        traceId: traceContext?.traceId,
         promptName,
         promptVersion,
         model: providerModel ?? "unconfigured",
@@ -218,6 +222,7 @@ export async function runJsonPrompt<T>({
       organizationId,
       userId,
       operation: promptName,
+      model: providerModel,
       status: "success",
       usage: usage as never,
       latencyMs: Date.now() - started,
@@ -255,6 +260,7 @@ export async function runJsonPrompt<T>({
         projectId,
         subjectId,
         providerId,
+        traceId: traceContext?.traceId,
         promptName,
         promptVersion,
         model: providerModel ?? "unconfigured",
@@ -274,6 +280,7 @@ export async function runJsonPrompt<T>({
       organizationId,
       userId,
       operation: promptName,
+      model: providerModel,
       status: "failed",
       usage: usage as never,
       latencyMs: Date.now() - started,

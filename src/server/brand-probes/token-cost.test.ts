@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { allocateUsageAcrossProbes, usageNumbers } from "@/server/brand-probes/token-cost";
+import { allocateUsageAcrossProbes, mergeUsageNumbers, usageNumbers } from "@/server/brand-probes/token-cost";
 
 test("estimates USD cost and allocates micro-batch usage once across probes", () => {
   const previousInput = process.env.SEMANTIC_EXPLORATION_INPUT_COST_PER_MILLION;
@@ -33,6 +33,22 @@ test("uses DeepSeek rates for the active compatibility model and a conservative 
     restoreEnv("SEMANTIC_EXPLORATION_INPUT_COST_PER_MILLION", previousInput);
     restoreEnv("SEMANTIC_EXPLORATION_OUTPUT_COST_PER_MILLION", previousOutput);
   }
+});
+
+test("adds original and JSON repair usage instead of replacing the first call", () => {
+  assert.deepEqual(
+    mergeUsageNumbers(
+      { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+      { promptTokens: 80, completionTokens: 10, totalTokens: 90 },
+    ),
+    {
+      promptTokens: 180,
+      completionTokens: 30,
+      totalTokens: 210,
+      cachedInputTokens: undefined,
+      reasoningTokens: undefined,
+    },
+  );
 });
 
 function restoreEnv(name: string, value: string | undefined) {

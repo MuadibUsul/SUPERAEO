@@ -96,7 +96,7 @@ export default async function QuestionTerritoryPage({ params }: PageProps) {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>{dictionary.semanticIntelligence.concepts.questionTerritory}</CardTitle>
           <SemanticJobAction
-            endpoint={`/api/projects/${projectId}/question-territory/build`}
+            endpoint={`/api/projects/${projectId}/question-territory`}
             label={dictionary.semanticIntelligence.actions.buildTerritory}
             disabled={!runsReady}
             latestJob={latestJob}

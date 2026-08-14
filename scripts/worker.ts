@@ -21,6 +21,7 @@ import {
   clearWorkerHeartbeat,
   closeWorkerHealthConnection,
   recordWorkerHeartbeat,
+  WORKER_PROTOCOL_VERSION,
 } from "@/server/queue/worker-health";
 import { executeSamplingRun } from "@/server/sampling/execute-run";
 import { buildSemanticNebulaSnapshots } from "@/server/semantic-nebula/nebula-service";
@@ -288,7 +289,7 @@ async function writeHeartbeat() {
     workerId: WORKER_ID,
     queues: WORKER_QUEUES,
     pid: process.pid,
-    version: process.env.npm_package_version,
+    version: WORKER_PROTOCOL_VERSION,
   }).catch((error) => {
     console.error("Failed to record worker heartbeat", error);
   });

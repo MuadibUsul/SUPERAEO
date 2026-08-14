@@ -29,6 +29,15 @@ type DiagnosisStatus = {
   job: DiagnosisJob | null;
   latestRun: { id: string; status: string; sampleCount: number; failureSummary: string | null } | null;
   latestReport: { id: string; title: string } | null;
+  usageSummary: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+    requestCount: number;
+    failedRequestCount: number;
+    repairCount: number;
+  } | null;
   workerAlive: boolean;
 };
 
@@ -107,10 +116,15 @@ export function AuditStatusPanel({
   const [expanded, setExpanded] = useState(true);
   const [progress, setProgress] = useState(0);
   const [thoughtTick, setThoughtTick] = useState(0);
+  const [animating, setAnimating] = useState(true);
   const stageMetaRef = useRef<{ index: number; startedAt: number; status: string }>({ index: 0, startedAt: 0, status: "" });
   const jobIdRef = useRef<string | null>(null);
+  const progressRef = useRef(0);
 
   const localeKey: "zh-CN" | "en" = locale === "en" ? "en" : "zh-CN";
+  const usageLabels = localeKey === "zh-CN"
+    ? { title: "本次审计消耗", total: "总 Token", input: "输入 Token", output: "输出 Token", cost: "预估费用", calls: "模型调用", failed: "失败", repairs: "修复" }
+    : { title: "This audit usage", total: "Total tokens", input: "Input tokens", output: "Output tokens", cost: "Estimated cost", calls: "Model calls", failed: "failed", repairs: "repairs" };
 
   const active =
     status?.job?.status === "queued" ||
@@ -123,6 +137,8 @@ export function AuditStatusPanel({
     if (response.ok) {
       setStatus(payload);
       setExpanded(payload?.job?.status === "completed" ? variant !== "compact" : true);
+      // Fresh job state may move the progress target, so re-arm the animator.
+      setAnimating(true);
     }
   }, [projectId, variant]);
 
@@ -131,9 +147,10 @@ export function AuditStatusPanel({
     return () => window.clearTimeout(timer);
   }, [loadStatus]);
 
+  // Poll fast only while an audit is in flight. The idle poll exists to notice a
+  // run someone else started, and does not need to be aggressive.
   useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => void loadStatus(), 2500);
+    const timer = window.setInterval(() => void loadStatus(), active ? 2500 : 30_000);
     return () => window.clearInterval(timer);
   }, [active, loadStatus]);
 
@@ -151,12 +168,17 @@ export function AuditStatusPanel({
 
     if (job?.id && job.id !== jobIdRef.current && (job.status === "queued" || job.status === "running")) {
       jobIdRef.current = job.id;
+      progressRef.current = 0;
       setProgress(0);
     }
   }, [status]);
 
-  // Drive the progress bar + rotating "thinking" caption.
+  // Drive the progress bar + rotating "thinking" caption. The timer only runs
+  // while there is something left to animate — an in-flight job, or a finished
+  // one whose bar is still easing to its resting position. Ungated it kept
+  // re-rendering the panel ~7x a second for as long as the page stayed open.
   useEffect(() => {
+    if (!animating) return;
     const id = window.setInterval(() => {
       const { index, startedAt, status: jobStatus } = stageMetaRef.current;
       let target: number;
@@ -170,11 +192,23 @@ export function AuditStatusPanel({
         const ease = 1 - Math.exp(-elapsed / 7);
         target = jobStatus === "queued" ? 4 : base + band * 0.92 * ease;
       }
-      setProgress((prev) => (target < 0 || target <= prev ? prev : prev + (target - prev) * 0.12));
-      setThoughtTick(Math.floor(Date.now() / 2200));
+      setProgress((prev) => {
+        if (target < 0 || target <= prev) return prev;
+        // Snap once the remaining distance is invisible, so the value actually
+        // reaches the target instead of approaching it forever.
+        const next = target - prev < 0.5 ? target : prev + (target - prev) * 0.12;
+        progressRef.current = next;
+        return next;
+      });
+
+      if (active) {
+        setThoughtTick(Math.floor(Date.now() / 2200));
+      } else if (target < 0 || progressRef.current >= target - 0.5) {
+        setAnimating(false);
+      }
     }, 140);
     return () => window.clearInterval(id);
-  }, []);
+  }, [active, animating]);
 
   const workerDelayed = status?.job?.status === "queued" && status.workerAlive === false;
   const stageState = useMemo(() => buildStageState(status?.job), [status?.job]);
@@ -229,6 +263,11 @@ export function AuditStatusPanel({
             {status?.latestRun ? (
               <p className="mt-2 text-xs text-faint">
                 {copy.latestRun}: {status.latestRun.status} / {status.latestRun.sampleCount}
+              </p>
+            ) : null}
+            {status?.usageSummary ? (
+              <p className="mt-2 text-xs text-faint">
+                {usageLabels.title}: {formatTokens(status.usageSummary.totalTokens, localeKey)} Token · {formatUsd(status.usageSummary.estimatedCostUsd)}
               </p>
             ) : null}
           </div>
@@ -352,6 +391,25 @@ export function AuditStatusPanel({
         </div>
       ) : null}
 
+      {status?.usageSummary ? (
+        <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{usageLabels.title}</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <UsageMetric label={usageLabels.total} value={formatTokens(status.usageSummary.totalTokens, localeKey)} />
+            <UsageMetric label={usageLabels.input} value={formatTokens(status.usageSummary.promptTokens, localeKey)} />
+            <UsageMetric label={usageLabels.output} value={formatTokens(status.usageSummary.completionTokens, localeKey)} />
+            <UsageMetric label={usageLabels.cost} value={formatUsd(status.usageSummary.estimatedCostUsd)} />
+            <UsageMetric
+              label={usageLabels.calls}
+              value={formatTokens(status.usageSummary.requestCount, localeKey)}
+              detail={status.usageSummary.failedRequestCount || status.usageSummary.repairCount
+                ? `${status.usageSummary.failedRequestCount} ${usageLabels.failed} · ${status.usageSummary.repairCount} ${usageLabels.repairs}`
+                : undefined}
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
         {stageOrder.map((stage) => {
           const state = stageState.get(stage) ?? "pending";
@@ -387,6 +445,24 @@ export function AuditStatusPanel({
       {status?.job?.error || error ? <p className="mt-3 text-sm text-danger">{error ?? status?.job?.error}</p> : null}
     </section>
   );
+}
+
+function UsageMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="rounded-md border border-border/70 bg-background/70 px-3 py-2.5">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-mono text-sm font-medium text-foreground">{value}</p>
+      {detail ? <p className="mt-1 text-[11px] text-faint">{detail}</p> : null}
+    </div>
+  );
+}
+
+function formatTokens(value: number, locale: "zh-CN" | "en") {
+  return new Intl.NumberFormat(locale).format(value);
+}
+
+function formatUsd(value: number) {
+  return `$${value.toFixed(value < 1 ? 4 : 2)}`;
 }
 
 function buildStageState(job: DiagnosisJob | null | undefined) {

@@ -6,11 +6,13 @@ import { runBrandProbeRun } from "@/server/brand-probes/probe-runner";
 import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
 import { getAIReadiness } from "@/server/ai/readiness";
+import { getAuditUsageSummary } from "@/server/ai/usage-summary";
 import { generateLongTailOpportunitySnapshot } from "@/server/opportunity/opportunity-service";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { buildReportSnapshot } from "@/server/report/report-snapshot";
 import { buildSemanticNebulaSnapshotsFromExploration } from "@/server/semantic-nebula/nebula-service";
 import { generateSemanticKeywordsForProject } from "@/server/workflow/keyword-service";
+import { getTraceContext } from "@/server/observability/trace-context";
 
 export const diagnosisStages = [
   "DIAGNOSIS_UNDERSTANDING_ENTITY",
@@ -123,6 +125,8 @@ export async function runFullDiagnosis(input: {
     subjectId: subject.id,
     subjectName: subject.displayName,
   });
+  const traceId = getTraceContext()?.traceId;
+  const usageSummary = traceId ? await getAuditUsageSummary(input.projectId, traceId) : null;
 
   return {
     projectId: input.projectId,
@@ -133,6 +137,7 @@ export async function runFullDiagnosis(input: {
     semanticNebulaSnapshotIds: nebulaSnapshots.map((snapshot) => snapshot.id),
     opportunitySnapshotId: opportunityResult.snapshot.id,
     territorySnapshotId: opportunityResult.territorySnapshot.id,
+    usageSummary,
   };
 }
 

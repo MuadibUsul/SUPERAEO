@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
-import type { UniverseNode, UniverseType } from "@/components/semantic-intelligence/universe-adapter";
+import type { UniverseEvidence, UniverseNode, UniverseType } from "@/components/semantic-intelligence/universe-adapter";
+
+const DETAIL_NODE_LIMIT = 320;
+const GLOW_NODE_LIMIT = 96;
+const LARGE_NODE_THRESHOLD = 400;
+const THIRTY_FPS_MS = 1000 / 30;
+const TOOLTIP_WIDTH = 220;
 
 const HUE: Record<UniverseType, [number, number, number]> = {
   positive: [56, 224, 161], // emerald: positive evaluation
@@ -58,19 +64,21 @@ const DEFAULT_COPY: Copy = {
   raw: "Raw space",
 };
 
-type Star = UniverseNode & { hue: [number, number, number]; tw: number };
+type Star = UniverseNode & { color: string; hue: [number, number, number]; tw: number };
 
 export function CognitionUniverse({
   nodes,
   subjectName,
   copy = DEFAULT_COPY,
   className,
+  evidenceEndpoint,
   variant = "interactive",
 }: {
   nodes: UniverseNode[];
   subjectName: string;
   copy?: Copy;
   className?: string;
+  evidenceEndpoint?: string;
   /** "ambient" = passive background (no chrome, click-through, slow drift). */
   variant?: "interactive" | "ambient";
 }) {
@@ -80,15 +88,65 @@ export function CognitionUniverse({
   const [typeOn, setTypeOn] = useState<Record<UniverseType, boolean>>({ positive: true, risk: true, opportunity: true, competitor: true, entity: true, attribute: true, context: true, activity: true, relation: true, evidence: true });
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<UniverseNode | null>(null);
-  const [tip, setTip] = useState<{ x: number; y: number; node: UniverseNode } | null>(null);
+  // `flip` is decided at hover time, where the canvas width is already measured;
+  // reading it during render would mean touching a ref mid-render.
+  const [tip, setTip] = useState<{ x: number; y: number; flip: boolean; node: UniverseNode } | null>(null);
   const [layoutMode, setLayoutMode] = useState<"balanced" | "raw">("balanced");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [evidenceByKey, setEvidenceByKey] = useState<Record<string, UniverseEvidence[]>>({});
+  const invalidateRef = useRef<() => void>(() => undefined);
 
   // mirror reactive state into a ref the animation loop can read each frame
   const ui = useRef({ typeOn, paused, selected });
   useEffect(() => {
     ui.current = { typeOn, paused, selected };
+    invalidateRef.current();
   }, [typeOn, paused, selected]);
+
+  // Keys already requested, tracked outside React state so that caching one
+  // node's evidence does not tear down and restart the in-flight request for
+  // another. Only ever touched inside the effect and its callbacks.
+  const requestedEvidenceRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!selected || selected.examples.length > 0 || !evidenceEndpoint) return;
+
+    const key = selected.evidenceKey;
+    if (requestedEvidenceRef.current.has(key)) return;
+    requestedEvidenceRef.current.add(key);
+
+    const controller = new AbortController();
+    fetch(`${evidenceEndpoint}&node=${encodeURIComponent(key)}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Evidence unavailable")))
+      .then((body: unknown) => {
+        const rows = body && typeof body === "object" && Array.isArray((body as { examples?: unknown }).examples)
+          ? (body as { examples: UniverseEvidence[] }).examples
+          : [];
+        setEvidenceByKey((current) => ({ ...current, [key]: rows }));
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          // Nothing was cached, so let a later selection retry this node.
+          requestedEvidenceRef.current.delete(key);
+          return;
+        }
+        setEvidenceByKey((current) => ({ ...current, [key]: [] }));
+      });
+
+    return () => controller.abort();
+  }, [evidenceEndpoint, selected]);
+
+  const selectedExamples = selected
+    ? selected.examples.length > 0
+      ? selected.examples
+      : evidenceByKey[selected.evidenceKey] ?? []
+    : [];
+  const evidenceLoading = Boolean(
+    selected
+    && evidenceEndpoint
+    && selected.examples.length === 0
+    && !Object.hasOwn(evidenceByKey, selected.evidenceKey),
+  );
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === wrapRef.current);
@@ -100,183 +158,363 @@ export function CognitionUniverse({
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const drawingContext = canvas.getContext("2d");
+    const backgroundCanvas = document.createElement("canvas");
+    const backgroundDrawingContext = backgroundCanvas.getContext("2d");
+    if (!drawingContext || !backgroundDrawingContext) return;
+    const ctx = drawingContext;
+    const backgroundCtx = backgroundDrawingContext;
 
-    const stars: Star[] = nodes.map((n, i) => ({
-      ...n,
-      x: layoutMode === "raw" ? n.rawX : n.x,
-      y: layoutMode === "raw" ? n.rawY : n.y,
-      z: layoutMode === "raw" ? n.rawZ : n.z,
-      hue: HUE[n.type], tw: (i * 2.399) % 6.283,
+    const stars: Star[] = nodes.map((node, index) => ({
+      ...node,
+      x: layoutMode === "raw" ? node.rawX : node.x,
+      y: layoutMode === "raw" ? node.rawY : node.y,
+      z: layoutMode === "raw" ? node.rawZ : node.z,
+      hue: HUE[node.type],
+      color: `rgb(${HUE[node.type].join(",")})`,
+      tw: (index * 2.399) % 6.283,
+    }));
+    const detailedStars = new Set(
+      [...stars]
+        .sort((left, right) => right.affinity - left.affinity || right.strength - left.strength)
+        .slice(0, DETAIL_NODE_LIMIT),
+    );
+    const glowingStars = new Set(
+      [...detailedStars]
+        .sort((left, right) => right.affinity - left.affinity)
+        .slice(0, GLOW_NODE_LIMIT),
+    );
+    const screen = stars.map((star) => ({
+      s: star,
+      sx: 0,
+      sy: 0,
+      scale: 0,
+      depth: 0,
+      fog: 0,
+      detailed: detailedStars.has(star),
     }));
     const cam = { yaw: 0.2, pitch: -0.18, dist: 3.4, tdist: 2.6 };
     const look = { x: 0, y: 0, z: 0 };
     const focus = { x: 0, y: 0, z: 0 };
     let W = 0, H = 0, cx = 0, cy = 0, base = 600, dpr = 1;
-    let drag: { x: number; y: number; yaw: number; pitch: number; moved: boolean } | null = null;
+    let drag: { x: number; y: number; yaw: number; pitch: number; moved: boolean; coarse: boolean } | null = null;
     let hoverStar: Star | null = null;
-    let lastScreen: Array<{ s: Star; sx: number; sy: number }> = [];
-    let raf = 0;
-    let lastFrame = performance.now();
+    let pendingPointer: { x: number; y: number } | null = null;
+    let raf = 0, pointerRaf = 0, lastPaint = 0, lastFrame = performance.now();
+    let visible = true, destroyed = false;
+    let detailOrder: typeof screen = [];
+    let detailOrderKey = " ";
+    let cosYaw = 1, sinYaw = 0, cosPitch = 1, sinPitch = 0;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const frameInterval = !interactive || stars.length > LARGE_NODE_THRESHOLD ? THIRTY_FPS_MS : 0;
 
-    const resize = () => {
-      const r = wrap.getBoundingClientRect();
-      W = r.width; H = r.height; dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      cx = W / 2; cy = H / 2; base = Math.min(W, H) * 0.6;
+    const updateProjection = () => {
+      cosYaw = Math.cos(cam.yaw); sinYaw = Math.sin(cam.yaw);
+      cosPitch = Math.cos(cam.pitch); sinPitch = Math.sin(cam.pitch);
     };
     const project = (x: number, y: number, z: number) => {
       x -= look.x; y -= look.y; z -= look.z;
-      const cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-      const x1 = x * cyw - z * syw, z1 = x * syw + z * cyw, y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
-      let zc = z2 + cam.dist; if (zc < 0.05) zc = 0.05;
-      const s = 2.3 / zc;
-      return { sx: cx + x1 * s * base, sy: cy + y2 * s * base, s, depth: zc };
+      const x1 = x * cosYaw - z * sinYaw, z1 = x * sinYaw + z * cosYaw;
+      const y2 = y * cosPitch - z1 * sinPitch, z2 = y * sinPitch + z1 * cosPitch;
+      const depth = Math.max(0.05, z2 + cam.dist), scale = 2.3 / depth;
+      return { sx: cx + x1 * scale * base, sy: cy + y2 * scale * base, scale, depth };
     };
-    const fog = (d: number) => Math.max(0, Math.min(1, (4.6 - d) / 3.4));
-
-    const draw = () => {
+    const projectScreen = () => {
+      for (const item of screen) {
+        const point = project(item.s.x, item.s.y, item.s.z);
+        item.sx = point.sx; item.sy = point.sy; item.scale = point.scale; item.depth = point.depth;
+        item.fog = Math.max(0, Math.min(1, (4.6 - point.depth) / 3.4));
+      }
+    };
+    const requestDraw = () => {
+      if (destroyed || raf || !visible || document.visibilityState === "hidden") return;
       raf = requestAnimationFrame(draw);
-      const { typeOn, paused, selected } = ui.current;
-      const now = performance.now();
-      const elapsed = Math.min((now - lastFrame) / 1000, 0.05);
-      lastFrame = now;
-      if (!drag && !paused && !reduceMotion) cam.yaw += (interactive ? 0.02 : 0.012) * elapsed;
-      cam.dist += (cam.tdist - cam.dist) * 0.06;
-      look.x += (focus.x - look.x) * 0.08; look.y += (focus.y - look.y) * 0.08; look.z += (focus.z - look.z) * 0.08;
-
-      const bg = ctx.createRadialGradient(cx, cy * 0.8, 0, cx, cy, Math.max(W, H) * 0.8);
-      bg.addColorStop(0, "#0a0b16"); bg.addColorStop(0.5, "#06070e"); bg.addColorStop(1, "#030308");
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-      ctx.globalCompositeOperation = "lighter";
-
-      (Object.keys(SECTOR_DIR) as UniverseType[]).forEach((t) => {
-        if (!typeOn[t]) return;
-        const dir = SECTOR_DIR[t], p = project(dir[0] * 0.7, dir[1] * 0.7, dir[2] * 0.7), f = fog(p.depth); if (f <= 0) return;
-        const rad = 0.4 * p.s * base, h = HUE[t], g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, rad);
-        g.addColorStop(0, `rgba(${h[0]},${h[1]},${h[2]},${0.14 * f})`); g.addColorStop(1, `rgba(${h[0]},${h[1]},${h[2]},0)`);
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.sx, p.sy, rad, 0, 6.2832); ctx.fill();
-      });
-
-      const bp = project(0, 0, 0);
-      stars.forEach((s) => {
-        if (!typeOn[s.type] || (s.affinity < 0.72 && hoverStar !== s && selected !== s)) return;
-        if (selected && s.type !== selected.type) return;
-        const p = project(s.x, s.y, s.z), f = fog(p.depth); if (f <= 0) return;
-        const grd = ctx.createLinearGradient(bp.sx, bp.sy, p.sx, p.sy);
-        grd.addColorStop(0, "rgba(41,211,236,0)"); grd.addColorStop(1, `rgba(${s.hue[0]},${s.hue[1]},${s.hue[2]},${0.24 * f})`);
-        ctx.strokeStyle = grd; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(bp.sx, bp.sy); ctx.lineTo(p.sx, p.sy); ctx.stroke();
-      });
-
-      const order = stars.map((s) => ({ s, p: project(s.x, s.y, s.z) })).sort((a, b) => b.p.depth - a.p.depth);
-      lastScreen = [];
-      order.forEach(({ s, p }) => {
-        if (!typeOn[s.type]) return;
-        const f = fog(p.depth); if (f <= 0) return;
-        lastScreen.push({ s, sx: p.sx, sy: p.sy });
-        const dim = selected && selected.type !== s.type ? 0.25 : 1;
-        const pulse = s.type === "risk" ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
-        const r = (0.75 + s.affinity * 4.8) * p.s * 1.45 * pulse, isH = hoverStar === s || selected === s;
-        ctx.globalAlpha = (0.12 + s.affinity * 0.88) * f * dim;
-        ctx.fillStyle = `rgb(${s.hue[0]},${s.hue[1]},${s.hue[2]})`;
-        ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = isH ? 26 * f : s.affinity > 0.62 ? (s.affinity - 0.5) * 30 * f : 0;
-        ctx.beginPath(); ctx.arc(p.sx, p.sy, isH ? r + 2.5 : r, 0, 6.2832); ctx.fill();
-      });
-      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-
-      // labels for prominent / hovered stars
-      ctx.globalCompositeOperation = "source-over";
-      const labelBoxes: Array<{ left: number; top: number; right: number; bottom: number }> = [];
-      const labelLimit = Math.max(14, Math.min(42, Math.round(Math.sqrt(stars.length) * 1.6)));
-      const labelThreshold = stars.length > 400 ? 0.78 : stars.length > 180 ? 0.7 : 0.62;
-      let visibleLabels = 0;
-      order.forEach(({ s, p }) => {
-        if (!typeOn[s.type]) return;
-        const f = fog(p.depth);
-        const isH = hoverStar === s || selected === s;
-        if (!(isH || (s.affinity > labelThreshold && f > 0.4 && visibleLabels < labelLimit))) return;
-        ctx.font = `${isH ? "600" : "500"} 11px Inter, system-ui, sans-serif`;
-        const width = ctx.measureText(s.label).width;
-        const box = { left: p.sx + 6, top: p.sy - 7, right: p.sx + width + 12, bottom: p.sy + 7 };
-        if (!isH && labelBoxes.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) return;
-        labelBoxes.push(box);
-        visibleLabels += 1;
-        ctx.globalAlpha = isH ? 1 : 0.78 * f; ctx.fillStyle = isH ? "#fff" : "#c4c8d6";
-        ctx.textAlign = "left"; ctx.textBaseline = "middle";
-        ctx.fillText(s.label, p.sx + 8, p.sy);
-      });
-      ctx.globalAlpha = 1;
-
-      // brand star
-      ctx.globalCompositeOperation = "lighter";
-      const cr = 15 * bp.s + 7;
-      const halo = ctx.createRadialGradient(bp.sx, bp.sy, 0, bp.sx, bp.sy, cr * 3.2);
-      halo.addColorStop(0, "rgba(180,245,255,0.5)"); halo.addColorStop(0.4, "rgba(41,211,236,0.28)"); halo.addColorStop(1, "rgba(41,211,236,0)");
-      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(bp.sx, bp.sy, cr * 3.2, 0, 6.2832); ctx.fill();
-      const core = ctx.createRadialGradient(bp.sx, bp.sy, 0, bp.sx, bp.sy, cr);
-      core.addColorStop(0, "#ffffff"); core.addColorStop(0.4, "#c9f7ff"); core.addColorStop(1, "rgba(41,211,236,0)");
-      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(bp.sx, bp.sy, cr, 0, 6.2832); ctx.fill();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = "#eafcff"; ctx.font = "700 14px Inter, system-ui, sans-serif"; ctx.textAlign = "center";
-      ctx.fillText(subjectName, bp.sx, bp.sy - cr - 12);
-
-      const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.3, cx, cy, Math.max(W, H) * 0.75);
-      vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.55)");
-      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
     };
+    const paintBackground = () => {
+      backgroundCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const bg = backgroundCtx.createRadialGradient(cx, cy * 0.8, 0, cx, cy, Math.max(W, H) * 0.8);
+      bg.addColorStop(0, "#0a0b16"); bg.addColorStop(0.5, "#06070e"); bg.addColorStop(1, "#030308");
+      backgroundCtx.fillStyle = bg; backgroundCtx.fillRect(0, 0, W, H);
+      const vignette = backgroundCtx.createRadialGradient(cx, cy, Math.min(W, H) * 0.3, cx, cy, Math.max(W, H) * 0.75);
+      vignette.addColorStop(0, "rgba(0,0,0,0)"); vignette.addColorStop(1, "rgba(0,0,0,0.55)");
+      backgroundCtx.fillStyle = vignette; backgroundCtx.fillRect(0, 0, W, H);
+    };
+    const resize = () => {
+      const rect = wrap.getBoundingClientRect();
+      W = rect.width; H = rect.height; dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      backgroundCanvas.width = W * dpr; backgroundCanvas.height = H * dpr;
+      cx = W / 2; cy = H / 2; base = Math.min(W, H) * 0.6;
+      paintBackground();
+      requestDraw();
+    };
+
+    function draw(now: number) {
+      raf = 0;
+      if (destroyed) return;
+      const { typeOn, paused, selected } = ui.current;
+      const autoRotate = !drag && !paused && !reduceMotion;
+      if (frameInterval && autoRotate && lastPaint && now - lastPaint < frameInterval) {
+        requestDraw();
+        return;
+      }
+
+      const elapsed = Math.min((now - lastFrame) / 1000, 0.05);
+      lastFrame = now; lastPaint = now;
+      if (autoRotate) cam.yaw += (interactive ? 0.02 : 0.012) * elapsed;
+      cam.dist += (cam.tdist - cam.dist) * 0.12;
+      look.x += (focus.x - look.x) * 0.14; look.y += (focus.y - look.y) * 0.14; look.z += (focus.z - look.z) * 0.14;
+      updateProjection();
+      projectScreen();
+
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+      ctx.drawImage(backgroundCanvas, 0, 0, backgroundCanvas.width, backgroundCanvas.height, 0, 0, W, H);
+      ctx.globalCompositeOperation = "lighter";
+
+      for (const type of Object.keys(SECTOR_DIR) as UniverseType[]) {
+        if (!typeOn[type]) continue;
+        const dir = SECTOR_DIR[type], point = project(dir[0] * 0.7, dir[1] * 0.7, dir[2] * 0.7);
+        const amount = Math.max(0, Math.min(1, (4.6 - point.depth) / 3.4));
+        if (amount <= 0) continue;
+        const radius = 0.4 * point.scale * base, hue = HUE[type];
+        const glow = ctx.createRadialGradient(point.sx, point.sy, 0, point.sx, point.sy, radius);
+        glow.addColorStop(0, `rgba(${hue[0]},${hue[1]},${hue[2]},${0.14 * amount})`);
+        glow.addColorStop(1, `rgba(${hue[0]},${hue[1]},${hue[2]},0)`);
+        ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(point.sx, point.sy, radius, 0, 6.2832); ctx.fill();
+      }
+
+      const brand = project(0, 0, 0);
+      ctx.shadowBlur = 0;
+      for (const item of screen) {
+        const { s } = item;
+        const isSelected = selected?.evidenceKey === s.evidenceKey;
+        if (item.detailed || hoverStar === s || isSelected || !typeOn[s.type] || item.fog <= 0) continue;
+        const dim = selected && selected.type !== s.type ? 0.2 : 1;
+        const size = Math.max(1, Math.min(2.4, item.scale * 1.45));
+        ctx.globalAlpha = (0.08 + s.affinity * 0.28) * item.fog * dim;
+        ctx.fillStyle = s.color;
+        ctx.fillRect(item.sx - size / 2, item.sy - size / 2, size, size);
+      }
+
+      // Which stars get the detailed treatment only changes when hover or
+      // selection changes, so the membership pass is hoisted out of the frame
+      // loop; only the depth sort has to run per frame. With the node cap raised
+      // to four figures, rebuilding this list 30x a second was the dominant cost.
+      const detailKey = `${hoverStar?.evidenceKey ?? ""}|${selected?.evidenceKey ?? ""}`;
+      if (detailKey !== detailOrderKey) {
+        detailOrderKey = detailKey;
+        detailOrder = screen.filter(
+          (item) => item.detailed || hoverStar === item.s || selected?.evidenceKey === item.s.evidenceKey,
+        );
+      }
+      detailOrder.sort((left, right) => right.depth - left.depth);
+      for (const item of detailOrder) {
+        const { s } = item;
+        const isSelected = selected?.evidenceKey === s.evidenceKey;
+        if (!typeOn[s.type] || item.fog <= 0 || (s.affinity < 0.72 && hoverStar !== s && !isSelected)) continue;
+        if (selected && s.type !== selected.type) continue;
+        const gradient = ctx.createLinearGradient(brand.sx, brand.sy, item.sx, item.sy);
+        gradient.addColorStop(0, "rgba(41,211,236,0)");
+        gradient.addColorStop(1, `rgba(${s.hue[0]},${s.hue[1]},${s.hue[2]},${0.24 * item.fog})`);
+        ctx.strokeStyle = gradient; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(brand.sx, brand.sy); ctx.lineTo(item.sx, item.sy); ctx.stroke();
+      }
+
+      for (const item of detailOrder) {
+        const { s } = item;
+        const isSelected = selected?.evidenceKey === s.evidenceKey;
+        if (!typeOn[s.type] || item.fog <= 0) continue;
+        const dim = selected && selected.type !== s.type ? 0.25 : 1;
+        const pulse = s.type === "risk" && stars.length <= LARGE_NODE_THRESHOLD ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
+        const radius = (0.75 + s.affinity * 4.8) * item.scale * 1.45 * pulse;
+        const highlighted = hoverStar === s || isSelected;
+        ctx.globalAlpha = (0.12 + s.affinity * 0.88) * item.fog * dim;
+        ctx.fillStyle = s.color; ctx.shadowColor = s.color;
+        ctx.shadowBlur = highlighted ? 26 * item.fog : glowingStars.has(s) ? Math.max(0, (s.affinity - 0.5) * 24 * item.fog) : 0;
+        ctx.beginPath(); ctx.arc(item.sx, item.sy, highlighted ? radius + 2.5 : radius, 0, 6.2832); ctx.fill();
+      }
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+
+      const labelBoxes: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+      const labelLimit = Math.max(14, Math.min(36, Math.round(Math.sqrt(detailOrder.length) * 1.6)));
+      const labelThreshold = stars.length > LARGE_NODE_THRESHOLD ? 0.78 : stars.length > 180 ? 0.7 : 0.62;
+      let visibleLabels = 0;
+      for (const item of detailOrder) {
+        const { s } = item;
+        if (!typeOn[s.type]) continue;
+        const highlighted = hoverStar === s || selected?.evidenceKey === s.evidenceKey;
+        if (!(highlighted || (s.affinity > labelThreshold && item.fog > 0.4 && visibleLabels < labelLimit))) continue;
+        ctx.font = `${highlighted ? "600" : "500"} 11px Inter, system-ui, sans-serif`;
+        const width = ctx.measureText(s.label).width;
+        const box = { left: item.sx + 6, top: item.sy - 7, right: item.sx + width + 12, bottom: item.sy + 7 };
+        if (!highlighted && labelBoxes.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) continue;
+        labelBoxes.push(box); visibleLabels += 1;
+        ctx.globalAlpha = highlighted ? 1 : 0.78 * item.fog; ctx.fillStyle = highlighted ? "#fff" : "#c4c8d6";
+        ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(s.label, item.sx + 8, item.sy);
+      }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = "lighter";
+
+      const coreRadius = 15 * brand.scale + 7;
+      const halo = ctx.createRadialGradient(brand.sx, brand.sy, 0, brand.sx, brand.sy, coreRadius * 3.2);
+      halo.addColorStop(0, "rgba(180,245,255,0.5)"); halo.addColorStop(0.4, "rgba(41,211,236,0.28)"); halo.addColorStop(1, "rgba(41,211,236,0)");
+      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(brand.sx, brand.sy, coreRadius * 3.2, 0, 6.2832); ctx.fill();
+      const core = ctx.createRadialGradient(brand.sx, brand.sy, 0, brand.sx, brand.sy, coreRadius);
+      core.addColorStop(0, "#ffffff"); core.addColorStop(0.4, "#c9f7ff"); core.addColorStop(1, "rgba(41,211,236,0)");
+      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(brand.sx, brand.sy, coreRadius, 0, 6.2832); ctx.fill();
+      ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#eafcff";
+      ctx.font = "700 14px Inter, system-ui, sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(subjectName, brand.sx, brand.sy - coreRadius - 12);
+
+      const settling = Math.abs(cam.tdist - cam.dist) > 0.002
+        || Math.abs(focus.x - look.x) + Math.abs(focus.y - look.y) + Math.abs(focus.z - look.z) > 0.002;
+      if (autoRotate || settling || drag) requestDraw();
+    }
 
     const pick = (px: number, py: number) => {
-      let best: Star | null = null, bd = 15 * 15;
-      for (const { s, sx, sy } of lastScreen) {
-        if (!ui.current.typeOn[s.type]) continue;
-        const dx = sx - px, dy = sy - py, dd = dx * dx + dy * dy;
-        if (dd < bd) { bd = dd; best = s; }
+      let best: Star | null = null, bestDistance = 15 * 15;
+      for (const item of screen) {
+        if (!ui.current.typeOn[item.s.type] || item.fog <= 0) continue;
+        const dx = item.sx - px, dy = item.sy - py, distance = dx * dx + dy * dy;
+        if (distance < bestDistance) { bestDistance = distance; best = item.s; }
       }
       return best;
     };
-    const localXY = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-    const onDown = (e: MouseEvent) => { const { x, y } = localXY(e); drag = { x, y, yaw: cam.yaw, pitch: cam.pitch, moved: false }; };
-    const onUp = (e: MouseEvent) => {
-      if (drag && !drag.moved) { const { x, y } = localXY(e); const hit = pick(x, y); if (hit) { setSelected(hit); focus.x = hit.x; focus.y = hit.y; focus.z = hit.z; cam.tdist = 1.7; } else { setSelected(null); focus.x = 0; focus.y = 0; focus.z = 0; cam.tdist = 2.6; } }
-      drag = null;
+    const localXY = (event: { clientX: number; clientY: number }) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
-    const onMove = (e: MouseEvent) => {
-      const { x, y } = localXY(e);
-      if (drag) {
-        if (Math.abs(x - drag.x) + Math.abs(y - drag.y) > 3) drag.moved = true;
-        cam.yaw = drag.yaw + (x - drag.x) * 0.005; cam.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + (y - drag.y) * 0.005));
-        hoverStar = null; setTip(null); return;
-      }
-      const hit = pick(x, y); hoverStar = hit;
-      setTip(hit ? { x, y, node: hit } : null);
+    const flushPointer = () => {
+      pointerRaf = 0;
+      if (!pendingPointer) return;
+      const point = pendingPointer; pendingPointer = null;
+      const hit = pick(point.x, point.y);
+      if (hit === hoverStar) return;
+      hoverStar = hit;
+      setTip(hit ? { x: point.x, y: point.y, flip: point.x > W - TOOLTIP_WIDTH - 20, node: hit } : null);
       canvas.style.cursor = hit ? "pointer" : "grab";
+      requestDraw();
     };
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); cam.tdist = Math.max(1.1, Math.min(5.5, cam.tdist * (e.deltaY < 0 ? 0.9 : 1.11))); };
-    const onLeave = () => { hoverStar = null; setTip(null); };
 
+    // Pointer events rather than mouse events, so touch and pen drive the same
+    // code path. The mouse-only version left the nebula completely inert on
+    // phones and tablets: no rotate, no zoom, no way to open a node's evidence.
+    const pointers = new Map<number, { x: number; y: number }>();
+    let pinchSpan = 0;
+    const currentSpan = () => {
+      const points = [...pointers.values()];
+      return points.length < 2 ? 0 : Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    };
+
+    const onDown = (event: PointerEvent) => {
+      const { x, y } = localXY(event);
+      pointers.set(event.pointerId, { x, y });
+      canvas.setPointerCapture(event.pointerId);
+
+      if (pointers.size >= 2) {
+        // A second contact turns the gesture into a pinch, not a rotation.
+        pinchSpan = currentSpan();
+        drag = null;
+        return;
+      }
+
+      drag = { x, y, yaw: cam.yaw, pitch: cam.pitch, moved: false, coarse: event.pointerType !== "mouse" };
+      requestDraw();
+    };
+    const onUp = (event: PointerEvent) => {
+      const wasPinching = pointers.size > 1;
+      pointers.delete(event.pointerId);
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+
+      if (!wasPinching && drag && !drag.moved) {
+        const { x, y } = localXY(event), hit = pick(x, y);
+        if (hit) {
+          setSelected(hit); focus.x = hit.x; focus.y = hit.y; focus.z = hit.z; cam.tdist = 1.7;
+        } else {
+          setSelected(null); focus.x = 0; focus.y = 0; focus.z = 0; cam.tdist = 2.6;
+        }
+      }
+      drag = null;
+      pinchSpan = 0;
+      // Touch has no hover state, so the tooltip must go when the finger lifts.
+      if (event.pointerType !== "mouse" && hoverStar) { hoverStar = null; setTip(null); }
+      requestDraw();
+    };
+    const onMove = (event: PointerEvent) => {
+      const { x, y } = localXY(event);
+      if (pointers.has(event.pointerId)) pointers.set(event.pointerId, { x, y });
+
+      if (pointers.size >= 2) {
+        const span = currentSpan();
+        if (pinchSpan > 0 && span > 0) {
+          cam.tdist = Math.max(1.1, Math.min(5.5, cam.tdist * (pinchSpan / span)));
+        }
+        pinchSpan = span;
+        requestDraw();
+        return;
+      }
+
+      if (drag) {
+        // A finger wanders more than a mouse does on a tap, so the "this was a
+        // drag, not a click" threshold has to be looser for touch.
+        if (Math.abs(x - drag.x) + Math.abs(y - drag.y) > (drag.coarse ? 10 : 3)) drag.moved = true;
+        cam.yaw = drag.yaw + (x - drag.x) * 0.005;
+        cam.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + (y - drag.y) * 0.005));
+        if (hoverStar) { hoverStar = null; setTip(null); }
+        requestDraw();
+        return;
+      }
+
+      if (event.pointerType !== "mouse") return;
+      pendingPointer = { x, y };
+      if (!pointerRaf) pointerRaf = requestAnimationFrame(flushPointer);
+    };
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      cam.tdist = Math.max(1.1, Math.min(5.5, cam.tdist * (event.deltaY < 0 ? 0.9 : 1.11)));
+      requestDraw();
+    };
+    const onLeave = () => {
+      pendingPointer = null;
+      if (hoverStar) { hoverStar = null; setTip(null); requestDraw(); }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && raf) { cancelAnimationFrame(raf); raf = 0; }
+      else requestDraw();
+    };
+
+    invalidateRef.current = requestDraw;
     resize();
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    draw(performance.now());
     const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(wrap);
+    const intersectionObserver = new IntersectionObserver(([entry]) => {
+      visible = entry?.isIntersecting ?? true;
+      if (!visible && raf) { cancelAnimationFrame(raf); raf = 0; }
+      else requestDraw();
+    });
+    resizeObserver.observe(wrap); intersectionObserver.observe(wrap);
     window.addEventListener("resize", resize);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     if (interactive) {
-      canvas.addEventListener("mousedown", onDown);
-      window.addEventListener("mouseup", onUp);
-      canvas.addEventListener("mousemove", onMove);
-      canvas.addEventListener("mouseleave", onLeave);
+      canvas.addEventListener("pointerdown", onDown);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+      canvas.addEventListener("pointermove", onMove);
+      canvas.addEventListener("pointerleave", onLeave);
       canvas.addEventListener("wheel", onWheel, { passive: false });
     }
-    draw(); // paint the first frame synchronously (rAF is paused in hidden tabs)
 
     return () => {
-      cancelAnimationFrame(raf);
-      resizeObserver.disconnect();
+      destroyed = true;
+      if (invalidateRef.current === requestDraw) invalidateRef.current = () => undefined;
+      cancelAnimationFrame(raf); cancelAnimationFrame(pointerRaf);
+      resizeObserver.disconnect(); intersectionObserver.disconnect();
       window.removeEventListener("resize", resize);
-      canvas.removeEventListener("mousedown", onDown);
-      window.removeEventListener("mouseup", onUp);
-      canvas.removeEventListener("mousemove", onMove);
-      canvas.removeEventListener("mouseleave", onLeave);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      canvas.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("wheel", onWheel);
     };
   }, [nodes, subjectName, interactive, layoutMode]);
@@ -306,7 +544,9 @@ export function CognitionUniverse({
       <canvas
         ref={canvasRef}
         className={cn("block h-full w-full", !interactive && "pointer-events-none")}
-        style={interactive ? { cursor: "grab" } : undefined}
+        // touchAction none: without it the browser claims drag and pinch for
+        // page scroll and zoom, and the canvas never sees the gesture.
+        style={interactive ? { cursor: "grab", touchAction: "none" } : undefined}
       />
 
       {interactive && nodes.length === 0 ? (
@@ -392,8 +632,15 @@ export function CognitionUniverse({
       {/* hover tooltip */}
       {tip ? (
         <div
-          className="pointer-events-none absolute z-10 max-w-[220px] rounded-lg border border-border bg-black/85 px-3 py-2 text-xs backdrop-blur"
-          style={{ left: Math.min(tip.x + 14, 9999), top: tip.y + 10 }}
+          className="pointer-events-none absolute z-10 rounded-lg border border-border bg-black/85 px-3 py-2 text-xs backdrop-blur"
+          // Flips to the left of the cursor near the right edge; the container
+          // clips overflow, so a tooltip that runs past it is simply cut off.
+          style={{
+            width: TOOLTIP_WIDTH,
+            left: tip.x + 14,
+            top: tip.y + 10,
+            transform: tip.flip ? "translateX(calc(-100% - 28px))" : undefined,
+          }}
         >
           <div className="font-medium text-foreground">{tip.node.label}</div>
           <div className="mt-0.5 font-mono text-[10px] text-faint">
@@ -422,11 +669,16 @@ export function CognitionUniverse({
               </div>
             </div>
           ))}
-          {selected.examples.length > 0 ? (
+          {evidenceLoading ? (
+            <div className="mt-4 space-y-2" aria-label="Loading evidence">
+              <div className="h-2 w-24 rounded bg-white/10 motion-safe:animate-pulse" />
+              <div className="h-16 rounded-md bg-white/[0.05] motion-safe:animate-pulse" />
+            </div>
+          ) : selectedExamples.length > 0 ? (
             <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
               <div className="mb-2 font-mono text-[9.5px] uppercase tracking-wide text-faint">{copy.evidence}</div>
               <div className="space-y-2">
-                {selected.examples.map((ex, i) => (
+                {selectedExamples.map((ex, i) => (
                   <div key={i} className="rounded-md border border-border bg-white/[0.03] p-2">
                     {ex.question ? <div className="mb-1 text-[10.5px] font-medium text-foreground/80">{ex.question}</div> : null}
                     <p className="text-[11px] leading-5 text-dim">“{ex.excerpt}”</p>

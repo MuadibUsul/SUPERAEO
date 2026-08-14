@@ -85,17 +85,19 @@ export type GeneratedProbe = {
   qualityScore: number;
 };
 
-export const recommendedBrandSchema = z.object({
+const strictRecommendedBrandSchema = z.object({
   brand: z.string().trim().min(1),
   rank: z.number().int().min(1).max(20).nullable().optional(),
   score: z.number().min(0).max(100).nullable().optional(),
   reason_tags: z.array(z.string().trim().min(1)).max(8).default([]),
 });
 
+export const recommendedBrandSchema = z.preprocess(normalizeRecommendedBrand, strictRecommendedBrandSchema);
+
 const nullableString = z.string().trim().nullable().optional().transform((value) => value ?? undefined);
 const nullableNumber = z.number().nullable().optional().transform((value) => value ?? undefined);
 
-export const probeSemanticUnitSchema = z.object({
+const strictProbeSemanticUnitSchema = z.object({
   domain: z.enum(semanticDomains),
   type: z.string().trim().min(1),
   canonicalLabel: nullableString,
@@ -115,7 +117,9 @@ export const probeSemanticUnitSchema = z.object({
   condition: nullableString,
 });
 
-export const probeResponseSchema = z.object({
+export const probeSemanticUnitSchema = z.preprocess(normalizeSemanticUnit, strictProbeSemanticUnitSchema);
+
+const strictProbeResponseSchema = z.object({
   probe_id: z.string().trim().min(1),
   mentioned_brand: z.boolean().nullable().optional(),
   recommended_brands: z.array(recommendedBrandSchema).max(10).default([]),
@@ -131,7 +135,12 @@ export const probeResponseSchema = z.object({
   semantic_units: z.array(probeSemanticUnitSchema).max(12).default([]),
 });
 
-export const probeBatchResponseSchema = z.array(probeResponseSchema).min(1).max(10);
+export const probeResponseSchema = z.preprocess(normalizeProbeResponse, strictProbeResponseSchema);
+
+export const probeBatchResponseSchema = z.preprocess(
+  (value) => asRecord(value)?.items ?? value,
+  z.array(probeResponseSchema).min(1).max(10),
+);
 
 export type ProbeResponseJson = z.infer<typeof probeResponseSchema>;
 
@@ -217,10 +226,17 @@ export const probeResponseJsonSchema = {
 } as const;
 
 export const probeBatchResponseJsonSchema = {
-  type: "array",
-  minItems: 1,
-  maxItems: 10,
-  items: probeResponseJsonSchema,
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      minItems: 1,
+      maxItems: 10,
+      items: probeResponseJsonSchema,
+    },
+  },
 } as const;
 
 const legacyProbeProperties = Object.fromEntries(
@@ -234,5 +250,93 @@ export const legacyProbeResponseJsonSchema = {
 
 export const legacyProbeBatchResponseJsonSchema = {
   ...probeBatchResponseJsonSchema,
-  items: legacyProbeResponseJsonSchema,
+  properties: {
+    items: {
+      ...probeBatchResponseJsonSchema.properties.items,
+      items: legacyProbeResponseJsonSchema,
+    },
+  },
 } as const;
+
+function normalizeProbeResponse(value: unknown) {
+  const source = asRecord(value);
+  if (!source) return value;
+  return {
+    ...source,
+    mentioned_brand: booleanOrNull(source.mentioned_brand),
+    recommended_brands: arrayValue(source.recommended_brands),
+    keywords: stringArray(source.keywords),
+    competitors: stringArray(source.competitors),
+    scenarios: stringArray(source.scenarios),
+    audiences: stringArray(source.audiences),
+    risk_words: stringArray(source.risk_words),
+    opportunity_words: stringArray(source.opportunity_words),
+    semantic_units: arrayValue(source.semantic_units),
+  };
+}
+
+function normalizeRecommendedBrand(value: unknown) {
+  if (typeof value === "string") return { brand: value.trim(), reason_tags: [] };
+  const source = asRecord(value);
+  if (!source) return value;
+  return {
+    brand: stringValue(source.brand ?? source.name ?? source.product ?? source.entity),
+    rank: numberOrNull(source.rank),
+    score: numberOrNull(source.score),
+    reason_tags: stringArray(source.reason_tags ?? source.reason_tag ?? source.reason),
+  };
+}
+
+function normalizeSemanticUnit(value: unknown) {
+  const source = asRecord(value);
+  if (!source) return value;
+  const domain = normalizeSemanticDomain(source.domain);
+  return {
+    ...source,
+    domain,
+    type: stringValue(source.type) || domain,
+  };
+}
+
+function normalizeSemanticDomain(value: unknown): (typeof semanticDomains)[number] {
+  const raw = stringValue(value);
+  const upper = raw.toUpperCase();
+  if (semanticDomains.includes(upper as (typeof semanticDomains)[number])) return upper as (typeof semanticDomains)[number];
+  if (["BRAND", "PRODUCT", "AUDIENCE", "品牌", "产品", "人群"].includes(upper)) return "ENTITY";
+  if (["ATTRIBUTE", "PREFERENCE", "STATE", "HEALTH", "SOCIAL", "属性", "偏好"].includes(upper)) return "ATTRIBUTE";
+  if (["SCENARIO", "CONDITION", "场景", "条件"].includes(upper)) return "CONTEXT";
+  if (["TREND", "趋势"].includes(upper)) return "TEMPORAL";
+  if (["CONSTRAINT", "NEGATION", "COMPARISON", "约束", "否定", "比较"].includes(upper)) return "RELATION";
+  if (["RECOMMENDATION", "DECISION", "GOAL", "USER_NEED", "REASON", "推荐", "决策", "选择", "意图", "目标"].includes(upper)) return "EVALUATION";
+  return "CONTEXT";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function arrayValue(value: unknown) {
+  if (Array.isArray(value)) return value;
+  return value === null || value === undefined || value === "" ? [] : [value];
+}
+
+function stringArray(value: unknown) {
+  return arrayValue(value).map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function numberOrNull(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function booleanOrNull(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value.toLowerCase() === "true";
+  if (Array.isArray(value)) return value.length > 0;
+  return null;
+}

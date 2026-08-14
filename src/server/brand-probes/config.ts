@@ -36,8 +36,8 @@ export function getProbeRunConfig(overrides: Partial<ProbeRunConfig> = {}): Prob
     tokensPerMinuteMin: intEnv("PROBE_TOKENS_PER_MINUTE_MIN", 400000),
     tokensPerMinuteMax: intEnv("PROBE_TOKENS_PER_MINUTE_MAX", 700000),
     maxRetries: intEnv("PROBE_MAX_RETRIES", 3),
-    singleMaxOutputTokens: intEnv("PROBE_SINGLE_MAX_OUTPUT_TOKENS", 300),
-    batchMaxOutputTokens: intEnv("PROBE_BATCH_MAX_OUTPUT_TOKENS", 1200),
+    singleMaxOutputTokens: intEnv("PROBE_SINGLE_MAX_OUTPUT_TOKENS", 2000),
+    batchMaxOutputTokens: intEnv("PROBE_BATCH_MAX_OUTPUT_TOKENS", 8000),
     defaultModel: process.env.PROBE_DEFAULT_MODEL || "deepseek-chat",
     modelTemperature: floatEnv("PROBE_TEMPERATURE", 0.3),
   };

@@ -60,6 +60,8 @@ test("undefined optional overrides preserve probe defaults", () => {
 
   assert.equal(config.mode, "standard");
   assert.equal(config.maxConcurrency, 24);
+  assert.equal(config.singleMaxOutputTokens, 2000);
+  assert.equal(config.batchMaxOutputTokens, 8000);
 });
 
 test("max500 mode stays around 480 probes", () => {

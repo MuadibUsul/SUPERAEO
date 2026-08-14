@@ -4,7 +4,7 @@ import { runJsonPrompt } from "@/server/ai/json-executor";
 import { getProbeRunConfig } from "@/server/brand-probes/config";
 import { buildMicroBatches } from "@/server/brand-probes/micro-batch-builder";
 import { RateLimiter } from "@/server/brand-probes/rate-limiter";
-import { extractSignals } from "@/server/brand-probes/signal-extractor";
+import { extractSignals, inferMentionedBrand } from "@/server/brand-probes/signal-extractor";
 import { advanceSemanticExploration, getSemanticExplorationConfig } from "@/server/brand-probes/semantic-exploration-service";
 import { allocateUsageAcrossProbes, estimateBatchTokens, usageNumbers } from "@/server/brand-probes/token-cost";
 import { ThroughputController, type ThroughputSample } from "@/server/brand-probes/throughput-controller";
@@ -15,6 +15,27 @@ import { recordTraceEvent } from "@/server/observability/event-log";
 type ProbeWithRun = BrandProbe & {
   run: { id: string; projectId: string; subjectId: string | null };
 };
+
+const probeResultExample = JSON.stringify({
+  probe_id: "input-probe-id",
+  mentioned_brand: null,
+  recommended_brands: [{ brand: "name", rank: 1, score: 80, reason_tags: ["short tag"] }],
+  keywords: ["keyword"],
+  competitors: ["competitor"],
+  scenarios: ["scenario"],
+  audiences: ["audience"],
+  risk_words: ["risk"],
+  opportunity_words: ["opportunity"],
+  sentiment_score: 0,
+  recommendation_score: 50,
+  confidence: 0.8,
+  semantic_units: [{
+    domain: "ENTITY", type: "COMPANY", canonicalLabel: "canonical term", surfaceForm: "observed term",
+    description: null, subject: "subject", predicate: "relation", object: "object", value: null, unit: null,
+    polarity: "neutral", negated: false, uncertainty: "certain", confidence: 0.8, intensity: null,
+    temporal: null, condition: null,
+  }],
+});
 
 export async function runBrandProbeRun(input: { runId: string; analysisJobId?: string | null }): Promise<BrandProbeRun> {
   const prisma = getPrisma();
@@ -90,7 +111,14 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
   await prisma.brandProbe.updateMany({ where: { runId: runRecord.id, id: { in: probes.map((probe) => probe.id) } }, data: { status: "queued" } });
 
   const plan = await resolveTaskExecutionPlan({ task: "brand_semantic_probe_sampling", workUnits: probes.length });
-  const batches = await createBatches(runRecord.id, runRecord.projectId, probes, config.executionMode === "single" ? 1 : config.microBatchSize);
+  const batches = await createBatches(
+    runRecord.id,
+    runRecord.projectId,
+    probes,
+    config.executionMode === "single" ? 1 : config.microBatchSize,
+    config.singleMaxOutputTokens,
+    config.batchMaxOutputTokens,
+  );
   let cursor = 0;
   const latencies: number[] = [];
 
@@ -160,7 +188,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
   }
 
   const latest = await prisma.brandProbeRun.findUnique({ where: { id: runRecord.id } });
-  const status = latest && latest.totalProbes > 0 && latest.failedProbes >= latest.totalProbes ? "failed" : "completed";
+  const status = latest && latest.completedProbes > latest.failedProbes ? "completed" : "failed";
   return prisma.brandProbeRun.update({
     where: { id: runRecord.id },
     data: {
@@ -189,7 +217,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
   });
 }
 
-async function createBatches(runId: string, projectId: string, probes: BrandProbe[], batchSize: number) {
+async function createBatches(runId: string, projectId: string, probes: BrandProbe[], batchSize: number, singleMaxOutputTokens: number, batchMaxOutputTokens: number) {
   const prisma = getPrisma();
   await prisma.brandProbeBatch.deleteMany({ where: { runId, status: "pending" } });
   const batches = buildMicroBatches(probes.map((probe) => ({ id: probe.id, payload: probe })), batchSize);
@@ -202,7 +230,7 @@ async function createBatches(runId: string, projectId: string, probes: BrandProb
       batchSize: batch.length,
       status: "pending",
       scheduledAt: new Date(),
-      estimatedTokens: estimateBatchTokens(batch.map((item) => item.payload.prompt), batch.length === 1 ? 300 : 1200),
+      estimatedTokens: estimateBatchTokens(batch.map((item) => item.payload.prompt), batch.length === 1 ? singleMaxOutputTokens : batchMaxOutputTokens),
     })),
   });
   return prisma.brandProbeBatch.findMany({ where: { runId, status: "pending" }, orderBy: { batchIndex: "asc" } });
@@ -292,9 +320,9 @@ async function executeMicroBatch(input: {
 }) {
   const started = Date.now();
   const prompt = JSON.stringify({
-    task: "请分别处理以下品牌语义探针。每个探针必须独立判断，不要互相影响。只输出 JSON 数组。",
+    task: "请分别处理以下品牌语义探针。每个探针必须独立判断，不要互相影响。只输出一个带 items 数组的 JSON 对象。",
     items: input.probes.map((probe) => ({ probe_id: probe.id, prompt: probe.prompt })),
-    output_schema: "Array<ProbeResult>; every item must include the same probe_id from input.",
+    output_schema: "{ items: Array<ProbeResult> }; every item must include the same probe_id from input.",
   });
 
   // Batch-level rate-limit handling: keep the batch intact and retry with
@@ -310,7 +338,7 @@ async function executeMicroBatch(input: {
       model: input.model,
       promptName: "brand_semantic_probe_batch",
       promptVersion: "v1",
-      system: "You are a strict JSON executor for brand semantic probes. Return JSON only.",
+      system: `You are a strict JSON executor for brand semantic probes. Return one JSON object with an items array only. Every item must follow this exact shape: ${probeResultExample}`,
       prompt,
       schema: probeBatchResponseSchema,
       schemaName: "brand_probe_batch_result",
@@ -415,7 +443,7 @@ async function executeSingleProbe(input: {
       model: input.model,
       promptName: "brand_semantic_probe_single",
       promptVersion: "v1",
-      system: "You are a strict JSON executor for one brand semantic probe. Return JSON only.",
+      system: `You are a strict JSON executor for one brand semantic probe. Return one JSON object only using this exact shape: ${probeResultExample}`,
       prompt: `${input.probe.prompt}\n\nprobe_id 必须等于：${input.probe.id}`,
       schema: probeResponseSchema,
       schemaName: "brand_probe_result",
@@ -465,6 +493,10 @@ async function persistProbeSuccess(input: {
   retryCount?: number;
 }) {
   const prisma = getPrisma();
+  const data = {
+    ...input.data,
+    mentioned_brand: inferMentionedBrand(input.data, input.brandAliases),
+  };
   const response = await prisma.brandProbeResponse.create({
     data: {
       runId: input.probe.runId,
@@ -476,7 +508,7 @@ async function persistProbeSuccess(input: {
       model: input.result.model ?? "unknown",
       prompt: input.probe.prompt,
       rawResponse: input.result.rawOutput,
-      parsedJson: input.data as unknown as Prisma.InputJsonValue,
+      parsedJson: data as unknown as Prisma.InputJsonValue,
       inputTokens: input.usage.promptTokens,
       outputTokens: input.usage.completionTokens,
       totalTokens: input.usage.totalTokens,
@@ -488,7 +520,7 @@ async function persistProbeSuccess(input: {
     },
   });
   const signals = extractSignals({
-    data: input.data,
+    data,
     runId: input.probe.runId,
     responseId: response.id,
     projectId: input.probe.projectId,

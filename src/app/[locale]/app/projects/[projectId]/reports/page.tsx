@@ -339,7 +339,7 @@ export default async function ReportsPage({ params }: PageProps) {
           {topTerms.length > 0 ? (
             <div className="mb-5 space-y-1.5">
               {topTerms.map((term) => (
-                <div key={term.term} className="flex items-center gap-3">
+                <div key={term.id} className="flex items-center gap-3">
                   <span className="w-40 shrink-0 truncate text-sm text-dim">{term.term}</span>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                     <div className="h-full rounded-full" style={{ width: `${term.gravity}%`, background: toneForTerm(term) }} />
@@ -693,7 +693,7 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-type NebTerm = { term: string; gravity: number; termType: string; context: { competitorContext?: boolean; missingDesired?: boolean; riskContext?: boolean } };
+type NebTerm = { id: string; term: string; gravity: number; termType: string; context: { competitorContext?: boolean; missingDesired?: boolean; riskContext?: boolean } };
 
 function topNebulaTerms(value: unknown, limit: number): NebTerm[] {
   if (!Array.isArray(value)) return [];
@@ -701,6 +701,7 @@ function topNebulaTerms(value: unknown, limit: number): NebTerm[] {
     .map((node) => {
       const record = node as Record<string, unknown>;
       return {
+        id: typeof record.id === "string" ? record.id : `${String(record.term)}-${String(record.termType)}`,
         term: typeof record.term === "string" ? record.term : "",
         gravity: typeof record.semanticGravity === "number" ? Math.round(record.semanticGravity) : 0,
         termType: typeof record.termType === "string" ? record.termType : "OTHER",

@@ -4,6 +4,8 @@ import { platformFromProviderType } from "@/server/ai/platform";
 import { createRunStatistics } from "@/server/analysis/stability";
 import { getPrisma } from "@/server/db";
 import { buildCipMetricBundle, metricSnapshotDataFromBundle } from "@/server/metrics/cip-metrics";
+import { inferMentionedBrand } from "@/server/brand-probes/signal-extractor";
+import { probeResponseSchema } from "@/server/brand-probes/types";
 
 export async function materializeBrandProbeRunForDiagnosis(brandProbeRunId: string) {
   const prisma = getPrisma();
@@ -111,6 +113,7 @@ export async function materializeBrandProbeRunForDiagnosis(brandProbeRunId: stri
       const responseId = responseIds.get(response.id);
       if (!responseId) throw new Error(`Missing projected response for brand probe response ${response.id}.`);
       const parsed = asRecord(response.parsedJson);
+      const normalizedResponse = probeResponseSchema.safeParse(parsed);
       const recommendations = arrayRecords(parsed.recommended_brands);
       const brandPosition = recommendations.findIndex((item) => aliases.includes(normalize(stringValue(item.brand))));
       const semanticUnitTerms = arrayRecords(parsed.semantic_units)
@@ -121,7 +124,9 @@ export async function materializeBrandProbeRunForDiagnosis(brandProbeRunId: stri
         .concat(semanticUnitTerms);
       return {
         responseId,
-        brandMentioned: parsed.mentioned_brand === true,
+        brandMentioned: normalizedResponse.success
+          ? inferMentionedBrand(normalizedResponse.data, aliases)
+          : parsed.mentioned_brand === true,
         brandRecommended: brandPosition >= 0,
         brandPosition: brandPosition >= 0 ? brandPosition + 1 : null,
         competitorsMentioned: stringArray(parsed.competitors) as Prisma.InputJsonValue,

@@ -4,6 +4,35 @@ import type { ProbeResponseJson } from "@/server/brand-probes/types";
 
 type SignalType = "keyword" | "competitor" | "scenario" | "audience" | "risk" | "sentiment" | "recommendation" | "opportunity";
 
+export function inferMentionedBrand(data: ProbeResponseJson, brandAliases: string[]) {
+  if (data.mentioned_brand === true) return true;
+  const aliases = brandAliases.map(normalizeMentionText).filter(Boolean);
+  if (aliases.length === 0) return false;
+  const values = [
+    ...data.recommended_brands.map((item) => item.brand),
+    ...data.keywords,
+    ...data.competitors,
+    ...data.scenarios,
+    ...data.audiences,
+    ...data.risk_words,
+    ...data.opportunity_words,
+    ...data.semantic_units.flatMap((unit) => [
+      unit.canonicalLabel,
+      unit.surfaceForm,
+      unit.description,
+      unit.subject,
+      unit.predicate,
+      unit.object,
+      typeof unit.value === "string" ? unit.value : undefined,
+      unit.condition,
+    ]),
+  ].filter((value): value is string => Boolean(value));
+  return values.some((value) => {
+    const normalized = normalizeMentionText(value);
+    return aliases.some((alias) => normalized.includes(alias));
+  });
+}
+
 export function extractSignals(input: {
   data: ProbeResponseJson;
   runId: string;
@@ -44,4 +73,8 @@ export function extractSignals(input: {
     push("sentiment", String(input.data.sentiment_score), Math.round(input.data.sentiment_score * 100), input.data.confidence ?? 0.5);
   }
   return signals;
+}
+
+function normalizeMentionText(value: string) {
+  return value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }

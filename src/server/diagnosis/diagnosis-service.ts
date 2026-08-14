@@ -7,6 +7,7 @@ import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
 import { getAIReadiness } from "@/server/ai/readiness";
 import { getAuditUsageSummary } from "@/server/ai/usage-summary";
+import { analyzeSiteReadiness } from "@/server/website-audit/site-readiness-service";
 import { generateLongTailOpportunitySnapshot } from "@/server/opportunity/opportunity-service";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { buildReportSnapshot } from "@/server/report/report-snapshot";
@@ -125,11 +126,21 @@ export async function runFullDiagnosis(input: {
     subjectId: subject.id,
     subjectName: subject.displayName,
   });
+  // Website audits additionally measure whether the site itself is answerable:
+  // AI-side citation tells you whether you are used, on-site readiness tells you
+  // whether you could be. Opt-in, and never fatal to the audit.
+  const siteReadiness = await analyzeSiteReadiness({
+    projectId: input.projectId,
+    entityType: subject.entityType,
+    websiteUrl: subject.websiteUrl ?? project.domain,
+  });
+
   const traceId = getTraceContext()?.traceId;
   const usageSummary = traceId ? await getAuditUsageSummary(input.projectId, traceId) : null;
 
   return {
     projectId: input.projectId,
+    siteReadiness,
     subjectId: subject.id,
     runId: executedRun.id,
     brandProbeRunId: brandProbeRun.id,

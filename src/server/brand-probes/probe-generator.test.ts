@@ -55,6 +55,13 @@ test("standard mode creates layered probes and keeps implicit recommendation non
   assert.ok(probes.filter((probe) => probe.questionType === "implicit_recommendation").every((probe) => !probe.prompt.includes("可口可乐")));
 });
 
+test("undefined optional overrides preserve probe defaults", () => {
+  const config = getProbeRunConfig({ mode: undefined, maxConcurrency: undefined });
+
+  assert.equal(config.mode, "standard");
+  assert.equal(config.maxConcurrency, 24);
+});
+
 test("max500 mode stays around 480 probes", () => {
   const config = getProbeRunConfig({ mode: "max500" });
   const seedPool = buildSeedPool({ project, subject, competitors: [] });

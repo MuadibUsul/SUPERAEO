@@ -42,7 +42,10 @@ export function getProbeRunConfig(overrides: Partial<ProbeRunConfig> = {}): Prob
     modelTemperature: floatEnv("PROBE_TEMPERATURE", 0.3),
   };
 
-  const merged = { ...base, ...overrides };
+  const merged = {
+    ...base,
+    ...Object.fromEntries(Object.entries(overrides).filter(([, value]) => value !== undefined)),
+  } as ProbeRunConfig;
   return {
     ...merged,
     microBatchSize: Math.max(1, Math.min(10, merged.executionMode === "single" ? 1 : merged.microBatchSize)),

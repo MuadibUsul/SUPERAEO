@@ -130,9 +130,14 @@ export async function listProjects(
   }
 }
 
+/**
+ * `session` is required, not optional: it is the only thing scoping the lookup
+ * to organizations the caller belongs to. As an optional parameter a forgotten
+ * argument silently returned any project by id.
+ */
 export async function getProject(
   projectId: string,
-  session?: AuthSession,
+  session: AuthSession,
 ): Promise<DataState<ProjectWithCompetitors | null>> {
   if (!isDatabaseConfigured()) {
     return databaseNotConfiguredState();
@@ -143,7 +148,7 @@ export async function getProject(
     const project = await prisma.project.findFirst({
       where: {
         id: projectId,
-        ...(session ? projectAccessWhere(session) : {}),
+        ...projectAccessWhere(session),
       },
       include: {
         competitors: {

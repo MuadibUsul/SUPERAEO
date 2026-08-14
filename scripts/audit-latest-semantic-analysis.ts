@@ -50,8 +50,8 @@ async function main() {
       nodesWithModelPositions: nodes.filter((node) => isRecord(node.modelPositions) && Object.keys(node.modelPositions).length > 0).length,
       terms: nodes.slice(0, 20).map((node) => ({ term: node.term, type: node.termType })),
       longestTerms: nodes
-        .map((node) => String(node.term ?? ""))
-        .sort((left, right) => right.length - left.length)
+        .map((node) => ({ term: String(node.term ?? ""), type: node.termType, examples: node.examples }))
+        .sort((left, right) => right.term.length - left.term.length)
         .slice(0, 10),
     },
   }, null, 2));

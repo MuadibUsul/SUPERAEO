@@ -1,9 +1,10 @@
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
-import type { Prisma } from "@/generated/prisma/client";
+import type { AnalysisJob, Prisma } from "@/generated/prisma/client";
 
 import { getPrisma } from "@/server/db";
 import { recordTraceEvent } from "@/server/observability/event-log";
+import { connectedControlRedis } from "@/server/redis-control";
 
 const QUEUE_NAMES = {
   samplingRun: "sampling.run",
@@ -17,14 +18,6 @@ const QUEUE_REDIS_OPTIONS = {
   connectTimeout: 1000,
   enableOfflineQueue: false,
   maxRetriesPerRequest: 1,
-};
-
-const HEALTH_REDIS_OPTIONS = {
-  connectTimeout: 1000,
-  enableOfflineQueue: false,
-  lazyConnect: true,
-  maxRetriesPerRequest: 1,
-  retryStrategy: () => null,
 };
 
 type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -112,40 +105,80 @@ export async function enqueueAnalysisJob(input: {
   traceId: string;
   enqueueToRedis?: boolean;
 }) {
-  let queueJobId: string | undefined;
-
-  if (isRedisConfigured() && input.enqueueToRedis !== false) {
-    const job = await getQueue(input.queueName).add(input.jobType, input.payload);
-    queueJobId = job.id;
-  }
-
   const analysisJob = await getPrisma().analysisJob.create({
     data: {
       projectId: input.projectId,
       runId: input.runId,
       jobType: input.jobType,
       queueName: input.queueName,
-      queueJobId,
       traceId: input.traceId,
       payload: input.payload,
       status: "queued",
     },
   });
 
+  return enqueueReservedAnalysisJob({
+    analysisJob,
+    enqueueToRedis: input.enqueueToRedis,
+  });
+}
+
+/**
+ * Publishes a job whose durable database record already exists. The BullMQ ID
+ * is the AnalysisJob ID, and it is written to PostgreSQL before Redis receives
+ * the job. This removes the worker race where a fast worker could start before
+ * its AnalysisJob row was queryable.
+ */
+export async function enqueueReservedAnalysisJob(input: {
+  analysisJob: AnalysisJob;
+  enqueueToRedis?: boolean;
+}) {
+  const prisma = getPrisma();
+  const queueName = input.analysisJob.queueName;
+  if (!isKnownQueueName(queueName)) {
+    throw new Error(`Unknown queue name: ${queueName}`);
+  }
+
+  const shouldEnqueue = isRedisConfigured() && input.enqueueToRedis !== false;
+  let analysisJob = input.analysisJob;
+  let queueJobId: string | undefined;
+
+  if (shouldEnqueue) {
+    queueJobId = analysisJob.id;
+    analysisJob = await prisma.analysisJob.update({
+      where: { id: analysisJob.id },
+      data: { queueJobId },
+    });
+
+    const queue = getQueue(queueName);
+    try {
+      await queue.add(analysisJob.jobType, analysisJob.payload, { jobId: queueJobId });
+    } catch (error) {
+      // A network timeout can happen after Redis accepted the command. Keep the
+      // durable row if the deterministic BullMQ job exists; otherwise release
+      // the reservation so a retry is safe.
+      const accepted = await queue.getJob(queueJobId).catch(() => null);
+      if (!accepted) {
+        await prisma.analysisJob.delete({ where: { id: analysisJob.id } }).catch(() => null);
+        throw error;
+      }
+    }
+  }
+
   await recordTraceEvent({
-    traceId: input.traceId,
+    traceId: analysisJob.traceId,
     severity: "info",
     eventType: "queue.job.enqueued",
     subsystem: "queue",
-    operation: input.jobType,
+    operation: analysisJob.jobType,
     status: "queued",
-    projectId: input.projectId,
-    runId: input.runId,
+    projectId: analysisJob.projectId ?? undefined,
+    runId: analysisJob.runId ?? undefined,
     analysisJobId: analysisJob.id,
     objectType: "AnalysisJob",
     objectId: analysisJob.id,
     metadata: {
-      queueName: input.queueName,
+      queueName,
       queueJobId,
       redisQueued: Boolean(queueJobId),
     },
@@ -159,11 +192,10 @@ export async function checkQueueHealth() {
     return { ok: false, message: "REDIS_URL is not configured. Jobs will stay in database queue state." };
   }
 
-  const connection = new IORedis(process.env.REDIS_URL!, HEALTH_REDIS_OPTIONS);
-  connection.on("error", () => undefined);
-
   try {
-    await connection.connect();
+    // Shares the control connection instead of opening and tearing down a
+    // socket per call — getQueueDepths invokes this on every request.
+    const connection = await connectedControlRedis();
     await connection.ping();
     return { ok: true, message: "Redis reachable." };
   } catch (error) {
@@ -171,8 +203,6 @@ export async function checkQueueHealth() {
       ok: false,
       message: redisHealthErrorMessage(error),
     };
-  } finally {
-    connection.disconnect(false);
   }
 }
 

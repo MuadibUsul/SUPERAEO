@@ -91,7 +91,7 @@ export default async function OpportunitiesPage({ params }: PageProps) {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">{dictionary.semanticIntelligence.concepts.longTailOpportunity}</CardTitle>
           <SemanticJobAction
-            endpoint={`/api/projects/${projectId}/opportunities/generate`}
+            endpoint={`/api/projects/${projectId}/opportunities`}
             label={dictionary.semanticIntelligence.actions.generateOpportunities}
             disabled={!runsReady}
             latestJob={latestJob}

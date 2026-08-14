@@ -19,6 +19,7 @@ test("semantic gravity combines frequency, stability, co-mention, recommendation
     scenarios: new Set(["office", "fitness"]),
     personas: new Set(["buyer", "marketer"]),
     probeFamilies: new Set(["recommendation_probability", "competitor_distance"]),
+    contextSightings: new Set(),
     recommendationHits: 4,
     competitorContextHits: 0,
     riskContextHits: 0,

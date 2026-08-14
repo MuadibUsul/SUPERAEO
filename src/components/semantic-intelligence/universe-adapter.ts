@@ -10,6 +10,7 @@ import { asRecord } from "@/server/utils/coerce";
 export type UniverseType = "positive" | "risk" | "opportunity" | "competitor" | "entity" | "attribute" | "context" | "activity" | "relation" | "evidence";
 export type UniverseEvidence = { question: string; excerpt: string; source: string };
 export type UniverseNode = {
+  evidenceKey: string;
   label: string;
   type: UniverseType;
   strength: number; // 0..1
@@ -32,7 +33,7 @@ function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-function extractExamples(raw: unknown): UniverseEvidence[] {
+export function extractNebulaEvidence(raw: unknown): UniverseEvidence[] {
   return (Array.isArray(raw) ? raw : [])
     .slice(0, 5)
     .map(asRecord)
@@ -96,14 +97,22 @@ function num(v: unknown, fallback = 0): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
-export function adaptNebulaNodes(nodeJson: unknown, limit = Number.POSITIVE_INFINITY, modelLayer?: string): UniverseNode[] {
+export function adaptNebulaNodes(
+  nodeJson: unknown,
+  limit = Number.POSITIVE_INFINITY,
+  modelLayer?: string,
+  includeExamples = true,
+): UniverseNode[] {
   const rows = Array.isArray(nodeJson) ? nodeJson : [];
   const nodes = rows
     .map((raw) => asRecord(raw))
-    .map((r) => {
+    .map((r, index) => {
       const layerPosition = modelLayer ? asRecord(asRecord(r.modelPositions)[modelLayer]) : r;
       const semanticMeta = asRecord(r.semanticMeta);
       const label = String(r.term ?? r.normalizedTerm ?? "").trim();
+      // Index-suffixed so a node missing every identifying field still gets a key
+      // unique to itself. A shared empty key made selection match every such node.
+      const evidenceKey = str(r.id) || str(r.normalizedTerm) || label || `node:${index}`;
       const type = classify(String(r.termType ?? ""), String(r.polarity ?? ""), asRecord(r.context), semanticMeta);
       const strength = Math.max(0, Math.min(1, num(r.semanticGravity) / 100));
       const freq = Math.max(0, Math.min(1, num(r.frequencyScore) / 100));
@@ -115,7 +124,8 @@ export function adaptNebulaNodes(nodeJson: unknown, limit = Number.POSITIVE_INFI
         label, type, strength, freq, affinity, confidence,
         domain: str(semanticMeta.domain) || "ATTRIBUTE",
         semanticType: str(semanticMeta.type) || String(r.termType ?? "OTHER"),
-        examples: extractExamples(r.examples),
+        evidenceKey,
+        examples: includeExamples ? extractNebulaEvidence(r.examples) : [],
         inLayer: !modelLayer || hasCoords,
         hasCoords, sx: num(layerPosition.x), sy: num(layerPosition.y), sz: num(layerPosition.z),
       };
@@ -144,6 +154,7 @@ export function adaptNebulaNodes(nodeJson: unknown, limit = Number.POSITIVE_INFI
   return positioned.map((n, index) => {
     const display = balanced[index] ?? n;
     return {
+      evidenceKey: n.evidenceKey,
       label: n.label, type: n.type, strength: n.strength, freq: n.freq, affinity: n.affinity, confidence: n.confidence,
       domain: n.domain, semanticType: n.semanticType, examples: n.examples,
       x: display.x, y: display.y, z: display.z,

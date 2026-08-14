@@ -2,15 +2,17 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { NextResponse } from "next/server";
 
+import { normalizeLocale } from "@/i18n/config";
 import { requireApiSession } from "@/server/auth/session";
+import { auditQuotaMessage, reserveDiagnosisAudit } from "@/server/billing/usage-service";
 import { getProject } from "@/server/data/projects";
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { runFullDiagnosis } from "@/server/diagnosis/diagnosis-service";
 import { normalizeError } from "@/server/observability/errors";
 import { withJobTrace } from "@/server/observability/job-wrapper";
 import { withApiTrace } from "@/server/observability/api-wrapper";
-import { enqueueAnalysisJob, getQueue, getQueueNames, isKnownQueueName, isRedisConfigured } from "@/server/queue/client";
-import { getWorkerHealth } from "@/server/queue/worker-health";
+import { enqueueReservedAnalysisJob, getQueue, getQueueNames, isKnownQueueName, isRedisConfigured } from "@/server/queue/client";
+import { getWorkerHealth, isWorkerVersionCompatible, WORKER_PROTOCOL_VERSION } from "@/server/queue/worker-health";
 
 type Context = {
   params: Promise<{ projectId: string }>;
@@ -43,14 +45,51 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
 
   const redisConfigured = isRedisConfigured();
   const workerHealth = redisConfigured ? await getWorkerHealth() : null;
-  const shouldRunInline = !redisConfigured || (workerHealth?.alive === false && process.env.NODE_ENV !== "production");
-  const prisma = getPrisma();
-  const activeJob = await prisma.analysisJob.findFirst({
-    where: { projectId, jobType: "full_diagnosis", status: { in: ["queued", "running", "retrying"] } },
-    orderBy: { createdAt: "desc" },
+  const workerCompatible = !redisConfigured || isWorkerVersionCompatible(workerHealth);
+  if (redisConfigured && !workerCompatible && process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: `Background worker is unavailable or outdated. Expected worker protocol ${WORKER_PROTOCOL_VERSION}.` },
+      { status: 503 },
+    );
+  }
+  const shouldRunInline = !redisConfigured || (!workerCompatible && process.env.NODE_ENV !== "production");
+  if (!project.data.organizationId) {
+    return NextResponse.json({ error: "Project is not assigned to an organization." }, { status: 409 });
+  }
+
+  const traceId = randomUUID();
+  const payload = {
+    projectId,
+    requestedByUserId: auth.session.user.id,
+    traceId,
+  } satisfies Prisma.InputJsonObject;
+  const reservation = await reserveDiagnosisAudit({
+    organizationId: project.data.organizationId,
+    projectId,
+    queueName: getQueueNames().semanticIntelligence,
+    traceId,
+    payload,
   });
 
-  if (activeJob) {
+  if (reservation.status === "organization_missing") {
+    return NextResponse.json({ error: "Organization not found." }, { status: 409 });
+  }
+
+  if (reservation.status === "denied") {
+    const locale = normalizeLocale(auth.session.user.preferredLocale ?? "en");
+    return NextResponse.json(
+      {
+        error: auditQuotaMessage(reservation, locale),
+        code: "AUDIT_QUOTA_REACHED",
+        limit: reservation.limit,
+        used: reservation.used,
+      },
+      { status: 402 },
+    );
+  }
+
+  if (reservation.status === "existing") {
+    const activeJob = reservation.job;
     const activeJobInlineFallback = shouldRunInline && activeJob.status === "queued";
     if (activeJobInlineFallback) {
       await removeQueuedRedisJob(activeJob);
@@ -66,10 +105,10 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
       {
         job: activeJob,
         queued: activeJob.status !== "completed",
-        workerAlive: workerHealth?.alive ?? false,
+        workerAlive: workerCompatible,
         executionMode: activeJobInlineFallback
           ? "local_background"
-          : redisConfigured && workerHealth?.alive === false
+          : redisConfigured && !workerCompatible
             ? "queued_no_worker"
             : "redis_queue",
       },
@@ -77,17 +116,8 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
     );
   }
 
-  const traceId = randomUUID();
-  const job = await enqueueAnalysisJob({
-    queueName: getQueueNames().semanticIntelligence,
-    jobType: "full_diagnosis",
-    projectId,
-    traceId,
-    payload: {
-      projectId,
-      requestedByUserId: auth.session.user.id,
-      traceId,
-    },
+  const job = await enqueueReservedAnalysisJob({
+    analysisJob: reservation.job,
     enqueueToRedis: !shouldRunInline,
   });
 
@@ -105,10 +135,10 @@ export const POST = withApiTrace<Context>({ subsystem: "diagnosis", operation: "
       job: job.analysisJob,
       queued: true,
       redisQueued: job.redisQueued,
-      workerAlive: workerHealth?.alive ?? false,
+      workerAlive: workerCompatible,
       executionMode: shouldRunInline
         ? "local_background"
-        : redisConfigured && workerHealth?.alive === false
+        : redisConfigured && !workerCompatible
           ? "queued_no_worker"
           : "redis_queue",
     },

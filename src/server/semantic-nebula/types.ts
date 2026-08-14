@@ -1,6 +1,19 @@
 import type { SubjectEntityType } from "@/generated/prisma/client";
 
-export const semanticNebulaVersion = "2026-06-08.v2";
+export const semanticNebulaVersion = "2026-08-14.v3";
+export const semanticNebulaNodePolicy = "all_clusters" as const;
+
+/**
+ * Hard ceiling on nodes persisted in a snapshot, applied after gravity sorting.
+ *
+ * The intent of `all_clusters` is that no *meaningful* cluster gets truncated
+ * away, which the old 140-node cap violated. But with no ceiling at all the
+ * snapshot JSON, the SSR payload and the canvas per-frame sort are unbounded in
+ * the number of probes a run happens to produce. This sits far above any
+ * observed real run, so it changes nothing in practice and only stops a
+ * pathological run from taking the page down.
+ */
+export const semanticNebulaMaxNodes = 1200;
 
 export const nebulaScopes = [
   "OVERALL",
@@ -79,6 +92,13 @@ export type SemanticTermCandidate = {
   scenarios: Set<string>;
   personas: Set<string>;
   probeFamilies: Set<string>;
+  /**
+   * "<contextFlag>:<responseId>" pairs already counted. One response can surface
+   * the same term through several extraction paths (matched keyword, then named
+   * competitor); the context counters below must credit each distinct response
+   * once per context, not once per path and not only on the very first path.
+   */
+  contextSightings: Set<string>;
   recommendationHits: number;
   competitorContextHits: number;
   riskContextHits: number;
@@ -145,6 +165,7 @@ export type SemanticNebulaEdge = {
 export type SemanticNebulaSummary = {
   scope: NebulaScope;
   version: string;
+  nodePolicy: typeof semanticNebulaNodePolicy;
   entityType: SubjectEntityType;
   subjectName: string;
   totalTerms: number;

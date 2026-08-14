@@ -78,6 +78,24 @@ test("carries evidence quotes, drops empty excerpts, and falls back model->sourc
   assert.equal(out[0].examples[1].source, "sonar");
 });
 
+test("can omit heavy evidence while keeping a stable key for lazy loading", () => {
+  const out = adaptNebulaNodes([
+    {
+      id: "node-1",
+      term: "lightweight",
+      termType: "POSITIVE",
+      polarity: "POSITIVE",
+      semanticGravity: 80,
+      frequencyScore: 50,
+      context: {},
+      examples: [{ excerpt: "large evidence" }],
+    },
+  ], Number.POSITIVE_INFINITY, undefined, false);
+
+  assert.equal(out[0].evidenceKey, "node-1");
+  assert.deepEqual(out[0].examples, []);
+});
+
 test("real embedding coords win over the gravity fallback when present", () => {
   const withCoords = [
     { term: "embedded", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 90, frequencyScore: 50, context: {}, x: 0.4, y: -0.1, z: 0.2 },

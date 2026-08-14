@@ -1,3 +1,5 @@
+import { comparisonCategoryFor } from "@/server/audit-types/spec";
+
 export type ProjectWizardEntityType = "BRAND" | "PERSON" | "WEBSITE" | "PRODUCT";
 
 export function buildAuditNamePreview(input: {
@@ -11,11 +13,13 @@ export function buildAuditNamePreview(input: {
     : `${subject} AI Cognition Audit`;
 }
 
+/**
+ * Re-exported from the audit type spec so the form and the server agree on what
+ * a comparison target means for each type. The server stamps this too, so a
+ * client that omits it still gets the right category.
+ */
 export function getComparisonCategory(entityType: ProjectWizardEntityType) {
-  if (entityType === "PERSON") return "peer_expert";
-  if (entityType === "WEBSITE") return "alternative_source";
-  if (entityType === "PRODUCT") return "substitute_product";
-  return "direct";
+  return comparisonCategoryFor(entityType);
 }
 
 /**

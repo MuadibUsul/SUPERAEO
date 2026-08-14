@@ -5,11 +5,11 @@ import type { ProbeResponseJson } from "@/server/brand-probes/types";
 type SignalType = "keyword" | "competitor" | "scenario" | "audience" | "risk" | "sentiment" | "recommendation" | "opportunity";
 
 export function inferMentionedBrand(data: ProbeResponseJson, brandAliases: string[]) {
-  if (data.mentioned_brand === true) return true;
+  if (data.target_mentioned === true) return true;
   const aliases = brandAliases.map(normalizeMentionText).filter(Boolean);
   if (aliases.length === 0) return false;
   const values = [
-    ...data.recommended_brands.map((item) => item.brand),
+    ...data.recommended_entities.map((item) => item.entity),
     ...data.keywords,
     ...data.competitors,
     ...data.scenarios,
@@ -66,8 +66,8 @@ export function extractSignals(input: {
   for (const item of uniqueNormalized(input.data.audiences, input.brandAliases)) push("audience", item.raw);
   for (const item of uniqueNormalized(input.data.risk_words, input.brandAliases)) push("risk", item.raw, Math.max(0, Math.round(Math.abs(input.data.sentiment_score ?? 0) * 100)));
   for (const item of uniqueNormalized(input.data.opportunity_words, input.brandAliases)) push("opportunity", item.raw, input.data.recommendation_score ?? 0);
-  for (const brand of input.data.recommended_brands) {
-    push("recommendation", brand.brand, brand.score ?? input.data.recommendation_score ?? 0, input.data.confidence ?? 0.5);
+  for (const entity of input.data.recommended_entities) {
+    push("recommendation", entity.entity, entity.score ?? input.data.recommendation_score ?? 0, input.data.confidence ?? 0.5);
   }
   if (input.data.sentiment_score !== null && input.data.sentiment_score !== undefined) {
     push("sentiment", String(input.data.sentiment_score), Math.round(input.data.sentiment_score * 100), input.data.confidence ?? 0.5);

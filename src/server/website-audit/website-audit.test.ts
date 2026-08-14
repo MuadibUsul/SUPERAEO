@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { crawlSite, extractInternalLinks, extractSitemapUrls, isAllowed, parseRobots } from "@/server/website-audit/fetcher";
+import { crawlSite, extractInternalLinks, extractSitemapUrls, isAllowed, isSitemapIndex, parseRobots } from "@/server/website-audit/fetcher";
 import { extractPageSignals, isQuestionLike } from "@/server/website-audit/page-signals";
 import { scorePage, scoreSite } from "@/server/website-audit/readiness";
 
@@ -183,6 +183,90 @@ test("crawl obeys robots, the page budget, and reports what it skipped", async (
   assert.ok(!requested.some((url) => url.includes("/admin")), "must never request a disallowed path");
   assert.ok(result.skipped.some((entry) => entry.reason === "disallowed_by_robots"));
   assert.ok(!result.pages.some((page) => page.url.includes("/admin")));
+});
+
+test("a sitemap index is followed to real pages, not scored itself", async () => {
+  // Caught on a live run against MDN: /sitemap.xml was a <sitemapindex> whose
+  // <loc> entries are .xml.gz sub-sitemaps. Those were being fetched and scored
+  // as if they were content pages, producing a readiness score from XML noise.
+  const requested: string[] = [];
+  const fetchImpl = (async (url: string | URL) => {
+    const href = String(url);
+    requested.push(href);
+    const reply = (body: string, type: string) =>
+      new Response(body, { status: 200, headers: { "content-type": type } });
+
+    if (href.endsWith("/robots.txt")) return reply("User-agent: *\nDisallow:", "text/plain");
+    if (href.endsWith("/sitemap.xml")) {
+      return reply(`<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <sitemap><loc>https://example.com/sitemaps/pages.xml</loc></sitemap>
+      </sitemapindex>`, "application/xml");
+    }
+    if (href.endsWith("/sitemaps/pages.xml")) {
+      return reply(`<urlset><url><loc>https://example.com/guide</loc></url>
+        <url><loc>https://example.com/about</loc></url></urlset>`, "application/xml");
+    }
+    return reply(BARE_PAGE, "text/html");
+  }) as unknown as typeof fetch;
+
+  const result = await crawlSite("example.com", { fetchImpl, maxPages: 3 });
+
+  const fetchedUrls = result.pages.map((page) => page.url);
+  assert.ok(!fetchedUrls.some((url) => url.includes("sitemap")), `a sitemap was scored as a page: ${fetchedUrls.join(", ")}`);
+  assert.ok(fetchedUrls.includes("https://example.com/guide"), "should reach real pages through the index");
+  assert.ok(requested.some((url) => url.endsWith("/sitemaps/pages.xml")), "should follow the index one level");
+});
+
+test("sitemap entries that are not content pages are filtered out", () => {
+  const xml = `<urlset>
+    <url><loc>https://example.com/guide</loc></url>
+    <url><loc>https://example.com/feed.xml</loc></url>
+    <url><loc>https://example.com/dump.xml.gz</loc></url>
+    <url><loc>https://example.com/logo.png</loc></url>
+    <url><loc>https://example.com/doc.pdf</loc></url>
+  </urlset>`;
+
+  assert.deepEqual(extractSitemapUrls(xml, "https://example.com", 10), ["https://example.com/guide"]);
+  // The index resolver needs the sitemap URLs themselves, so it opts out.
+  assert.equal(extractSitemapUrls(xml, "https://example.com", 10, { pagesOnly: false }).length, 5);
+});
+
+test("pages are sampled across the sitemap, not taken from the front", () => {
+  // A live MDN run drew "/", "/en-US/" and "/en-US/404" — the nav and utility
+  // pages a sitemap opens with — so the score described pages nobody reads.
+  const entries = Array.from({ length: 100 }, (_, index) => `<url><loc>https://example.com/p${index}</loc></url>`);
+  const urls = extractSitemapUrls(`<urlset>${entries.join("")}</urlset>`, "https://example.com", 4);
+
+  assert.equal(urls.length, 4);
+  assert.deepEqual(urls, [
+    "https://example.com/p0",
+    "https://example.com/p25",
+    "https://example.com/p50",
+    "https://example.com/p75",
+  ]);
+
+  // Below the limit everything is returned, in order.
+  const few = extractSitemapUrls("<urlset><url><loc>https://example.com/a</loc></url></urlset>", "https://example.com", 4);
+  assert.deepEqual(few, ["https://example.com/a"]);
+  assert.equal(isSitemapIndex("<sitemapindex><sitemap/></sitemapindex>"), true);
+  assert.equal(isSitemapIndex("<urlset><url/></urlset>"), false);
+});
+
+test("an XML response is never scored as a page", async () => {
+  const fetchImpl = (async (url: string | URL) => {
+    const href = String(url);
+    if (href.endsWith("/robots.txt")) return new Response("", { status: 404 });
+    // Everything answers with XML — nothing should end up scored.
+    return new Response("<urlset><url><loc>x</loc></url></urlset>", {
+      status: 200,
+      headers: { "content-type": "application/xml" },
+    });
+  }) as unknown as typeof fetch;
+
+  const result = await crawlSite("example.com", { fetchImpl, maxPages: 2 });
+
+  assert.equal(result.pages.length, 0, "XML must not be treated as an HTML page");
+  assert.ok(result.skipped.some((entry) => entry.reason === "not_html"));
 });
 
 test("crawl never leaves the origin", async () => {

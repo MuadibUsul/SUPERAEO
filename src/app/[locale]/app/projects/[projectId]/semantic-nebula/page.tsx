@@ -105,6 +105,10 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
               hint: locale === "zh-CN" ? "拖拽环绕 · 滚轮缩放 · 点击星飞抵" : "drag · scroll · click a star",
               pull: locale === "zh-CN" ? "引力" : "pull",
               freq: locale === "zh-CN" ? "频率" : "freq",
+              fullscreen: locale === "zh-CN" ? "\u5168\u5c4f" : "Fullscreen",
+              exitFullscreen: locale === "zh-CN" ? "\u9000\u51fa\u5168\u5c4f" : "Exit fullscreen",
+              balanced: locale === "zh-CN" ? "\u5747\u8861\u89c2\u6d4b" : "Balanced",
+              raw: locale === "zh-CN" ? "\u539f\u59cb\u7a7a\u95f4" : "Raw space",
               empty: dictionary.semanticIntelligence.states.noData,
               evidence: locale === "zh-CN" ? "AI 为何把它放在这" : "Why AI placed it here",
             }}

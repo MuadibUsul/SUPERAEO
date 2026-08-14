@@ -73,6 +73,25 @@ test("real embedding coords win over the gravity fallback when present", () => {
   assert.notDeepEqual({ x: b.x, y: b.y, z: b.z }, { x: 0.4, y: -0.1, z: 0.2 });
 });
 
+test("display coordinates soften severe one-sided collapse without changing semantic radii", () => {
+  const oneSided = Array.from({ length: 20 }, (_, i) => ({
+    term: `one-sided-${i}`, termType: "SCENARIO", polarity: "NEUTRAL", semanticGravity: 80 - i, frequencyScore: 50, context: {},
+    x: -0.18 - i * 0.025, y: (i - 9.5) * 0.025, z: ((i % 5) - 2) * 0.035,
+  }));
+  const out = adaptNebulaNodes(oneSided);
+  const positive = out.filter((node) => node.x > 0).length;
+  const negative = out.filter((node) => node.x < 0).length;
+
+  assert.ok(positive > 0 && negative > 0, `expected both display hemispheres, got ${positive}/${negative}`);
+  assert.ok(new Set(out.map((node) => Math.hypot(node.x, node.y, node.z).toFixed(6))).size > 10, "display layout should not flatten nodes into a uniform shell");
+  out.forEach((node, index) => {
+    assert.equal(node.rawX, oneSided[index].x);
+    assert.equal(node.rawY, oneSided[index].y);
+    assert.equal(node.rawZ, oneSided[index].z);
+    assert.ok(Math.abs(Math.hypot(node.x, node.y, node.z) - Math.hypot(node.rawX, node.rawY, node.rawZ)) < 1e-10);
+  });
+});
+
 test("a model layer uses its real coordinates and excludes terms outside that layer", () => {
   const layered = [
     {

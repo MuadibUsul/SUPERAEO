@@ -17,6 +17,9 @@ export type UniverseNode = {
   x: number;
   y: number;
   z: number;
+  rawX: number;
+  rawY: number;
+  rawZ: number;
   /** Raw AI quotes that placed this term near the entity. */
   examples: UniverseEvidence[];
 };
@@ -89,7 +92,7 @@ export function adaptNebulaNodes(nodeJson: unknown, limit = 160, modelLayer?: st
     .sort((a, b) => b.strength - a.strength)
     .slice(0, limit);
 
-  return nodes.map((n) => {
+  const positioned = nodes.map((n) => {
     // real embedding coordinates win when present; otherwise a deterministic
     // gravity-driven fallback (strong terms near the entity, weak ones outward)
     let x: number, y: number, z: number;
@@ -103,6 +106,56 @@ export function adaptNebulaNodes(nodeJson: unknown, limit = 160, modelLayer?: st
       y = dir[1] * dist + j(2);
       z = dir[2] * dist + j(3);
     }
-    return { label: n.label, type: n.type, strength: n.strength, freq: n.freq, examples: n.examples, x, y, z };
+    return { ...n, x, y, z };
   });
+  const balanced = balanceDisplayPositions(positioned);
+  return positioned.map((n, index) => {
+    const display = balanced[index] ?? n;
+    return {
+      label: n.label, type: n.type, strength: n.strength, freq: n.freq, examples: n.examples,
+      x: display.x, y: display.y, z: display.z,
+      rawX: n.x, rawY: n.y, rawZ: n.z,
+    };
+  });
+}
+
+function balanceDisplayPositions<T extends { hasCoords: boolean; x: number; y: number; z: number }>(nodes: T[]) {
+  const embedded = nodes.filter((node) => node.hasCoords);
+  if (embedded.length < 8) return nodes;
+
+  const center = embedded.reduce(
+    (sum, node) => ({ x: sum.x + node.x, y: sum.y + node.y, z: sum.z + node.z }),
+    { x: 0, y: 0, z: 0 },
+  );
+  center.x /= embedded.length;
+  center.y /= embedded.length;
+  center.z /= embedded.length;
+
+  const imbalance = Math.max(
+    axisImbalance(embedded.map((node) => node.x)),
+    axisImbalance(embedded.map((node) => node.y)),
+    axisImbalance(embedded.map((node) => node.z)),
+  );
+  const correction = Math.max(0, Math.min(1, (imbalance - 0.45) / 0.4));
+  if (correction === 0) return nodes;
+
+  return nodes.map((node) => {
+    if (!node.hasCoords) return node;
+    const radius = Math.hypot(node.x, node.y, node.z);
+    const shifted = {
+      x: node.x - center.x * correction,
+      y: node.y - center.y * correction,
+      z: node.z - center.z * correction,
+    };
+    const shiftedRadius = Math.hypot(shifted.x, shifted.y, shifted.z);
+    if (radius === 0 || shiftedRadius === 0) return node;
+    const scale = radius / shiftedRadius;
+    return { ...node, x: shifted.x * scale, y: shifted.y * scale, z: shifted.z * scale };
+  });
+}
+
+function axisImbalance(values: number[]) {
+  const positive = values.filter((value) => value > 0).length;
+  const negative = values.filter((value) => value < 0).length;
+  return Math.abs(positive - negative) / Math.max(1, positive + negative);
 }

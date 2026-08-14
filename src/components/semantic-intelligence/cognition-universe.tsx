@@ -25,6 +25,10 @@ type Copy = {
   freq: string;
   empty: string;
   evidence: string;
+  fullscreen?: string;
+  exitFullscreen?: string;
+  balanced?: string;
+  raw?: string;
 };
 
 const DEFAULT_COPY: Copy = {
@@ -34,6 +38,10 @@ const DEFAULT_COPY: Copy = {
   freq: "freq",
   empty: "No semantic field yet.",
   evidence: "Why AI placed it here",
+  fullscreen: "Fullscreen",
+  exitFullscreen: "Exit fullscreen",
+  balanced: "Balanced",
+  raw: "Raw space",
 };
 
 type Star = UniverseNode & { hue: [number, number, number]; tw: number };
@@ -59,6 +67,8 @@ export function CognitionUniverse({
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<UniverseNode | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; node: UniverseNode } | null>(null);
+  const [layoutMode, setLayoutMode] = useState<"balanced" | "raw">("balanced");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // mirror reactive state into a ref the animation loop can read each frame
   const ui = useRef({ typeOn, paused, selected });
@@ -67,13 +77,25 @@ export function CognitionUniverse({
   }, [typeOn, paused, selected]);
 
   useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === wrapRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const stars: Star[] = nodes.map((n, i) => ({ ...n, hue: HUE[n.type], tw: (i * 2.399) % 6.283 }));
+    const stars: Star[] = nodes.map((n, i) => ({
+      ...n,
+      x: layoutMode === "raw" ? n.rawX : n.x,
+      y: layoutMode === "raw" ? n.rawY : n.y,
+      z: layoutMode === "raw" ? n.rawZ : n.z,
+      hue: HUE[n.type], tw: (i * 2.399) % 6.283,
+    }));
     const cam = { yaw: 0.2, pitch: -0.18, dist: 3.4, tdist: 2.6 };
     const look = { x: 0, y: 0, z: 0 };
     const focus = { x: 0, y: 0, z: 0 };
@@ -82,6 +104,8 @@ export function CognitionUniverse({
     let hoverStar: Star | null = null;
     let lastScreen: Array<{ s: Star; sx: number; sy: number }> = [];
     let raf = 0;
+    let lastFrame = performance.now();
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const resize = () => {
       const r = wrap.getBoundingClientRect();
@@ -103,7 +127,9 @@ export function CognitionUniverse({
       raf = requestAnimationFrame(draw);
       const { typeOn, paused, selected } = ui.current;
       const now = performance.now();
-      if (!drag && !paused) cam.yaw += interactive ? 0.0026 : 0.0014;
+      const elapsed = Math.min((now - lastFrame) / 1000, 0.05);
+      lastFrame = now;
+      if (!drag && !paused && !reduceMotion) cam.yaw += (interactive ? 0.02 : 0.012) * elapsed;
       cam.dist += (cam.tdist - cam.dist) * 0.06;
       look.x += (focus.x - look.x) * 0.08; look.y += (focus.y - look.y) * 0.08; look.z += (focus.z - look.z) * 0.08;
 
@@ -208,6 +234,8 @@ export function CognitionUniverse({
     const onLeave = () => { hoverStar = null; setTip(null); };
 
     resize();
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(wrap);
     window.addEventListener("resize", resize);
     if (interactive) {
       canvas.addEventListener("mousedown", onDown);
@@ -220,6 +248,7 @@ export function CognitionUniverse({
 
     return () => {
       cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
       window.removeEventListener("resize", resize);
       canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);
@@ -227,14 +256,29 @@ export function CognitionUniverse({
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("wheel", onWheel);
     };
-  }, [nodes, subjectName, interactive]);
+  }, [nodes, subjectName, interactive, layoutMode]);
 
   const toggle = (t: UniverseType) => setTypeOn((s) => ({ ...s, [t]: !s[t] }));
+  const changeLayout = (mode: "balanced" | "raw") => {
+    setSelected(null);
+    setTip(null);
+    setLayoutMode(mode);
+  };
+  const toggleFullscreen = async () => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await wrap.requestFullscreen();
+    } catch {
+      // Fullscreen may be blocked by browser or embedding policy.
+    }
+  };
 
   return (
     <div
       ref={wrapRef}
-      className={cn("relative overflow-hidden", interactive && "rounded-2xl border border-border bg-[#06070b]", className)}
+      className={cn("relative overflow-hidden", interactive && "rounded-2xl border border-border bg-[#06070b]", className, isFullscreen && "h-screen w-screen rounded-none border-0")}
     >
       <canvas
         ref={canvasRef}
@@ -248,6 +292,40 @@ export function CognitionUniverse({
 
       {interactive ? (
         <>
+      {/* view controls */}
+      <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          className="flex h-8 items-center gap-2 rounded-lg border border-white/10 bg-black/60 px-2.5 text-xs text-[#c4c8d6] backdrop-blur transition-[transform,background-color,color] duration-150 ease-out hover:bg-black/80 hover:text-white active:scale-[0.97]"
+          aria-label={isFullscreen ? copy.exitFullscreen ?? DEFAULT_COPY.exitFullscreen : copy.fullscreen ?? DEFAULT_COPY.fullscreen}
+          aria-pressed={isFullscreen}
+        >
+          {isFullscreen ? (
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5" /></svg>
+          ) : (
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /></svg>
+          )}
+          <span>{isFullscreen ? copy.exitFullscreen ?? DEFAULT_COPY.exitFullscreen : copy.fullscreen ?? DEFAULT_COPY.fullscreen}</span>
+        </button>
+        <div className="flex rounded-lg border border-white/10 bg-black/60 p-0.5 backdrop-blur" aria-label="Nebula layout">
+          {(["balanced", "raw"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => changeLayout(mode)}
+              className={cn(
+                "h-7 rounded-md px-2.5 text-[11px] transition-[transform,background-color,color] duration-150 ease-out active:scale-[0.97]",
+                layoutMode === mode ? "bg-white/12 text-white" : "text-[#8f95a6] hover:text-[#d8dbe5]",
+              )}
+              aria-pressed={layoutMode === mode}
+            >
+              {mode === "balanced" ? copy.balanced ?? DEFAULT_COPY.balanced : copy.raw ?? DEFAULT_COPY.raw}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* type filters */}
       <div className="absolute right-3 top-3 grid gap-1.5">
         {(Object.keys(HUE) as UniverseType[]).map((t) => {

@@ -7,13 +7,17 @@
  */
 import { asRecord } from "@/server/utils/coerce";
 
-export type UniverseType = "positive" | "usecase" | "competitor" | "risk";
+export type UniverseType = "positive" | "risk" | "opportunity" | "competitor" | "entity" | "attribute" | "context" | "activity" | "relation" | "evidence";
 export type UniverseEvidence = { question: string; excerpt: string; source: string };
 export type UniverseNode = {
   label: string;
   type: UniverseType;
   strength: number; // 0..1
   freq: number; // 0..1
+  affinity: number; // 0..1 relationship to the subject
+  confidence: number; // 0..1 evidence confidence
+  domain: string;
+  semanticType: string;
   x: number;
   y: number;
   z: number;
@@ -38,23 +42,44 @@ function extractExamples(raw: unknown): UniverseEvidence[] {
 
 const SECTOR_DIR: Record<UniverseType, [number, number, number]> = {
   positive: [-0.25, -0.62, 0.18],
-  usecase: [0.68, -0.05, 0.28],
-  competitor: [-0.72, 0.34, -0.22],
   risk: [0.22, 0.5, 0.24],
+  opportunity: [0.64, -0.38, 0.2],
+  competitor: [-0.72, 0.34, -0.22],
+  entity: [-0.58, -0.18, 0.44],
+  attribute: [0.48, -0.1, -0.5],
+  context: [0.68, 0.18, 0.28],
+  activity: [-0.08, 0.72, -0.28],
+  relation: [-0.52, 0.5, 0.18],
+  evidence: [0.12, -0.72, -0.28],
 };
 
-function classify(termType: string, polarity: string, context: Record<string, unknown>): UniverseType {
+function classify(termType: string, polarity: string, context: Record<string, unknown>, semanticMeta: Record<string, unknown>): UniverseType {
   const tt = termType.toUpperCase();
+  const domain = str(semanticMeta.domain).toUpperCase();
+  const semanticType = str(semanticMeta.type).toUpperCase();
   if (context.competitorContext === true || tt === "COMPETITOR") return "competitor";
   if (
     context.riskContext === true ||
     context.missingDesired === true ||
-    ["RISK", "INCORRECT", "UNDESIRED", "NEGATIVE", "MISSING"].includes(tt)
+    ["RISK", "INCORRECT", "UNDESIRED", "NEGATIVE", "MISSING"].includes(tt) ||
+    ["RISK", "THREAT", "CONSTRAINT", "EXPOSURE", "WEAKNESS", "DISADVANTAGE", "LIMITATION", "VULNERABILITY", "UNDERPERFORMANCE"].includes(semanticType)
   ) {
     return "risk";
   }
-  if (polarity.toUpperCase() === "POSITIVE" || ["POSITIVE", "BENEFIT", "TRUST"].includes(tt)) return "positive";
-  return "usecase";
+  if (domain === "RISK_OPPORTUNITY") return ["OPPORTUNITY", "POTENTIAL", "GROWTH_AREA", "EMERGING_MARKET", "WHITE_SPACE"].includes(semanticType) ? "opportunity" : "risk";
+  if (["SCENARIO", "AUDIENCE"].includes(tt)) return "context";
+  if (tt === "FUNCTIONAL") return "activity";
+  if (domain === "ENTITY") return "entity";
+  if (domain === "CONTEXT") return "context";
+  if (domain === "RELATION") return "relation";
+  if (domain === "EVIDENCE") return "evidence";
+  if (["ACTION", "EVENT", "FUNCTION", "CAUSE_EFFECT", "TEMPORAL", "QUANTITATIVE"].includes(domain)) return "activity";
+  if (
+    polarity.toUpperCase() === "POSITIVE" ||
+    ["POSITIVE", "BENEFIT", "TRUST"].includes(tt) ||
+    ["ADVANTAGE", "STRENGTH", "MOAT", "BENEFIT", "OUTPERFORMANCE", "RECOMMENDATION"].includes(semanticType)
+  ) return "positive";
+  return "attribute";
 }
 
 /** Deterministic hash → [0,1) for stable jitter. */
@@ -71,19 +96,26 @@ function num(v: unknown, fallback = 0): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
-export function adaptNebulaNodes(nodeJson: unknown, limit = 160, modelLayer?: string): UniverseNode[] {
+export function adaptNebulaNodes(nodeJson: unknown, limit = Number.POSITIVE_INFINITY, modelLayer?: string): UniverseNode[] {
   const rows = Array.isArray(nodeJson) ? nodeJson : [];
   const nodes = rows
     .map((raw) => asRecord(raw))
     .map((r) => {
       const layerPosition = modelLayer ? asRecord(asRecord(r.modelPositions)[modelLayer]) : r;
+      const semanticMeta = asRecord(r.semanticMeta);
       const label = String(r.term ?? r.normalizedTerm ?? "").trim();
-      const type = classify(String(r.termType ?? ""), String(r.polarity ?? ""), asRecord(r.context));
+      const type = classify(String(r.termType ?? ""), String(r.polarity ?? ""), asRecord(r.context), semanticMeta);
       const strength = Math.max(0, Math.min(1, num(r.semanticGravity) / 100));
       const freq = Math.max(0, Math.min(1, num(r.frequencyScore) / 100));
+      const proximity = Math.max(0, Math.min(1, num(r.proximityScore, num(r.coMentionStrength)) / 100));
+      const confidence = Math.max(0, Math.min(1, num(r.evidenceConfidence, num(semanticMeta.confidence) * 100) / 100));
+      const affinity = Math.max(0, Math.min(1, strength * 0.55 + proximity * 0.3 + confidence * 0.15));
       const hasCoords = typeof layerPosition.x === "number" && typeof layerPosition.y === "number" && typeof layerPosition.z === "number";
       return {
-        label, type, strength, freq, examples: extractExamples(r.examples),
+        label, type, strength, freq, affinity, confidence,
+        domain: str(semanticMeta.domain) || "ATTRIBUTE",
+        semanticType: str(semanticMeta.type) || String(r.termType ?? "OTHER"),
+        examples: extractExamples(r.examples),
         inLayer: !modelLayer || hasCoords,
         hasCoords, sx: num(layerPosition.x), sy: num(layerPosition.y), sz: num(layerPosition.z),
       };
@@ -112,7 +144,8 @@ export function adaptNebulaNodes(nodeJson: unknown, limit = 160, modelLayer?: st
   return positioned.map((n, index) => {
     const display = balanced[index] ?? n;
     return {
-      label: n.label, type: n.type, strength: n.strength, freq: n.freq, examples: n.examples,
+      label: n.label, type: n.type, strength: n.strength, freq: n.freq, affinity: n.affinity, confidence: n.confidence,
+      domain: n.domain, semanticType: n.semanticType, examples: n.examples,
       x: display.x, y: display.y, z: display.z,
       rawX: n.x, rawY: n.y, rawZ: n.z,
     };

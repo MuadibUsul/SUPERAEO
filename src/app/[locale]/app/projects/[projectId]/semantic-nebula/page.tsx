@@ -100,11 +100,12 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
             copy={{
               legend:
                 locale === "zh-CN"
-                  ? { positive: "拥有 / 正向", usecase: "使用场景", competitor: "竞品占据", risk: "风险 / 混淆" }
-                  : { positive: "Owns", usecase: "Use-cases", competitor: "Competitor", risk: "Risk" },
+                  ? { positive: "正向评价", risk: "风险 / 负向", opportunity: "机会", competitor: "竞品", entity: "实体", attribute: "属性", context: "场景 / 人群", activity: "行动 / 事件", relation: "关系", evidence: "证据" }
+                  : { positive: "Positive", risk: "Risk", opportunity: "Opportunity", competitor: "Competitor", entity: "Entity", attribute: "Attribute", context: "Context", activity: "Activity", relation: "Relation", evidence: "Evidence" },
               hint: locale === "zh-CN" ? "拖拽环绕 · 滚轮缩放 · 点击星飞抵" : "drag · scroll · click a star",
               pull: locale === "zh-CN" ? "引力" : "pull",
               freq: locale === "zh-CN" ? "频率" : "freq",
+              confidence: locale === "zh-CN" ? "证据置信度" : "confidence",
               fullscreen: locale === "zh-CN" ? "\u5168\u5c4f" : "Fullscreen",
               exitFullscreen: locale === "zh-CN" ? "\u9000\u51fa\u5168\u5c4f" : "Exit fullscreen",
               balanced: locale === "zh-CN" ? "\u5747\u8861\u89c2\u6d4b" : "Balanced",

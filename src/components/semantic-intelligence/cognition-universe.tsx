@@ -6,16 +6,28 @@ import { cn } from "@/lib/utils";
 import type { UniverseNode, UniverseType } from "@/components/semantic-intelligence/universe-adapter";
 
 const HUE: Record<UniverseType, [number, number, number]> = {
-  positive: [56, 224, 161], // mint
-  usecase: [91, 139, 255], // blue
-  competitor: [168, 120, 255], // violet
-  risk: [255, 92, 168], // magenta
+  positive: [56, 224, 161], // emerald: positive evaluation
+  risk: [255, 82, 119], // rose: risk / negative association
+  opportunity: [255, 190, 72], // amber: growth opportunity
+  competitor: [190, 104, 255], // violet: competitor
+  entity: [65, 220, 235], // cyan: entity
+  attribute: [72, 176, 255], // sky: attribute
+  context: [91, 122, 255], // indigo: context / audience
+  activity: [255, 139, 76], // orange: action / event / function
+  relation: [148, 118, 255], // purple: relation
+  evidence: [202, 211, 226], // silver: evidence
 };
 const SECTOR_DIR: Record<UniverseType, [number, number, number]> = {
   positive: [-0.25, -0.62, 0.18],
-  usecase: [0.68, -0.05, 0.28],
-  competitor: [-0.72, 0.34, -0.22],
   risk: [0.22, 0.5, 0.24],
+  opportunity: [0.64, -0.38, 0.2],
+  competitor: [-0.72, 0.34, -0.22],
+  entity: [-0.58, -0.18, 0.44],
+  attribute: [0.48, -0.1, -0.5],
+  context: [0.68, 0.18, 0.28],
+  activity: [-0.08, 0.72, -0.28],
+  relation: [-0.52, 0.5, 0.18],
+  evidence: [0.12, -0.72, -0.28],
 };
 
 type Copy = {
@@ -23,6 +35,7 @@ type Copy = {
   hint: string;
   pull: string;
   freq: string;
+  confidence: string;
   empty: string;
   evidence: string;
   fullscreen?: string;
@@ -32,10 +45,11 @@ type Copy = {
 };
 
 const DEFAULT_COPY: Copy = {
-  legend: { positive: "Owns", usecase: "Use-cases", competitor: "Competitor", risk: "Risk" },
+  legend: { positive: "Positive", risk: "Risk", opportunity: "Opportunity", competitor: "Competitor", entity: "Entity", attribute: "Attribute", context: "Context", activity: "Activity", relation: "Relation", evidence: "Evidence" },
   hint: "drag · scroll · click a star",
   pull: "pull",
   freq: "freq",
+  confidence: "confidence",
   empty: "No semantic field yet.",
   evidence: "Why AI placed it here",
   fullscreen: "Fullscreen",
@@ -63,7 +77,7 @@ export function CognitionUniverse({
   const interactive = variant !== "ambient";
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [typeOn, setTypeOn] = useState<Record<UniverseType, boolean>>({ positive: true, usecase: true, competitor: true, risk: true });
+  const [typeOn, setTypeOn] = useState<Record<UniverseType, boolean>>({ positive: true, risk: true, opportunity: true, competitor: true, entity: true, attribute: true, context: true, activity: true, relation: true, evidence: true });
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<UniverseNode | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; node: UniverseNode } | null>(null);
@@ -148,7 +162,7 @@ export function CognitionUniverse({
 
       const bp = project(0, 0, 0);
       stars.forEach((s) => {
-        if (!typeOn[s.type] || s.strength < 0.55) return;
+        if (!typeOn[s.type] || (s.affinity < 0.72 && hoverStar !== s && selected !== s)) return;
         if (selected && s.type !== selected.type) return;
         const p = project(s.x, s.y, s.z), f = fog(p.depth); if (f <= 0) return;
         const grd = ctx.createLinearGradient(bp.sx, bp.sy, p.sx, p.sy);
@@ -164,23 +178,32 @@ export function CognitionUniverse({
         lastScreen.push({ s, sx: p.sx, sy: p.sy });
         const dim = selected && selected.type !== s.type ? 0.25 : 1;
         const pulse = s.type === "risk" ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
-        const r = (1.2 + s.freq * 4.2) * p.s * 1.6 * pulse, isH = hoverStar === s || selected === s;
-        ctx.globalAlpha = (0.35 + s.strength * 0.65) * f * dim;
+        const r = (0.75 + s.affinity * 4.8) * p.s * 1.45 * pulse, isH = hoverStar === s || selected === s;
+        ctx.globalAlpha = (0.12 + s.affinity * 0.88) * f * dim;
         ctx.fillStyle = `rgb(${s.hue[0]},${s.hue[1]},${s.hue[2]})`;
-        ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = (isH ? 26 : 8 + s.strength * 16) * f;
+        ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = isH ? 26 * f : s.affinity > 0.62 ? (s.affinity - 0.5) * 30 * f : 0;
         ctx.beginPath(); ctx.arc(p.sx, p.sy, isH ? r + 2.5 : r, 0, 6.2832); ctx.fill();
       });
       ctx.shadowBlur = 0; ctx.globalAlpha = 1;
 
       // labels for prominent / hovered stars
       ctx.globalCompositeOperation = "source-over";
+      const labelBoxes: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+      const labelLimit = Math.max(14, Math.min(42, Math.round(Math.sqrt(stars.length) * 1.6)));
+      const labelThreshold = stars.length > 400 ? 0.78 : stars.length > 180 ? 0.7 : 0.62;
+      let visibleLabels = 0;
       order.forEach(({ s, p }) => {
         if (!typeOn[s.type]) return;
         const f = fog(p.depth);
         const isH = hoverStar === s || selected === s;
-        if (!(isH || (s.strength > 0.62 && f > 0.4))) return;
-        ctx.globalAlpha = isH ? 1 : 0.78 * f; ctx.fillStyle = isH ? "#fff" : "#c4c8d6";
+        if (!(isH || (s.affinity > labelThreshold && f > 0.4 && visibleLabels < labelLimit))) return;
         ctx.font = `${isH ? "600" : "500"} 11px Inter, system-ui, sans-serif`;
+        const width = ctx.measureText(s.label).width;
+        const box = { left: p.sx + 6, top: p.sy - 7, right: p.sx + width + 12, bottom: p.sy + 7 };
+        if (!isH && labelBoxes.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) return;
+        labelBoxes.push(box);
+        visibleLabels += 1;
+        ctx.globalAlpha = isH ? 1 : 0.78 * f; ctx.fillStyle = isH ? "#fff" : "#c4c8d6";
         ctx.textAlign = "left"; ctx.textBaseline = "middle";
         ctx.fillText(s.label, p.sx + 8, p.sy);
       });
@@ -327,15 +350,17 @@ export function CognitionUniverse({
       </div>
 
       {/* type filters */}
-      <div className="absolute right-3 top-3 grid gap-1.5">
+      <div className="absolute right-3 top-3 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-lg bg-black/35 p-2 backdrop-blur-sm">
         {(Object.keys(HUE) as UniverseType[]).map((t) => {
           const h = HUE[t];
           return (
             <button
               key={t}
+              type="button"
               onClick={() => toggle(t)}
+              aria-pressed={typeOn[t]}
               className={cn(
-                "flex items-center justify-end gap-2 text-xs transition-opacity",
+                "flex items-center justify-end gap-2 text-xs transition-[transform,opacity] duration-150 ease-out active:scale-[0.97]",
                 typeOn[t] ? "opacity-100" : "opacity-30",
               )}
             >
@@ -349,9 +374,11 @@ export function CognitionUniverse({
       {/* pause + hint */}
       <div className="absolute bottom-3 left-3 flex items-center gap-3">
         <button
+          type="button"
           onClick={() => setPaused((p) => !p)}
-          className="grid size-7 place-items-center rounded-md border border-border bg-black/40 text-[#c4c8d6] hover:text-white"
+          className="grid size-7 place-items-center rounded-md border border-border bg-black/40 text-[#c4c8d6] transition-[transform,color] duration-150 ease-out hover:text-white active:scale-[0.97]"
           aria-label={paused ? "Resume" : "Pause"}
+          aria-pressed={paused}
         >
           {paused ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z" /></svg>
@@ -370,7 +397,7 @@ export function CognitionUniverse({
         >
           <div className="font-medium text-foreground">{tip.node.label}</div>
           <div className="mt-0.5 font-mono text-[10px] text-faint">
-            {tip.node.type} · {copy.pull} {Math.round(tip.node.strength * 100)}
+            {tip.node.type} · {copy.pull} {Math.round(tip.node.affinity * 100)}
           </div>
         </div>
       ) : null}
@@ -383,10 +410,11 @@ export function CognitionUniverse({
           <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wide" style={{ color: `rgb(${HUE[selected.type].join(",")})` }}>
             {selected.type}
           </div>
-          {(["strength", "freq"] as const).map((k) => (
+          <div className="mt-1 font-mono text-[9px] uppercase tracking-wide text-faint">{selected.domain} · {selected.semanticType}</div>
+          {(["affinity", "confidence"] as const).map((k) => (
             <div key={k} className="mt-3">
               <div className="mb-1 flex justify-between text-[11px] text-muted-foreground">
-                <span>{k === "strength" ? copy.pull : copy.freq}</span>
+                <span>{k === "affinity" ? copy.pull : copy.confidence}</span>
                 <span className="font-mono">{Math.round((selected[k] as number) * 100)}</span>
               </div>
               <div className="h-1 overflow-hidden rounded-full bg-white/10">

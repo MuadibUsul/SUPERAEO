@@ -16,7 +16,25 @@ test("classifies each node into a universe type", () => {
   assert.equal(by["AI observability"], "positive");
   assert.equal(by["Datadog"], "competitor");
   assert.equal(by["confusion"], "risk");
-  assert.equal(by["RAG eval"], "usecase");
+  assert.equal(by["RAG eval"], "context");
+});
+
+test("maps structured semantic domains and polarity to meaningful visual classes", () => {
+  const out = adaptNebulaNodes([
+    { term: "肥胖", termType: "RISK", polarity: "NEGATIVE", semanticGravity: 64, proximityScore: 98, evidenceConfidence: 79, frequencyScore: 15, context: { riskContext: true }, semanticMeta: { domain: "RISK_OPPORTUNITY", type: "RISK" } },
+    { term: "无糖增长", termType: "BENEFIT", polarity: "POSITIVE", semanticGravity: 70, frequencyScore: 50, context: {}, semanticMeta: { domain: "RISK_OPPORTUNITY", type: "OPPORTUNITY" } },
+    { term: "百事可乐", termType: "COMPETITOR", polarity: "NEUTRAL", semanticGravity: 70, frequencyScore: 50, context: { competitorContext: true }, semanticMeta: { domain: "ENTITY", type: "COMPANY" } },
+    { term: "销量", termType: "DESCRIPTIVE", polarity: "NEUTRAL", semanticGravity: 50, frequencyScore: 50, context: {}, semanticMeta: { domain: "QUANTITATIVE", type: "METRIC" } },
+    { term: "报告证据", termType: "TRUST", polarity: "POSITIVE", semanticGravity: 50, frequencyScore: 50, context: {}, semanticMeta: { domain: "EVIDENCE", type: "EVIDENCE" } },
+  ]);
+  const by = Object.fromEntries(out.map((node) => [node.label, node]));
+
+  assert.equal(by["肥胖"].type, "risk");
+  assert.equal(by["无糖增长"].type, "opportunity");
+  assert.equal(by["百事可乐"].type, "competitor");
+  assert.equal(by["销量"].type, "activity");
+  assert.equal(by["报告证据"].type, "evidence");
+  assert.ok(by["肥胖"].affinity > by["肥胖"].strength);
 });
 
 test("drops empty labels", () => {
@@ -121,4 +139,22 @@ test("respects the limit and handles non-array input", () => {
   assert.equal(adaptNebulaNodes(many, 120).length, 120);
   assert.deepEqual(adaptNebulaNodes(null), []);
   assert.deepEqual(adaptNebulaNodes(undefined), []);
+});
+
+test("shows every collected cluster by default", () => {
+  const many = Array.from({ length: 520 }, (_, i) => ({ term: `cluster-${i}`, termType: "DESCRIPTIVE", polarity: "NEUTRAL", semanticGravity: 50, frequencyScore: 20, context: {} }));
+  assert.equal(adaptNebulaNodes(many).length, 520);
+});
+
+test("evaluation vulnerabilities render as risk even without a legacy risk flag", () => {
+  const [node] = adaptNebulaNodes([{
+    term: "肥胖",
+    termType: "DESCRIPTIVE",
+    polarity: "NEUTRAL",
+    semanticGravity: 60,
+    frequencyScore: 20,
+    context: {},
+    semanticMeta: { domain: "EVALUATION", type: "VULNERABILITY", confidence: 0.9 },
+  }]);
+  assert.equal(node.type, "risk");
 });

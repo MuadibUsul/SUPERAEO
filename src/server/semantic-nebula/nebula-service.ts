@@ -70,6 +70,18 @@ export async function buildSemanticNebulaSnapshots(input: {
         orderBy: { createdAt: "desc" },
       });
 
+  const brandProbeRunId = latestRun?.traceId?.match(/^semantic-exploration:(.+)$/)?.[1];
+  if (brandProbeRunId) {
+    return buildSemanticNebulaSnapshotsFromExploration({
+      projectId: input.projectId,
+      subjectId: subject.id,
+      brandProbeRunId,
+      samplingRunId: latestRun.id,
+      scopes: input.scopes,
+      analysisJobId: input.analysisJobId,
+    });
+  }
+
   const [keywords, responses] = await Promise.all([
     prisma.semanticKeyword.findMany({
       where: { projectId: input.projectId, OR: [{ subjectId: subject.id }, { subjectId: null }] },

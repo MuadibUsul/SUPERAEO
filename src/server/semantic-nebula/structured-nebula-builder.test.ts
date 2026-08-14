@@ -67,3 +67,31 @@ test("structured units and predicates become traceable nebula nodes and relation
   assert.ok(graph.edges.some((edge) => edge.semanticMeta?.canonicalRelation === "AVAILABLE_IN" && edge.semanticMeta.negated === true));
   assert.ok(graph.nodes.every((node) => node.examples[0]?.responseId === "response-1"));
 });
+
+test("keeps every collected semantic cluster in the overall nebula", () => {
+  const units = Array.from({ length: 240 }, (_, index) => extractProbeSemanticUnits({
+    projectId: "project",
+    subjectId: "subject",
+    runId: "probe-run",
+    probeId: `probe-${index}`,
+    responseId: `response-${index}`,
+    model: "model-a",
+    zone: "core_semantics",
+    data: { semantic_units: [{ domain: "ATTRIBUTE", type: "PROPERTY", canonicalLabel: `concept-${index}`, confidence: 0.7 }] },
+  })[0]);
+  const vectors = Object.fromEntries(units.map((unit, index) => [unit.id, Array.from({ length: units.length }, (_, dimension) => index === dimension ? 1 : 0)]));
+  const clustered = clusterSemanticUnits({ units, vectors });
+  applyProbeOccurrenceCounts(clustered.clusters, units, clustered.assignments);
+
+  const graph = buildStructuredSemanticNebula({
+    subjectName: "Subject",
+    entityType: "BRAND",
+    scope: "OVERALL",
+    iteration: 1,
+    units,
+    clusters: clustered.clusters,
+  });
+
+  assert.equal(clustered.clusters.length, 240);
+  assert.equal(graph.nodes.length, 240);
+});

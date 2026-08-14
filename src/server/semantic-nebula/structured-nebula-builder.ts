@@ -34,9 +34,8 @@ export function buildStructuredSemanticNebula(input: {
   const maxProbeOccurrences = Math.max(1, ...input.clusters.map((cluster) => cluster.probeOccurrenceCount));
   const allNodes = input.clusters
     .map((cluster) => buildNode(cluster, unitsById, maxProbeOccurrences, input.iteration, input.evidenceByResponseId))
-    .sort((a, b) => b.semanticGravity - a.semanticGravity)
-    .slice(0, 180);
-  const nodes = allNodes.filter(getNebulaScopeDefinition(input.scope).filter).slice(0, 140);
+    .sort((a, b) => b.semanticGravity - a.semanticGravity);
+  const nodes = allNodes.filter(getNebulaScopeDefinition(input.scope).filter);
   const visibleIds = new Set(nodes.map((node) => node.id));
   const subjectId = `subject:${input.subjectName}`;
   const edges = input.clusters.flatMap((cluster) => {

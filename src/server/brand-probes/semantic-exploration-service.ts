@@ -42,16 +42,16 @@ const embeddingCache = new Map<string, number[]>();
 export function getSemanticExplorationConfig(enabledOverride?: boolean): SemanticExplorationConfig {
   return {
     enabled: enabledOverride ?? process.env.SEMANTIC_EXPLORATION_ENABLED === "true",
-    maxIterations: intEnv("SEMANTIC_EXPLORATION_MAX_ITERATIONS", 8),
-    maxAdditionalProbes: intEnv("SEMANTIC_EXPLORATION_MAX_ADDITIONAL_PROBES", 40),
-    probesPerIteration: intEnv("SEMANTIC_EXPLORATION_PROBES_PER_ITERATION", 8),
+    maxIterations: intEnv("SEMANTIC_EXPLORATION_MAX_ITERATIONS", 41),
+    maxAdditionalProbes: intEnv("SEMANTIC_EXPLORATION_MAX_ADDITIONAL_PROBES", 640),
+    probesPerIteration: intEnv("SEMANTIC_EXPLORATION_PROBES_PER_ITERATION", 16),
     maxSemanticDepth: intEnv("SEMANTIC_EXPLORATION_MAX_DEPTH", 2),
     duplicateThreshold: floatEnv("SEMANTIC_EXPLORATION_PROBE_DUPLICATE_THRESHOLD", 0.9),
     semanticDuplicateThreshold: floatEnv("SEMANTIC_EXPLORATION_UNIT_DUPLICATE_THRESHOLD", 0.92),
     clusterThreshold: floatEnv("SEMANTIC_EXPLORATION_CLUSTER_THRESHOLD", 0.85),
-    maxTokens: nonNegativeIntEnv("SEMANTIC_EXPLORATION_MAX_TOKENS", 0),
-    maxCost: nonNegativeFloatEnv("SEMANTIC_EXPLORATION_MAX_COST", 0),
-    maxDurationMs: intEnv("SEMANTIC_EXPLORATION_MAX_DURATION_MS", 3_600_000),
+    maxTokens: nonNegativeIntEnv("SEMANTIC_EXPLORATION_MAX_TOKENS", 1_000_000),
+    maxCost: nonNegativeFloatEnv("SEMANTIC_EXPLORATION_MAX_COST", 2),
+    maxDurationMs: intEnv("SEMANTIC_EXPLORATION_MAX_DURATION_MS", 14_400_000),
   };
 }
 
@@ -65,7 +65,10 @@ export async function advanceSemanticExploration(input: { runId: string; analysi
     include: {
       project: { include: { subjects: { orderBy: { createdAt: "asc" } } } },
       subject: true,
-      probes: { include: { responses: { where: { errorMessage: null }, orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } },
+      probes: {
+        include: { responses: { orderBy: { createdAt: "asc" } } },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
   if (!run) throw new Error("Brand probe run not found for semantic exploration.");
@@ -317,8 +320,8 @@ async function canonicalizeUnitsWithAnn(input: { projectId: string; subjectId: s
 }
 
 function budgetStopReason(input: { config: SemanticExplorationConfig; iteration: number; totalProbes: number; initialProbeCount: number; usage: { tokens: number; cost: number }; elapsedMs: number }): SemanticExplorationStopReason | undefined {
-  if (input.iteration >= input.config.maxIterations) return "MAX_ITERATIONS";
   if (input.totalProbes >= input.initialProbeCount + input.config.maxAdditionalProbes) return "MAX_PROBES";
+  if (input.iteration >= input.config.maxIterations) return "MAX_ITERATIONS";
   if (input.config.maxTokens > 0 && input.usage.tokens >= input.config.maxTokens) return "TOKEN_BUDGET";
   if (input.config.maxCost > 0 && input.usage.cost >= input.config.maxCost) return "COST_BUDGET";
   if (input.elapsedMs >= input.config.maxDurationMs) return "TIME_BUDGET";

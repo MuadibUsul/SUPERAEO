@@ -6,7 +6,7 @@ import { buildMicroBatches } from "@/server/brand-probes/micro-batch-builder";
 import { RateLimiter } from "@/server/brand-probes/rate-limiter";
 import { extractSignals } from "@/server/brand-probes/signal-extractor";
 import { advanceSemanticExploration, getSemanticExplorationConfig } from "@/server/brand-probes/semantic-exploration-service";
-import { estimateBatchTokens, usageNumbers } from "@/server/brand-probes/token-cost";
+import { allocateUsageAcrossProbes, estimateBatchTokens, usageNumbers } from "@/server/brand-probes/token-cost";
 import { ThroughputController, type ThroughputSample } from "@/server/brand-probes/throughput-controller";
 import { legacyProbeBatchResponseJsonSchema, legacyProbeResponseJsonSchema, probeBatchResponseJsonSchema, probeBatchResponseSchema, probeResponseJsonSchema, probeResponseSchema, type ProbeResponseJson } from "@/server/brand-probes/types";
 import { getPrisma } from "@/server/db";
@@ -319,7 +319,8 @@ async function executeMicroBatch(input: {
       temperature: input.temperature,
       metadata: { batchId: input.batch.id, probeIds: input.probes.map((probe) => probe.id), attempt },
     });
-    const usage = usageNumbers(result.usage);
+    const usage = usageNumbers(result.usage, result.model ?? input.model);
+    const responseUsage = allocateUsageAcrossProbes(usage, input.probes.length);
 
     if (result.ok) {
       let completed = 0;
@@ -328,10 +329,10 @@ async function executeMicroBatch(input: {
         const item = result.data.find((entry) => entry.probe_id === probe.id);
         if (!item) {
           failed += 1;
-          await markProbeFailed(probe, input.batch.id, input.model, "Batch output missed probe_id.", result.rawOutput, usage, Date.now() - started);
+          await markProbeFailed(probe, input.batch.id, input.model, "Batch output missed probe_id.", result.rawOutput, responseUsage, Date.now() - started);
         } else {
           completed += 1;
-          await persistProbeSuccess({ probe, batchId: input.batch.id, data: item, result, usage, latencyMs: Date.now() - started, brandAliases: input.brandAliases });
+          await persistProbeSuccess({ probe, batchId: input.batch.id, data: item, result, usage: responseUsage, latencyMs: Date.now() - started, brandAliases: input.brandAliases });
         }
       }
       return { completed, failed, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, jsonFailures: failed, rateLimitErrors, error: null, splitReason: null };
@@ -360,7 +361,7 @@ async function executeMicroBatch(input: {
       // Retries exhausted: persist each probe as failed so they don't stay
       // stuck in "running" and the run can complete deterministically.
       for (const probe of input.probes) {
-        await markProbeFailed(probe, input.batch.id, input.model, result.error, result.rawOutput, usage, Date.now() - started);
+        await markProbeFailed(probe, input.batch.id, input.model, result.error, result.rawOutput, responseUsage, Date.now() - started);
       }
       return { completed: 0, failed: input.probes.length, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, jsonFailures: 0, rateLimitErrors, error: result.error, splitReason: "batch_rate_limited_exhausted" };
     }
@@ -423,7 +424,7 @@ async function executeSingleProbe(input: {
       temperature: input.temperature,
       metadata: { batchId: input.batch.id, probeId: input.probe.id, attempt },
     });
-    const usage = usageNumbers(result.usage);
+    const usage = usageNumbers(result.usage, result.model ?? input.model);
     if (result.ok) {
       await persistProbeSuccess({ probe: input.probe, batchId: input.batch.id, data: { ...result.data, probe_id: input.probe.id }, result, usage, latencyMs: Date.now() - started, brandAliases: input.brandAliases, retryCount: attempt });
       return { completed: 1, failed: 0, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started };
@@ -481,6 +482,7 @@ async function persistProbeSuccess(input: {
       totalTokens: input.usage.totalTokens,
       cachedInputTokens: input.usage.cachedInputTokens,
       reasoningTokens: input.usage.reasoningTokens,
+      costEstimate: input.usage.estimatedCostUsd,
       latencyMs: input.latencyMs,
       retryCount: input.retryCount ?? 0,
     },
@@ -542,6 +544,7 @@ async function markProbeFailed(
       inputTokens: usage.promptTokens,
       outputTokens: usage.completionTokens,
       totalTokens: usage.totalTokens,
+      costEstimate: usage.estimatedCostUsd,
       latencyMs,
       retryCount,
       errorMessage: error,

@@ -3,6 +3,26 @@ import { getPrisma } from "@/server/db";
 import { stabilityIndex, wilsonInterval } from "@/server/observability/statistics";
 import { clamp01, isRecord, numberOrDefault, stringOrDefault, stringOrNull } from "@/server/utils/coerce";
 
+/**
+ * Below this many sampled answers, the blended visibility score and per-metric
+ * rates are directional only — the confidence intervals are too wide to call.
+ * The UI reads `bundle.reliability.sufficient` to caveat rather than assert.
+ */
+export const MIN_RELIABLE_SAMPLES = 20;
+
+export type MetricReliability = {
+  sampleCount: number;
+  minSamples: number;
+  /** sampleCount >= minSamples — enough evidence to state the numbers plainly. */
+  sufficient: boolean;
+  /** At least one sampled answer was actually assessed for entity accuracy. */
+  hasAccuracySignal: boolean;
+  /** A real authority score exists (not a mention-rate stand-in). */
+  hasAuthoritySignal: boolean;
+  /** A semantic coverage snapshot exists (coverage is measured, not assumed 0). */
+  hasCoverageSignal: boolean;
+};
+
 export type EntityMetrics = {
   factualAccuracy: number;
   featureAccuracy: number;
@@ -48,6 +68,7 @@ export type CipMetricBundle = {
     citationRate?: { estimate: number; lowerBound: number; upperBound: number };
     recommendationShare?: { estimate: number; lowerBound: number; upperBound: number };
   };
+  reliability?: MetricReliability;
 };
 
 export async function getLatestCipMetricBundle(projectId: string, subjectId?: string | null): Promise<CipMetricBundle> {
@@ -93,6 +114,7 @@ export async function buildCipMetricBundle(projectId: string, subjectId?: string
       entityMetrics: emptyEntityMetrics(),
       modelBreakdown: [],
       confidence: {},
+      reliability: emptyReliability(),
     };
   }
 
@@ -112,31 +134,45 @@ export async function buildCipMetricBundle(projectId: string, subjectId?: string
   const mentionRate = sampleCount ? mentioned / sampleCount : 0;
   const citationRate = sampleCount ? cited / sampleCount : 0;
   const recommendationShare = sampleCount ? recommended / sampleCount : 0;
+
+  // Which composite components have a real signal vs. a stand-in. Absent
+  // components are dropped from the blend (see aiVisibilityScore below), not
+  // counted as zero — so a missing signal neither inflates nor deflates.
+  const hasAuthoritySignal = typeof entityProfile?.authorityScore === "number";
+  const hasCoverageSignal = Boolean(semanticCoverage);
+  const accuracyRows = responses.map((response) => normalizedEntityAccuracy(response));
+  const hasAccuracySignal = accuracyRows.some((row) => row !== null);
+
   const entityVisibility = entityProfile?.authorityScore ?? mentionRate;
   const coverage = semanticCoverage?.overallCoverage ?? 0;
   const stability = stabilityIndex(responses.map((response) => targetMentioned(response)));
   const hallucinationRiskScore = Math.min(1, hallucinationAlerts / Math.max(1, sampleCount));
-  const entityMetrics = aggregateEntityMetrics(
-    responses.map((response) => normalizedEntityAccuracy(response)),
-    entityType,
-    entityProfile?.authorityScore ?? 0,
-  );
+  const entityMetrics = aggregateEntityMetrics(accuracyRows, entityType, entityProfile?.authorityScore ?? 0);
   const modelBreakdown = aggregateModelBreakdown(responses, entityType);
-  const aiVisibilityScore =
-    0.22 * mentionRate +
-    0.18 * citationRate +
-    0.18 * recommendationShare +
-    0.14 * entityVisibility +
-    0.1 * coverage +
-    0.08 * stability +
-    0.1 * entityMetrics.accuracyScore -
-    0.1 * hallucinationRiskScore;
+
+  // Weighted average over only the components we actually measured. When every
+  // component is present the present-weights sum to 1.0, so this is identical
+  // to the historical fixed-weight formula; when one is absent we renormalize
+  // instead of treating "no data" as a zero (or, worse, a fabricated 0.5).
+  const aiVisibilityScore = sampleCount === 0 ? 0 : blendedVisibility({
+    mentionRate,
+    citationRate,
+    recommendationShare,
+    entityVisibility,
+    coverage,
+    stability,
+    accuracyScore: entityMetrics.accuracyScore,
+    hallucinationRiskScore,
+    hasAuthoritySignal,
+    hasCoverageSignal,
+    hasAccuracySignal,
+  });
 
   return {
     runId: latestRun.id,
     sampleCount,
     metrics: {
-      aiVisibilityScore: Math.max(0, Math.min(1, aiVisibilityScore)),
+      aiVisibilityScore,
       citationRate,
       mentionRate,
       recommendationShare,
@@ -154,7 +190,49 @@ export async function buildCipMetricBundle(projectId: string, subjectId?: string
       citationRate: wilsonInterval(cited, sampleCount),
       recommendationShare: wilsonInterval(recommended, sampleCount),
     },
+    reliability: {
+      sampleCount,
+      minSamples: MIN_RELIABLE_SAMPLES,
+      sufficient: sampleCount >= MIN_RELIABLE_SAMPLES,
+      hasAccuracySignal,
+      hasAuthoritySignal,
+      hasCoverageSignal,
+    },
   };
+}
+
+/**
+ * Blend the visibility components as a weighted average over only the
+ * components that carry a real signal, then subtract the hallucination penalty.
+ * Present-weights sum to 1.0 when nothing is missing, so a fully-measured run
+ * matches the legacy fixed-weight score exactly.
+ */
+export function blendedVisibility(input: {
+  mentionRate: number;
+  citationRate: number;
+  recommendationShare: number;
+  entityVisibility: number;
+  coverage: number;
+  stability: number;
+  accuracyScore: number;
+  hallucinationRiskScore: number;
+  hasAuthoritySignal: boolean;
+  hasCoverageSignal: boolean;
+  hasAccuracySignal: boolean;
+}): number {
+  const components: Array<{ weight: number; value: number; present: boolean }> = [
+    { weight: 0.22, value: input.mentionRate, present: true },
+    { weight: 0.18, value: input.citationRate, present: true },
+    { weight: 0.18, value: input.recommendationShare, present: true },
+    { weight: 0.14, value: input.entityVisibility, present: input.hasAuthoritySignal },
+    { weight: 0.1, value: input.coverage, present: input.hasCoverageSignal },
+    { weight: 0.08, value: input.stability, present: true },
+    { weight: 0.1, value: input.accuracyScore, present: input.hasAccuracySignal },
+  ];
+  const presentWeight = components.reduce((sum, c) => (c.present ? sum + c.weight : sum), 0);
+  const weighted = components.reduce((sum, c) => (c.present ? sum + c.weight * c.value : sum), 0);
+  const base = presentWeight > 0 ? weighted / presentWeight : 0;
+  return Math.max(0, Math.min(1, base - 0.1 * input.hallucinationRiskScore));
 }
 
 export function metricSnapshotDataFromBundle(input: {
@@ -189,6 +267,7 @@ export function metricSnapshotDataFromBundle(input: {
       source: input.source,
       entityMetrics: bundle.entityMetrics,
       modelBreakdown: bundle.modelBreakdown,
+      reliability: bundle.reliability ?? null,
     } as Prisma.InputJsonValue,
   };
 }
@@ -228,9 +307,21 @@ function normalizedResult(response: { probeResults: Array<{ normalizedJson: unkn
   return isRecord(value) ? value : {};
 }
 
-function normalizedEntityAccuracy(response: { probeResults: Array<{ normalizedJson: unknown }> }) {
+type AccuracyRow = {
+  factualAccuracy: number;
+  featureAccuracy: number;
+  identityConfusionRisk: number;
+  parameterErrorRate: number;
+  confidence: number;
+};
+
+function normalizedEntityAccuracy(response: { probeResults: Array<{ normalizedJson: unknown }> }): AccuracyRow | null {
   const normalized = normalizedResult(response);
-  const accuracy = isRecord(normalized.entityAccuracy) ? normalized.entityAccuracy : {};
+  // No entityAccuracy block means this answer was never assessed for accuracy.
+  // Exclude it rather than inventing a 0.5 that would silently flow into the
+  // score and make a zero-evidence entity look half-accurate.
+  if (!isRecord(normalized.entityAccuracy)) return null;
+  const accuracy = normalized.entityAccuracy;
   return {
     factualAccuracy: clamp01(numberOrDefault(accuracy.factualAccuracy, 0.5)),
     featureAccuracy: clamp01(numberOrDefault(accuracy.featureAccuracy, 0.5)),
@@ -240,12 +331,13 @@ function normalizedEntityAccuracy(response: { probeResults: Array<{ normalizedJs
   };
 }
 
-function aggregateEntityMetrics(
-  accuracyRows: ReturnType<typeof normalizedEntityAccuracy>[],
+export function aggregateEntityMetrics(
+  accuracyRows: (AccuracyRow | null)[],
   entityType: SubjectEntityType,
   authority: number,
 ): EntityMetrics {
-  if (accuracyRows.length === 0) {
+  const rows = accuracyRows.filter((row): row is AccuracyRow => row !== null);
+  if (rows.length === 0) {
     return {
       ...emptyEntityMetrics(),
       authority,
@@ -253,10 +345,10 @@ function aggregateEntityMetrics(
     };
   }
 
-  const factualAccuracy = weightedAverage(accuracyRows, (row) => row.factualAccuracy);
-  const featureAccuracy = weightedAverage(accuracyRows, (row) => row.featureAccuracy);
-  const identityConfusionRisk = weightedAverage(accuracyRows, (row) => row.identityConfusionRisk);
-  const parameterErrorRate = weightedAverage(accuracyRows, (row) => row.parameterErrorRate);
+  const factualAccuracy = weightedAverage(rows, (row) => row.factualAccuracy);
+  const featureAccuracy = weightedAverage(rows, (row) => row.featureAccuracy);
+  const identityConfusionRisk = weightedAverage(rows, (row) => row.identityConfusionRisk);
+  const parameterErrorRate = weightedAverage(rows, (row) => row.parameterErrorRate);
   const partial = { factualAccuracy, featureAccuracy, identityConfusionRisk, parameterErrorRate, authority, accuracyScore: 0 };
   return {
     ...partial,
@@ -354,6 +446,20 @@ function bundleFromSnapshot(snapshot: {
     entityMetrics: parseEntityMetrics(metadata.entityMetrics, snapshot.descriptionAccuracy),
     modelBreakdown: parseModelBreakdown(metadata.modelBreakdown),
     confidence: isRecord(snapshot.confidenceMetadata) ? snapshot.confidenceMetadata : {},
+    reliability: parseReliability(metadata.reliability, snapshot.sampleCount),
+  };
+}
+
+function parseReliability(value: unknown, sampleCount: number): MetricReliability {
+  const record = isRecord(value) ? value : {};
+  const boolOr = (candidate: unknown, fallback: boolean) => (typeof candidate === "boolean" ? candidate : fallback);
+  return {
+    sampleCount,
+    minSamples: MIN_RELIABLE_SAMPLES,
+    sufficient: boolOr(record.sufficient, sampleCount >= MIN_RELIABLE_SAMPLES),
+    hasAccuracySignal: boolOr(record.hasAccuracySignal, false),
+    hasAuthoritySignal: boolOr(record.hasAuthoritySignal, false),
+    hasCoverageSignal: boolOr(record.hasCoverageSignal, false),
   };
 }
 
@@ -426,5 +532,16 @@ function emptyEntityMetrics(): EntityMetrics {
     identityConfusionRisk: 0,
     parameterErrorRate: 0,
     accuracyScore: 0,
+  };
+}
+
+function emptyReliability(): MetricReliability {
+  return {
+    sampleCount: 0,
+    minSamples: MIN_RELIABLE_SAMPLES,
+    sufficient: false,
+    hasAccuracySignal: false,
+    hasAuthoritySignal: false,
+    hasCoverageSignal: false,
   };
 }

@@ -143,7 +143,7 @@ export function buildReportAnalysis(input: {
 
   const lead = focus.primary;
   const verdict = profile.verdictLead[input.locale].replace("{subject}", input.subjectName);
-  const headline =
+  const baseHeadline =
     lead && lead.percent !== null
       ? zh
         ? `${lead.label}为 ${lead.percent}${lead.isDelta ? " 个点" : "%"}，是当前最该盯的指标。`
@@ -151,6 +151,15 @@ export function buildReportAnalysis(input: {
       : zh
         ? "证据尚不足以给出判定，先完成一次完整审计。"
         : "Not enough evidence for a verdict yet — run a full audit first.";
+  // Below the sample floor the numbers are directional; say so up front rather
+  // than letting a small-n read masquerade as a settled verdict.
+  const caveat =
+    focus.sampleCount > 0 && !focus.reliable
+      ? zh
+        ? `（基于 ${focus.sampleCount} 个采样，样本偏少，方向性参考）`
+        : ` (based on ${focus.sampleCount} samples — directional only)`
+      : "";
+  const headline = baseHeadline + caveat;
 
   return { headline, verdict, metrics };
 }

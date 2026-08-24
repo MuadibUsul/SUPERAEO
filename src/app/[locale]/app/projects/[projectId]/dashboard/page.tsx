@@ -21,7 +21,7 @@ import {
   type SpectrumHue,
 } from "@/server/dashboard/cognition-focus";
 import { getEntityProfile } from "@/server/entity/entity-profiles";
-import { getLatestCipMetricBundle } from "@/server/metrics/cip-metrics";
+import { getLatestCipMetricBundle, type CipMetricBundle } from "@/server/metrics/cip-metrics";
 import { buildPositionSummary } from "@/server/semantic-nebula/position-summary";
 import { getPrisma } from "@/server/db";
 import { asRecord } from "@/server/utils/coerce";
@@ -82,6 +82,7 @@ export default async function DashboardPage({ params }: PageProps) {
   const profile = getEntityProfile(subject?.entityType);
   const verdictLead = profile.verdictLead[locale].replace("{subject}", subjectName);
   const position = buildPositionSummary({ subjectName, entityType: subject?.entityType, nebulaSummary: asRecord(nebula?.summaryJson), locale });
+  const primaryCi = focus.primary ? formatConfidenceInterval(focus.primary.key, bundle) : null;
 
   const t = {
     positionEyebrow: zh ? "AI 目前怎么理解它" : "How AI currently understands it",
@@ -95,6 +96,10 @@ export default async function DashboardPage({ params }: PageProps) {
     otherSignals: zh ? "其他信号" : "Other signals",
     samples: zh ? "样本" : "samples",
     closeThis: zh ? "优先补上这一项" : "Close this first",
+    basedOn: zh ? "基于" : "Based on",
+    samplesWord: zh ? "个采样答案" : "sampled answers",
+    ciLabel: zh ? "95% 置信区间" : "95% CI",
+    directional: zh ? `样本不足 ${focus.minSamples},仅作方向性参考` : `Under ${focus.minSamples} samples — directional only`,
   };
 
   return (
@@ -164,7 +169,16 @@ export default async function DashboardPage({ params }: PageProps) {
 
       {/* Focus band — the single lead metric, the biggest gap, the top risk. */}
       <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        {focus.primary ? <PrimaryMetric metric={focus.primary} mattersLabel={t.matters} /> : null}
+        {focus.primary ? (
+          <PrimaryMetric
+            metric={focus.primary}
+            mattersLabel={t.matters}
+            sampleCount={focus.sampleCount}
+            reliable={focus.reliable}
+            ci={primaryCi}
+            labels={{ basedOn: t.basedOn, samplesWord: t.samplesWord, ciLabel: t.ciLabel, directional: t.directional }}
+          />
+        ) : null}
         <div className="grid gap-4">
           {focus.biggestGap ? (
             <GapCard metric={focus.biggestGap} title={t.biggestGap} hint={t.closeThis} />
@@ -301,7 +315,35 @@ function formatMetric(metric: FocusMetric): string {
   return metric.isDelta ? `${metric.percent > 0 ? "+" : ""}${metric.percent}` : String(metric.percent);
 }
 
-function PrimaryMetric({ metric, mattersLabel }: { metric: FocusMetric; mattersLabel: string }) {
+/** The Wilson interval for the primary metric, when it is one of the sampled proportions. */
+function formatConfidenceInterval(key: FocusMetric["key"], bundle: CipMetricBundle): string | null {
+  const entry =
+    key === "recognition"
+      ? bundle.confidence.mentionRate
+      : key === "citationRate"
+        ? bundle.confidence.citationRate
+        : key === "recommendationShare"
+          ? bundle.confidence.recommendationShare
+          : null;
+  if (!entry) return null;
+  return `${Math.round(entry.lowerBound * 100)}–${Math.round(entry.upperBound * 100)}%`;
+}
+
+function PrimaryMetric({
+  metric,
+  mattersLabel,
+  sampleCount,
+  reliable,
+  ci,
+  labels,
+}: {
+  metric: FocusMetric;
+  mattersLabel: string;
+  sampleCount: number;
+  reliable: boolean;
+  ci: string | null;
+  labels: { basedOn: string; samplesWord: string; ciLabel: string; directional: string };
+}) {
   const color = TONE_VAR[metric.tone];
   const width = metric.percent === null ? 0 : Math.max(0, Math.min(100, Math.abs(metric.percent)));
   return (
@@ -318,6 +360,24 @@ function PrimaryMetric({ metric, mattersLabel }: { metric: FocusMetric; mattersL
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
           <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${width}%`, background: color }} />
         </div>
+        {sampleCount > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-faint">
+            <span>
+              {labels.basedOn} <span className="font-mono tabular-nums text-dim">{sampleCount}</span> {labels.samplesWord}
+            </span>
+            {ci ? (
+              <span>
+                {labels.ciLabel} <span className="font-mono tabular-nums text-dim">{ci}</span>
+              </span>
+            ) : null}
+            {!reliable ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-warning">
+                <TriangleAlert className="h-3 w-3" />
+                {labels.directional}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

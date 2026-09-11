@@ -18,6 +18,7 @@
     "probe:load-sim": "tsx scripts/probe-run-load-sim.ts",
     "worker": "tsx scripts/worker.ts",
     "retention:cleanup": "tsx scripts/cleanup-retention.ts",
+    "object-storage:init": "tsx scripts/ensure-object-storage.ts",
     "trust:readiness": "tsx scripts/check-trust-readiness.ts",
     "trust:release-gate": "npm run trust:readiness && prisma validate && tsc --noEmit && npm test && eslint src prisma/seed-demo.ts scripts/cleanup-retention.ts scripts/check-trust-readiness.ts && next build"
   },

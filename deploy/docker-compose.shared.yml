@@ -39,6 +39,40 @@ services:
       retries: 10
     logging: *default-logging
 
+  object-storage:
+    image: rustfs/rustfs@sha256:97171b3d72cd47dc81000f92ea84de25608bfc35a94c965501afaeb5d99f6035
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY}
+    networks: [internal]
+    mem_limit: 256m
+    volumes:
+      - objectdata:/data
+    healthcheck:
+      test: ["CMD", "sh", "-ec", "curl -fsS http://127.0.0.1:9000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+
+  object-storage-init:
+    image: ${APP_IMAGE:-ghcr.io/muadibusul/superaeo:latest}
+    env_file: .env
+    networks: [internal]
+    command: ["npm", "run", "object-storage:init"]
+    depends_on:
+      object-storage:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 512m
+    logging: *default-logging
+
   migrate:
     image: ${APP_IMAGE:-ghcr.io/muadibusul/superaeo:latest}
     env_file: .env
@@ -62,6 +96,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     logging: *default-logging
 
@@ -76,6 +112,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     logging: *default-logging
 
@@ -89,3 +127,4 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  objectdata:

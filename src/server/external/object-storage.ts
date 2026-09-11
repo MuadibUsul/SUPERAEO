@@ -1,9 +1,10 @@
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, DeleteObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
 
 import { getPrisma } from "@/server/db";
 
 let s3Client: S3Client | null = null;
+let bucketReady: Promise<void> | null = null;
 
 export function isObjectStorageConfigured() {
   return Boolean(
@@ -42,6 +43,29 @@ export function getObjectStorageClient() {
   return s3Client;
 }
 
+export function ensureObjectStorageBucket() {
+  if (!isObjectStorageConfigured()) {
+    throw new Error("S3-compatible object storage is not configured.");
+  }
+  if (!bucketReady) {
+    bucketReady = (async () => {
+      const client = getObjectStorageClient();
+      const bucket = storageEnv().bucket!;
+      try {
+        await client.send(new HeadBucketCommand({ Bucket: bucket }));
+      } catch (error) {
+        const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+        if (status !== 404) throw error;
+        await client.send(new CreateBucketCommand({ Bucket: bucket }));
+      }
+    })().catch((error) => {
+      bucketReady = null;
+      throw error;
+    });
+  }
+  return bucketReady;
+}
+
 export async function storeObjectArtifact(input: {
   projectId?: string;
   artifactType: "ai_response" | "crawl_snapshot" | "analysis_artifact" | "report_export";
@@ -55,6 +79,8 @@ export async function storeObjectArtifact(input: {
   if (!bucket || !isObjectStorageConfigured()) {
     return null;
   }
+
+  await ensureObjectStorageBucket();
 
   const checksum = createHash("sha256").update(input.body).digest("hex");
   await getObjectStorageClient().send(

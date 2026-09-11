@@ -209,6 +209,8 @@ Actions 构建镜像并用提交 SHA 标签推送到 GHCR。服务器只负责�
 `/home/deploy/aeo`，不会在共享 VPS 上编译应用。该服务器已有共享 Caddy，因此使用
 `deploy/docker-compose.shared.yml`，只把 `aeo-app` 接入外部 `web` 网络，不再次占用 80/443，
 也不会操作现有的 `tline` 或 `gubugu` Compose 项目。
+证据快照使用仅接入 `aeo_internal` 的私有 RustFS S3 服务及独立 `objectdata` 卷；
+不发布 S3 或管理控制台端口。镜像按 OCI digest 固定，升级必须显式更新配置。
 
 仓库 Actions Secrets：
 

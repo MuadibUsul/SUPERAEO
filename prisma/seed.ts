@@ -12,19 +12,21 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
-  const operatorPassword = await hashPassword("Operator@123456");
-  const customerPassword = await hashPassword("Customer@123456");
+  const operatorEmail = seedValue("SEED_OPERATOR_EMAIL", "operator@aeo.local");
+  const customerEmail = seedValue("SEED_CUSTOMER_EMAIL", "demo@observable-ai.local");
+  const operatorPassword = await hashPassword(seedValue("SEED_OPERATOR_PASSWORD", "Operator@123456"));
+  const customerPassword = await hashPassword(seedValue("SEED_CUSTOMER_PASSWORD", "Customer@123456"));
   const demoUnlimited = { projects: UNLIMITED, auditsPerMonth: UNLIMITED, experiments: UNLIMITED, seats: UNLIMITED };
 
   const operator = await prisma.user.upsert({
-    where: { email: "operator@aeo.local" },
+    where: { email: operatorEmail },
     update: {
       passwordHash: operatorPassword,
       role: "platform_owner",
       preferredLocale: "zh-CN",
     },
     create: {
-      email: "operator@aeo.local",
+      email: operatorEmail,
       name: "Platform Owner",
       passwordHash: operatorPassword,
       role: "platform_owner",
@@ -60,14 +62,14 @@ async function main() {
   });
 
   const customer = await prisma.user.upsert({
-    where: { email: "demo@observable-ai.local" },
+    where: { email: customerEmail },
     update: {
       passwordHash: customerPassword,
       role: "customer_owner",
       preferredLocale: "zh-CN",
     },
     create: {
-      email: "demo@observable-ai.local",
+      email: customerEmail,
       name: "Demo Customer",
       passwordHash: customerPassword,
       role: "customer_owner",
@@ -361,6 +363,15 @@ async function main() {
       create: policy,
     });
   }
+}
+
+function seedValue(name: string, developmentDefault: string) {
+  const value = process.env[name]?.trim();
+  if (value) return value;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`${name} must be supplied when seeding production.`);
+  }
+  return developmentDefault;
 }
 
 main()

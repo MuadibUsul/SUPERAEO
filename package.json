@@ -17,6 +17,7 @@
     "validate:local": "tsx scripts/validate-local.ts",
     "probe:load-sim": "tsx scripts/probe-run-load-sim.ts",
     "worker": "tsx scripts/worker.ts",
+    "worker:readiness": "tsx scripts/check-worker-readiness.ts",
     "retention:cleanup": "tsx scripts/cleanup-retention.ts",
     "object-storage:init": "tsx scripts/ensure-object-storage.ts",
     "trust:readiness": "tsx scripts/check-trust-readiness.ts",

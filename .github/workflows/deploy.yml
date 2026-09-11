@@ -105,5 +105,6 @@ jobs:
             docker compose -p aeo -f deploy/docker-compose.shared.yml pull
             docker compose -p aeo -f deploy/docker-compose.shared.yml up -d --wait --wait-timeout 120
             docker compose -p aeo -f deploy/docker-compose.shared.yml exec -T web npm run trust:readiness
+            docker compose -p aeo -f deploy/docker-compose.shared.yml exec -T web npm run worker:readiness
             docker compose -p aeo -f deploy/docker-compose.shared.yml ps
           REMOTE

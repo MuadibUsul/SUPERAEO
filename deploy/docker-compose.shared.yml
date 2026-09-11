@@ -106,6 +106,8 @@ services:
     env_file: .env
     networks: [internal]
     command: ["npm", "run", "worker"]
+    healthcheck:
+      disable: true
     mem_limit: 768m
     depends_on:
       migrate:

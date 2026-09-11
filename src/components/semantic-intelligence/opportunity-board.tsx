@@ -85,7 +85,7 @@ export function OpportunityBoard({
                     <button
                       key={opportunity.id}
                       type="button"
-                      className="block w-full rounded-lg border border-border bg-card p-3 text-left backdrop-blur transition-all hover:border-[oklch(0.82_0.13_205/35%)] hover:bg-accent"
+                      className="block w-full rounded-lg border border-border bg-card p-3 text-left backdrop-blur transition-[background-color,border-color,box-shadow] duration-150 hover:border-[oklch(0.82_0.13_205/35%)] hover:bg-accent"
                       onClick={() => setActive(opportunity)}
                     >
                       <div className="flex items-start justify-between gap-3">

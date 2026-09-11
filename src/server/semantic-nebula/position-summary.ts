@@ -61,7 +61,7 @@ export function buildPositionSummary(input: {
   if (clarity === "unlocated") {
     headline = zh
       ? `目前还没有足够数据说明 AI 怎么理解${entity}。`
-      : `There isn't enough data yet to show how AI understands ${entity}.`;
+      : `There is not enough sampled evidence yet to describe how the configured models respond about ${entity}.`;
   } else if (zh) {
     headline = `从这次采样看，AI 最常把${entity}和「${anchor}」联系在一起。`;
     explanation =

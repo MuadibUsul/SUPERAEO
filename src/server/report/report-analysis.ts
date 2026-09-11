@@ -35,7 +35,6 @@ export type ReportAnalysis = {
 
 type ExperimentSummary = { name?: string; significant?: boolean; netEffect?: number; pValue?: number };
 
-const HEALTHY = 0.66;
 const WEAK = 0.4;
 
 function pct(value: number): number {
@@ -123,12 +122,12 @@ export function buildReportAnalysis(input: {
     const causal =
       index === 0 && sig
         ? (zh
-            ? `已验证：${sig.name ?? "一项实验"}扣除模型漂移后净提升 ${Math.round((sig.netEffect ?? 0) * 100)} 个点（p=${(sig.pValue ?? 0).toFixed(2)}）——是干预而非漂移。`
-            : `Proven: ${sig.name ?? "an experiment"} lifted this ${Math.round((sig.netEffect ?? 0) * 100)}pts net of model drift (p=${(sig.pValue ?? 0).toFixed(2)}) — intervention, not drift.`)
+            ? `准实验估计：${sig.name ?? "一项实验"}的处理/对照净差异为 ${Math.round((sig.netEffect ?? 0) * 100)} 个点（p=${(sig.pValue ?? 0).toFixed(2)}）；仍依赖共同趋势等假设。`
+            : `Quasi-experimental estimate: ${sig.name ?? "an experiment"} produced a ${Math.round((sig.netEffect ?? 0) * 100)}pt treatment/control net difference (p=${(sig.pValue ?? 0).toFixed(2)}); assumptions still apply.`)
         : index === 0 && corr !== null && Math.abs(corr) >= 0.5
           ? (zh
-              ? `AI 可见度与${corrSource || "业务结果"}相关（r=${corr.toFixed(2)}）——它不是虚荣指标。`
-              : `AI visibility tracks ${corrSource || "the business outcome"} (r=${corr.toFixed(2)}) — not a vanity metric.`)
+              ? `观察性结果：AI 可见度与${corrSource || "业务结果"}相关（r=${corr.toFixed(2)}），不能据此判断因果。`
+              : `Observational result: AI visibility correlates with ${corrSource || "the business outcome"} (r=${corr.toFixed(2)}); this does not establish causation.`)
           : null;
 
     const impact =

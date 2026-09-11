@@ -4,7 +4,7 @@ import test from "node:test";
 import { buildQuestionTerritoryMap } from "@/server/opportunity/question-territory-builder";
 import type { LongTailOpportunity } from "@/server/opportunity/types";
 
-test("builds question territory winner and summary counts", () => {
+test("keeps generated territory questions unvalidated until they are sampled", () => {
   const opportunity: LongTailOpportunity = {
     id: "opp-1",
     opportunityTitle: "Small SaaS tools",
@@ -37,8 +37,13 @@ test("builds question territory winner and summary counts", () => {
     suggestedProbeQueries: [],
   };
 
-  const result = buildQuestionTerritoryMap({ opportunities: [opportunity], targetName: "CIP" });
+  const result = buildQuestionTerritoryMap({ opportunities: [opportunity] });
   assert.equal(result.summary.highOpportunity, 1);
-  assert.equal(result.territory[0].winnerType, "TARGET");
+  assert.equal(result.summary.awaitingValidation, 1);
+  assert.equal(result.territory[0].winnerType, "UNKNOWN");
+  assert.equal(result.territory[0].validationStatus, "UNVALIDATED");
+  assert.equal(result.territory[0].supportingSampleCount, 0);
+  assert.deepEqual(result.territory[0].evidence, []);
+  assert.equal(result.territory[0].entityFitScore, 88);
+  assert.deepEqual(result.territory[0].suggestedProbeQueries, []);
 });
-

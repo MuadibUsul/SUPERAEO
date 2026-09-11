@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  clusteredDifferenceInDifferences,
   differenceInDifferences,
   laggedCorrelation,
   normalCdf,
@@ -10,6 +11,15 @@ import {
   twoProportionZTest,
   twoSidedPValue,
 } from "./causal-statistics";
+
+test("clustered DID uses questions and is seed-reproducible", () => {
+  const outcomes = Array.from({ length: 24 }, (_, index) => ({ queryId: `q${index}`, arm: index < 12 ? "treatment" as const : "control" as const, preRate: 0.4, postRate: index < 12 ? 0.7 : 0.45 }));
+  const first = clusteredDifferenceInDifferences(outcomes, { seed: "fixed", iterations: 500 });
+  const second = clusteredDifferenceInDifferences(outcomes, { seed: "fixed", iterations: 500 });
+  assert.deepEqual(first, second);
+  assert.equal(first.analysisUnit, "question");
+  assert.ok(Math.abs(first.netLift - 0.25) < 1e-9);
+});
 
 test("pearson is 1 for a perfect positive line and -1 for a perfect negative line", () => {
   assert.equal(Math.round(pearson([1, 2, 3, 4], [2, 4, 6, 8]) * 1000) / 1000, 1);

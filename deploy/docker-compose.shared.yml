@@ -1,0 +1,91 @@
+# Production stack for the shared VPS. The host's existing Caddy container
+# owns ports 80/443 and reaches aeo-app through the external `web` network.
+name: aeo
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    networks: [internal]
+    mem_limit: 512m
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    networks: [internal]
+    mem_limit: 128m
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+
+  migrate:
+    image: ${APP_IMAGE:-ghcr.io/muadibusul/superaeo:latest}
+    env_file: .env
+    networks: [internal]
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 768m
+    logging: *default-logging
+
+  web:
+    image: ${APP_IMAGE:-ghcr.io/muadibusul/superaeo:latest}
+    container_name: aeo-app
+    env_file: .env
+    networks: [internal, web]
+    mem_limit: 1g
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+  worker:
+    image: ${APP_IMAGE:-ghcr.io/muadibusul/superaeo:latest}
+    env_file: .env
+    networks: [internal]
+    command: ["npm", "run", "worker"]
+    mem_limit: 768m
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+networks:
+  internal:
+    name: aeo_internal
+  web:
+    external: true
+    name: web
+
+volumes:
+  pgdata:
+  redisdata:

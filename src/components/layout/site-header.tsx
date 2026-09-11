@@ -25,26 +25,29 @@ export function SiteHeader({
     <header
       className={cn(
         "sticky top-0 z-30 border-b backdrop-blur-xl",
-        isCosmic ? "dark border-border bg-background/40 text-foreground" : "border-border bg-background/90",
+        isCosmic ? "dark border-white/8 bg-background/55 text-foreground" : "border-border bg-background/88",
       )}
     >
-      <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-10">
         <Link href={`/${locale}`} className="group flex items-center gap-2.5 font-semibold tracking-tight">
-          <CipMark size={26} className="text-foreground transition-transform group-hover:scale-105" />
-          <span>CIP</span>
+          <CipMark size={26} className="text-foreground transition-transform duration-150 ease-out group-active:scale-[0.97]" />
+          <span className="text-[15px] tracking-[-0.02em]">CIP</span>
         </Link>
 
-        <nav className="hidden items-center gap-5 text-sm text-muted-foreground md:flex">
-          <Link href={`/${locale}/product`} className="transition-colors hover:text-foreground">
+        <nav className="hidden items-center gap-1 rounded-xl border border-border/70 bg-card/45 p-1 text-sm text-muted-foreground backdrop-blur-md md:flex">
+          <Link href={`/${locale}/product`} className="rounded-lg px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground">
             {dictionary.nav.product}
           </Link>
-          <Link href={`/${locale}/use-cases`} className="transition-colors hover:text-foreground">
+          <Link href={`/${locale}/use-cases`} className="rounded-lg px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground">
             {dictionary.nav.useCases}
           </Link>
-          <Link href={`/${locale}/pricing`} className="transition-colors hover:text-foreground">
+          <Link href={`/${locale}/pricing`} className="rounded-lg px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground">
             {dictionary.nav.pricing}
           </Link>
-          <Link href={`/${alternateLocale}`} className="transition-colors hover:text-foreground">
+          <Link href={`/${locale}/methodology`} className="rounded-lg px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground">
+            {locale === "zh-CN" ? "方法论" : "Methodology"}
+          </Link>
+          <Link href={`/${alternateLocale}`} className="rounded-lg px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground">
             {alternateLocale === "zh-CN" ? "中文" : "English"}
           </Link>
         </nav>

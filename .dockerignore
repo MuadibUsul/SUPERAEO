@@ -1,0 +1,20 @@
+# Keep secrets and local artifacts out of the image. A .env leak into the
+# image layers would be exposed to anyone with registry access.
+.env
+.env.*
+!.env.production.example
+
+node_modules
+.next
+.git
+.gitignore
+*.log
+.local
+.artifacts
+tmp
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Dev machine noise
+.claude
+.codex-*

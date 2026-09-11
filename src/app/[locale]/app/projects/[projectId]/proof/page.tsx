@@ -67,14 +67,14 @@ export default async function ProofPage({ params }: PageProps) {
       description={copy.description}
       workflowState={project._count}
     >
-      <Card>
-        <CardHeader>
+      <Card className="data-panel">
+        <CardHeader className="border-b border-border pb-5">
           <CardTitle className="flex items-center gap-2 text-base">
             <FlaskConical className="h-4 w-4 text-primary" />
             {copy.causalTitle}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           <p className="max-w-3xl text-sm leading-6 text-dim">{copy.causalHint}</p>
           <ProofExperimentBuilder
             projectId={projectId}
@@ -92,8 +92,8 @@ export default async function ProofPage({ params }: PageProps) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className="bg-card/55">
+        <CardHeader className="border-b border-border pb-5">
           <CardTitle className="flex items-center gap-2 text-base">
             <TrendingUp className="h-4 w-4 text-success" />
             {copy.corrTitle}
@@ -121,7 +121,7 @@ function ExperimentCard({
 }) {
   const r = experiment.result;
   return (
-    <article className="panel-strong p-6">
+    <article className="data-panel p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-2xl">
           <h3 className="text-lg font-semibold text-foreground">{experiment.name}</h3>
@@ -136,7 +136,7 @@ function ExperimentCard({
                 : "shrink-0 gap-1.5 border-border bg-secondary text-faint"
             }
           >
-            {r.significant ? copy.significant : copy.notSignificant}
+            {experiment.evidenceGrade} · {r.significant ? copy.significant : copy.notSignificant}
           </Badge>
         ) : null}
       </div>
@@ -153,9 +153,9 @@ function ExperimentCard({
           <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr_auto]">
             <ArmTrack label={copy.treatment} pre={r.treatmentPreRate} post={r.treatmentPostRate} delta={r.treatmentDelta} samples={experiment.treatmentSamples} tone="0.82 0.13 205" copy={copy} highlight />
             <ArmTrack label={copy.control} pre={r.controlPreRate} post={r.controlPostRate} delta={r.controlDelta} samples={experiment.controlSamples} tone="0.74 0.03 255" copy={copy} />
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-success/25 bg-success/10 px-6 py-4 text-center">
+            <div className="flex flex-col items-center justify-center rounded-xl border border-success/25 bg-success/8 px-6 py-4 text-center">
               <span className="eyebrow text-faint">{copy.netLift}</span>
-              <span className="mt-1 font-mono text-3xl font-semibold text-success">
+              <span className="metric-number mt-1 text-3xl font-semibold text-success">
                 {r.netLift >= 0 ? "+" : ""}
                 {Math.round(r.netLift * 100)}
                 <span className="text-lg">pts</span>
@@ -163,6 +163,7 @@ function ExperimentCard({
               <span className="mt-1 text-xs text-faint">
                 {copy.pValue} {r.pValue < 0.001 ? "<0.001" : r.pValue.toFixed(3)}
               </span>
+              {experiment.confidenceLower !== null && experiment.confidenceUpper !== null ? <span className="mt-1 text-xs text-faint">95% CI {Math.round(experiment.confidenceLower * 100)} to {Math.round(experiment.confidenceUpper * 100)} pts</span> : null}
             </div>
           </div>
           <p className="mt-4 text-xs text-faint">
@@ -171,6 +172,7 @@ function ExperimentCard({
             {Math.round(r.treatmentDelta * 100)}pts → {copy.netLift} {r.netLift >= 0 ? "+" : ""}
             {Math.round(r.netLift * 100)}pts.
           </p>
+          {!experiment.protocolQualified ? <p className="mt-2 text-xs text-warning">{experiment.limitations[0] ?? "Directional result: the confirmatory protocol gates were not all met."}</p> : null}
         </>
       ) : null}
     </article>
@@ -239,7 +241,7 @@ function Bar({ pre, post, tone }: { pre: number; post: number; tone: string }) {
         <div className="h-full rounded-full bg-muted-foreground/40" style={{ width: `${Math.round(pre * 100)}%` }} />
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${Math.round(post * 100)}%`, background: `oklch(${tone})` }} />
+        <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${Math.round(post * 100)}%`, background: `oklch(${tone})` }} />
       </div>
     </div>
   );
@@ -252,7 +254,7 @@ function CorrelationPanel({ correlation, copy }: { correlation: OutcomeCorrelati
       <div className="grid grid-cols-3 gap-3 lg:grid-cols-1">
         <div className="panel-inset p-4">
           <div className="text-xs text-faint">{copy.sameDay}</div>
-          <div className="mt-1 font-mono text-2xl font-semibold text-success">{correlation.sameDayCorrelation.toFixed(2)}</div>
+          <div className="metric-number mt-1 text-2xl font-semibold text-success">{correlation.sameDayCorrelation.toFixed(2)}</div>
         </div>
         <div className="panel-inset p-4">
           <div className="text-xs text-faint">{copy.bestLag}</div>

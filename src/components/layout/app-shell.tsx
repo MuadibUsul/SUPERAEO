@@ -74,11 +74,51 @@ export function AppShell({
           adminSubtitle: "Platform operations",
         };
 
+  if (mode === "app") {
+    return (
+      <div className="workspace-shell app-canvas min-h-screen">
+        <header className="sticky top-0 z-40 border-b border-border bg-card/92 backdrop-blur-xl">
+          <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-5">
+              <Link href={homeHref} className="group flex shrink-0 items-center gap-2.5">
+                <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-background shadow-sm">
+                  <CipMark size={23} className="text-foreground transition-transform duration-150 ease-out group-active:scale-[0.97]" />
+                </span>
+                <span className="hidden sm:block">
+                  <span className="block text-sm font-semibold leading-none">CIP</span>
+                  <span className="mt-1 block text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Cognition workspace</span>
+                </span>
+              </Link>
+              <span className="hidden h-5 w-px bg-border sm:block" />
+              <Link
+                href={homeHref}
+                className={cn(
+                  "inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98]",
+                  pathname.startsWith(`/${locale}/app/projects`) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <FolderOpen className="size-4" />
+                {dictionary.app.projects}
+              </Link>
+            </div>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="hidden max-w-52 truncate text-xs text-muted-foreground md:block">{session?.user.email}</span>
+              <LogoutButton locale={locale} label={dictionary.nav.logout} />
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          {children}
+        </main>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative min-h-screen bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-68 border-r border-sidebar-border bg-sidebar px-4 py-5 lg:block">
-        <Link href={homeHref} className="group flex items-center gap-3 px-2">
-          <CipMark size={30} className="text-foreground transition-transform group-hover:scale-105" />
+    <div className="workspace-shell app-canvas relative min-h-screen text-foreground">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-sidebar-border bg-sidebar/96 px-3 py-5 backdrop-blur-xl lg:block">
+        <Link href={homeHref} className="group flex items-center gap-3 px-2.5">
+          <CipMark size={28} className="text-foreground transition-transform duration-150 ease-out group-active:scale-[0.97]" />
           <div>
             <p className="text-sm font-semibold leading-none">
               {mode === "admin" ? shellCopy.adminTitle : shellCopy.appTitle}
@@ -88,7 +128,9 @@ export function AppShell({
             </p>
           </div>
         </Link>
-        <nav className="mt-8 space-y-1">
+        <div className="mx-2.5 mt-7 h-px bg-sidebar-border" />
+        <p className="eyebrow mx-2.5 mt-5 mb-2 text-[10px]">{mode === "admin" ? "Operations" : "Workspace"}</p>
+        <nav className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const href = `/${locale}${item.href}`;
@@ -100,13 +142,13 @@ export function AppShell({
                 key={href}
                 href={href}
                 className={cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+                  "group relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98]",
                   "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                   isActive && "bg-accent text-accent-foreground",
                 )}
               >
                 {isActive ? (
-                  <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-primary" aria-hidden />
+                  <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_12px_var(--primary)]" aria-hidden />
                 ) : null}
                 <Icon className={cn("h-4 w-4 transition-colors", isActive && "text-primary")} />
                 {label}
@@ -119,14 +161,15 @@ export function AppShell({
           <LogoutButton locale={locale} label={dictionary.nav.logout} />
         </div>
       </aside>
-      <div className="lg:pl-68">
-        <header className="sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-xl lg:hidden">
+      <div className="lg:pl-60">
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-background/88 px-4 py-3 backdrop-blur-xl lg:hidden">
           <Link href={homeHref} className="flex items-center gap-2 text-sm font-semibold">
             <CipMark size={20} className="text-foreground" />
             {mode === "admin" ? dictionary.nav.admin : dictionary.nav.app}
           </Link>
+          <span className="eyebrow text-[10px]">{mode === "admin" ? "Operator" : "Observatory"}</span>
         </header>
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-10">
+        <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-7 px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
           {children}
         </main>
       </div>

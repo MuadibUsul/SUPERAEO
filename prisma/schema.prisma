@@ -340,6 +340,57 @@ enum ExtractedSignalType {
   opportunity
 }
 
+enum EvidenceClaimType {
+  OBSERVATION
+  INFERENCE
+  EXTERNAL_FACT
+  EXPERIMENT
+}
+
+enum EvidenceSupportStatus {
+  SUPPORTED
+  MIXED
+  UNSUPPORTED
+  INSUFFICIENT
+  LEGACY_INCOMPLETE
+}
+
+enum EvidenceGrade {
+  INSUFFICIENT
+  DIRECTIONAL
+  CORROBORATED
+  CONFIRMATORY
+}
+
+enum EvidenceLinkRelation {
+  SUPPORTS
+  OPPOSES
+  UNCERTAIN
+  EXCLUDED
+}
+
+enum SourceVerificationStatus {
+  PENDING
+  VERIFIED_REACHABLE
+  SNAPSHOT_CREATED
+  UNREACHABLE
+  BLOCKED_BY_ROBOTS
+  LOGIN_REQUIRED
+  UNSAFE_URL
+  FETCH_FAILED
+  CONTENT_CHANGED
+}
+
+enum EvidenceSourceClass {
+  SUBJECT_OFFICIAL
+  GOVERNMENT_STANDARD
+  ACADEMIC
+  PROFESSIONAL_MEDIA
+  COMMERCIAL
+  COMMUNITY
+  UNKNOWN
+}
+
 model User {
   id                 String               @id @default(cuid())
   email              String               @unique
@@ -380,6 +431,7 @@ model Organization {
   type              OrganizationType     @default(customer)
   plan              OrganizationPlan     @default(free)
   planRenewsAt      DateTime?            @map("plan_renews_at")
+  quotaOverrides    Json?                @map("quota_overrides")
   defaultLocale     String               @default("zh-CN") @map("default_locale")
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
@@ -418,6 +470,7 @@ model Project {
   language                     String                        @default("en")
   createdAt                    DateTime                      @default(now()) @map("created_at")
   updatedAt                    DateTime                      @updatedAt @map("updated_at")
+  deletedAt                    DateTime?                     @map("deleted_at")
   user                         User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization                 Organization?                 @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   competitors                  Competitor[]
@@ -453,9 +506,14 @@ model Project {
   externalMetricSources        ExternalMetricSource[]
   externalMetricPoints         ExternalMetricPoint[]
   cognitionExperiments         CognitionExperiment[]
+  evidenceClaims               EvidenceClaim[]
+  sourceSnapshots              SourceSnapshot[]
+  evidenceManifests            EvidenceManifest[]
+  reportShares                 ReportShare[]
 
   @@index([userId])
   @@index([organizationId])
+  @@index([deletedAt])
   @@map("projects")
 }
 
@@ -591,6 +649,7 @@ model SamplingRun {
   longTailOpportunitySnapshots LongTailOpportunitySnapshot[]
   questionTerritorySnapshots   QuestionTerritorySnapshot[]
   experimentWaves              ExperimentWave[]
+  evidenceClaims               EvidenceClaim[]
 
   @@index([projectId, runType, status])
   @@index([subjectId, runType, status])
@@ -599,31 +658,41 @@ model SamplingRun {
 }
 
 model AIResponse {
-  id               String           @id @default(cuid())
-  runId            String           @map("run_id")
-  queryId          String           @map("query_id")
-  providerId       String?          @map("provider_id")
-  modelId          String?          @map("model_id")
-  platform         Platform
-  model            String
-  sampleIndex      Int              @default(0) @map("sample_index")
-  region           String?
-  persona          String?
-  objectKey        String?          @map("object_key")
-  rawResponse      String           @map("raw_response") @db.Text
-  normalizedAnswer String?          @map("normalized_answer") @db.Text
-  citations        Json?
-  createdAt        DateTime         @default(now()) @map("created_at")
-  run              SamplingRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  query            AeoQuery         @relation(fields: [queryId], references: [id], onDelete: Cascade)
-  provider         AIProvider?      @relation(fields: [providerId], references: [id], onDelete: SetNull)
-  aiModel          AIModel?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
-  analysis         AnswerAnalysis?
-  probeResults     ProbeResult[]
-  mentions         EntityMention[]
-  citationSources  CitationSource[]
-  samples          QuerySample[]
-  alerts           Alert[]
+  id                 String                @id @default(cuid())
+  runId              String                @map("run_id")
+  queryId            String                @map("query_id")
+  providerId         String?               @map("provider_id")
+  modelId            String?               @map("model_id")
+  platform           Platform
+  model              String
+  sampleIndex        Int                   @default(0) @map("sample_index")
+  region             String?
+  persona            String?
+  objectKey          String?               @map("object_key")
+  rawResponse        String                @map("raw_response") @db.Text
+  normalizedAnswer   String?               @map("normalized_answer") @db.Text
+  citations          Json?
+  systemPrompt       String?               @map("system_prompt") @db.Text
+  userPrompt         String?               @map("user_prompt") @db.Text
+  requestParams      Json?                 @map("request_params")
+  providerRequestId  String?               @map("provider_request_id")
+  requestStartedAt   DateTime?             @map("request_started_at")
+  requestCompletedAt DateTime?             @map("request_completed_at")
+  responseHash       String?               @map("response_hash")
+  samplingConfig     Json?                 @map("sampling_config")
+  evidenceStatus     EvidenceSupportStatus @default(LEGACY_INCOMPLETE) @map("evidence_status")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  run                SamplingRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  query              AeoQuery              @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  provider           AIProvider?           @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  aiModel            AIModel?              @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  analysis           AnswerAnalysis?
+  probeResults       ProbeResult[]
+  mentions           EntityMention[]
+  citationSources    CitationSource[]
+  samples            QuerySample[]
+  alerts             Alert[]
+  evidenceLinks      EvidenceLink[]
 
   @@index([runId])
   @@index([queryId])
@@ -735,18 +804,21 @@ model ActionItem {
 }
 
 model Report {
-  id        String       @id @default(cuid())
-  projectId String       @map("project_id")
-  runId     String?      @map("run_id")
-  title     String
-  format    ReportFormat @default(html)
-  status    ReportStatus @default(draft)
-  snapshot  Json?
-  html      String?      @db.Text
-  fileUrl   String?      @map("file_url")
-  createdAt DateTime     @default(now()) @map("created_at")
-  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  run       SamplingRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  id               String            @id @default(cuid())
+  projectId        String            @map("project_id")
+  runId            String?           @map("run_id")
+  title            String
+  format           ReportFormat      @default(html)
+  status           ReportStatus      @default(draft)
+  snapshot         Json?
+  html             String?           @db.Text
+  fileUrl          String?           @map("file_url")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run              SamplingRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  evidenceClaims   EvidenceClaim[]
+  evidenceManifest EvidenceManifest?
+  shares           ReportShare[]
 
   @@index([projectId, runId])
   @@map("reports")
@@ -1298,19 +1370,21 @@ model EntityProfile {
 }
 
 model CitationSource {
-  id              String      @id @default(cuid())
-  projectId       String      @map("project_id")
-  responseId      String?     @map("response_id")
-  sourceUrl       String?     @map("source_url") @db.Text
-  sourceDomain    String?     @map("source_domain")
-  sourceTitle     String?     @map("source_title")
-  citationRank    Int?        @map("citation_rank")
-  citationContext String?     @map("citation_context") @db.Text
-  supportsBrand   Boolean     @default(false) @map("supports_brand")
-  confidence      Float       @default(0)
-  createdAt       DateTime    @default(now()) @map("created_at")
-  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  response        AIResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
+  id              String           @id @default(cuid())
+  projectId       String           @map("project_id")
+  responseId      String?          @map("response_id")
+  sourceUrl       String?          @map("source_url") @db.Text
+  sourceDomain    String?          @map("source_domain")
+  sourceTitle     String?          @map("source_title")
+  citationRank    Int?             @map("citation_rank")
+  citationContext String?          @map("citation_context") @db.Text
+  supportsBrand   Boolean          @default(false) @map("supports_brand")
+  confidence      Float            @default(0)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  response        AIResponse?      @relation(fields: [responseId], references: [id], onDelete: SetNull)
+  snapshots       SourceSnapshot[]
+  evidenceLinks   EvidenceLink[]
 
   @@index([projectId, sourceDomain])
   @@index([responseId])
@@ -1446,17 +1520,18 @@ model AnalysisJob {
 }
 
 model ObjectArtifact {
-  id           String             @id @default(cuid())
-  projectId    String?            @map("project_id")
-  artifactType ObjectArtifactType @map("artifact_type")
-  bucket       String?
-  objectKey    String             @map("object_key")
-  contentType  String?            @map("content_type")
-  byteSize     Int?               @map("byte_size")
-  checksum     String?
-  metadata     Json?
-  createdAt    DateTime           @default(now()) @map("created_at")
-  project      Project?           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id              String             @id @default(cuid())
+  projectId       String?            @map("project_id")
+  artifactType    ObjectArtifactType @map("artifact_type")
+  bucket          String?
+  objectKey       String             @map("object_key")
+  contentType     String?            @map("content_type")
+  byteSize        Int?               @map("byte_size")
+  checksum        String?
+  metadata        Json?
+  createdAt       DateTime           @default(now()) @map("created_at")
+  project         Project?           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceSnapshots SourceSnapshot[]
 
   @@index([projectId, artifactType])
   @@map("object_artifacts")
@@ -1572,20 +1647,23 @@ model ExternalMetricPoint {
 /// arm (content interventions applied) and a control arm (left untouched), so
 /// model drift can be netted out via difference-in-differences.
 model CognitionExperiment {
-  id          String               @id @default(cuid())
-  projectId   String               @map("project_id")
-  subjectId   String?              @map("subject_id")
-  name        String
-  hypothesis  String?              @db.Text
-  metricKey   String               @default("mention_rate") @map("metric_key")
-  status      ExperimentStatus     @default(draft)
-  createdAt   DateTime             @default(now()) @map("created_at")
-  updatedAt   DateTime             @updatedAt @map("updated_at")
-  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  subject     ProjectSubject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  assignments ExperimentQuestion[]
-  waves       ExperimentWave[]
-  results     ExperimentResult[]
+  id             String               @id @default(cuid())
+  projectId      String               @map("project_id")
+  subjectId      String?              @map("subject_id")
+  name           String
+  hypothesis     String?              @db.Text
+  metricKey      String               @default("mention_rate") @map("metric_key")
+  status         ExperimentStatus     @default(draft)
+  assignmentSeed String               @map("assignment_seed")
+  preregistered  Boolean              @default(false)
+  protocol       Json
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  project        Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject        ProjectSubject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  assignments    ExperimentQuestion[]
+  waves          ExperimentWave[]
+  results        ExperimentResult[]
 
   @@index([projectId, status])
   @@map("cognition_experiments")
@@ -1652,10 +1730,130 @@ model ExperimentResult {
   zScore            Float               @map("z_score")
   pValue            Float               @map("p_value")
   significant       Boolean
+  confidenceLower   Float?              @map("confidence_lower")
+  confidenceUpper   Float?              @map("confidence_upper")
+  evidenceGrade     EvidenceGrade       @default(DIRECTIONAL) @map("evidence_grade")
   metadata          Json?
   computedAt        DateTime            @default(now()) @map("computed_at")
   experiment        CognitionExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  evidenceLinks     EvidenceLink[]
 
   @@index([experimentId, computedAt])
   @@map("experiment_results")
+}
+
+model EvidenceClaim {
+  id              String                @id @default(cuid())
+  projectId       String                @map("project_id")
+  reportId        String?               @map("report_id")
+  runId           String?               @map("run_id")
+  claimType       EvidenceClaimType     @map("claim_type")
+  supportStatus   EvidenceSupportStatus @default(INSUFFICIENT) @map("support_status")
+  evidenceGrade   EvidenceGrade         @default(INSUFFICIENT) @map("evidence_grade")
+  statement       String                @db.Text
+  machineAssessed Boolean               @default(true) @map("machine_assessed")
+  methodVersion   String                @map("method_version")
+  supportingCount Int                   @default(0) @map("supporting_count")
+  opposingCount   Int                   @default(0) @map("opposing_count")
+  uncertainCount  Int                   @default(0) @map("uncertain_count")
+  excludedCount   Int                   @default(0) @map("excluded_count")
+  metadata        Json?
+  createdAt       DateTime              @default(now()) @map("created_at")
+  project         Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  report          Report?               @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  run             SamplingRun?          @relation(fields: [runId], references: [id], onDelete: SetNull)
+  links           EvidenceLink[]
+
+  @@index([projectId, claimType, evidenceGrade, createdAt])
+  @@index([reportId])
+  @@index([runId])
+  @@map("evidence_claims")
+}
+
+model EvidenceLink {
+  id                 String               @id @default(cuid())
+  claimId            String               @map("claim_id")
+  responseId         String?              @map("response_id")
+  citationSourceId   String?              @map("citation_source_id")
+  sourceSnapshotId   String?              @map("source_snapshot_id")
+  experimentResultId String?              @map("experiment_result_id")
+  relation           EvidenceLinkRelation
+  excerpt            String?              @db.Text
+  createdAt          DateTime             @default(now()) @map("created_at")
+  claim              EvidenceClaim        @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  response           AIResponse?          @relation(fields: [responseId], references: [id], onDelete: SetNull)
+  citationSource     CitationSource?      @relation(fields: [citationSourceId], references: [id], onDelete: SetNull)
+  sourceSnapshot     SourceSnapshot?      @relation(fields: [sourceSnapshotId], references: [id], onDelete: SetNull)
+  experimentResult   ExperimentResult?    @relation(fields: [experimentResultId], references: [id], onDelete: SetNull)
+
+  @@index([claimId, relation])
+  @@index([responseId])
+  @@index([sourceSnapshotId])
+  @@map("evidence_links")
+}
+
+model SourceSnapshot {
+  id                  String                   @id @default(cuid())
+  projectId           String                   @map("project_id")
+  citationSourceId    String?                  @map("citation_source_id")
+  objectArtifactId    String?                  @map("object_artifact_id")
+  normalizedUrl       String                   @map("normalized_url") @db.Text
+  fetchedAt           DateTime?                @map("fetched_at")
+  httpStatus          Int?                     @map("http_status")
+  title               String?
+  excerpt             String?                  @db.Text
+  contentHash         String?                  @map("content_hash")
+  verificationStatus  SourceVerificationStatus @default(PENDING) @map("verification_status")
+  sourceClass         EvidenceSourceClass      @default(UNKNOWN) @map("source_class")
+  classOverriddenBy   String?                  @map("class_overridden_by")
+  classOverrideReason String?                  @map("class_override_reason") @db.Text
+  classOverriddenAt   DateTime?                @map("class_overridden_at")
+  metadata            Json?
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  project             Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  citationSource      CitationSource?          @relation(fields: [citationSourceId], references: [id], onDelete: SetNull)
+  objectArtifact      ObjectArtifact?          @relation(fields: [objectArtifactId], references: [id], onDelete: SetNull)
+  evidenceLinks       EvidenceLink[]
+
+  @@index([projectId, verificationStatus, sourceClass])
+  @@index([citationSourceId, createdAt])
+  @@map("source_snapshots")
+}
+
+model EvidenceManifest {
+  id            String        @id @default(cuid())
+  projectId     String        @map("project_id")
+  reportId      String        @unique @map("report_id")
+  canonicalJson Json          @map("canonical_json")
+  contentHash   String        @map("content_hash")
+  signature     String
+  keyId         String        @map("key_id")
+  methodVersion String        @map("method_version")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  report        Report        @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  shares        ReportShare[]
+
+  @@index([projectId, createdAt])
+  @@map("evidence_manifests")
+}
+
+model ReportShare {
+  id             String           @id @default(cuid())
+  projectId      String           @map("project_id")
+  reportId       String           @map("report_id")
+  manifestId     String           @map("manifest_id")
+  tokenHash      String           @unique @map("token_hash")
+  expiresAt      DateTime         @map("expires_at")
+  revokedAt      DateTime?        @map("revoked_at")
+  accessCount    Int              @default(0) @map("access_count")
+  lastAccessedAt DateTime?        @map("last_accessed_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  report         Report           @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  manifest       EvidenceManifest @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, reportId, createdAt])
+  @@index([expiresAt, revokedAt])
+  @@map("report_shares")
 }

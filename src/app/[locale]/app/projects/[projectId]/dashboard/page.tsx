@@ -85,7 +85,7 @@ export default async function DashboardPage({ params }: PageProps) {
   const primaryCi = focus.primary ? formatConfidenceInterval(focus.primary.key, bundle) : null;
 
   const t = {
-    positionEyebrow: zh ? "AI 目前怎么理解它" : "How AI currently understands it",
+    positionEyebrow: zh ? "本次抽样中模型如何描述它" : "How sampled models describe it",
     anchoredAt: zh ? "AI 最常关联" : "Most associated with",
     nearestRival: zh ? "竞争内容中常见" : "Common in competitive answers",
     dangerNear: zh ? "可能造成混淆" : "May cause confusion",
@@ -358,7 +358,7 @@ function PrimaryMetric({
           {metric.percent !== null && !metric.isDelta ? <span className="text-lg text-faint">%</span> : null}
         </div>
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${width}%`, background: color }} />
+          <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${width}%`, background: color }} />
         </div>
         {sampleCount > 0 ? (
           <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-faint">
@@ -412,7 +412,7 @@ function ModelRow({ model, samplesLabel }: { model: ModelDatum; samplesLabel: st
       </span>
       <span className="h-2 overflow-hidden rounded-full bg-muted" title={`${model.samples} ${samplesLabel}`}>
         <span
-          className="block h-full rounded-full transition-[width] duration-700"
+          className="block h-full rounded-full transition-[width] duration-300"
           style={{ width: `${model.visibility}%`, background: color, boxShadow: `0 0 10px ${color}` }}
         />
       </span>

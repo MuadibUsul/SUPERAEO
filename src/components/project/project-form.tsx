@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, Globe2, Loader2, PackageCheck, UserRound } from "lucide-react";
+import { ArrowRight, Building2, Check, Globe2, Loader2, PackageCheck, UserRound } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -125,27 +125,46 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
   }
 
   return (
-    <div className="panel p-4 md:p-6">
-      <div className="grid gap-2 sm:grid-cols-3">
+    <div className="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
+      <aside className="rounded-xl border border-border bg-card p-3 shadow-sm lg:sticky lg:top-24">
+        <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+          {safeLocale === "zh-CN" ? "创建流程" : "Setup flow"}
+        </p>
+        <div className="mt-2 space-y-1">
         {copy.steps.map((label, index) => (
-          <div
+          <button
             key={label}
+            type="button"
+            disabled={index > step}
+            onClick={() => index < step && setStep(index)}
             className={cn(
-              "rounded-md border px-3 py-2 text-sm",
+              "flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98] disabled:cursor-default",
               index === step
-                ? "border-primary/40 bg-primary/10 text-primary"
+                ? "bg-primary text-primary-foreground shadow-sm"
                 : index < step
-                  ? "border-success/30 bg-success/10 text-success"
-                  : "border-border bg-muted text-faint",
+                  ? "text-foreground hover:bg-accent"
+                  : "text-faint",
             )}
           >
-            <span className="font-mono text-xs">{String(index + 1).padStart(2, "0")}</span>
-            <span className="ml-2">{label}</span>
-          </div>
+            <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[10px]", index === step ? "border-white/30 bg-white/12" : index < step ? "border-success/30 bg-success/10 text-success" : "border-border")}>
+              {index < step ? <Check className="size-3" /> : index + 1}
+            </span>
+            <span className="font-medium">{label}</span>
+          </button>
         ))}
-      </div>
+        </div>
+        <p className="mt-4 border-t border-border px-3 pt-4 text-xs leading-5 text-muted-foreground">
+          {safeLocale === "zh-CN" ? "只需提供最少信息，系统会自动生成问题地图并开始采样。" : "Provide the minimum context. CIP builds the question map and starts sampling."}
+        </p>
+      </aside>
 
-      <div className="mt-6">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border bg-muted/35 px-5 py-3 text-xs text-muted-foreground sm:px-7">
+          <span className="font-mono text-primary">{String(step + 1).padStart(2, "0")}</span>
+          <span className="mx-2 text-border-strong">/</span>
+          {String(copy.steps.length).padStart(2, "0")} · {copy.steps[step]}
+        </div>
+        <div className="min-h-[450px] p-5 sm:p-7">
         {step === 0 ? (
           <section>
             <h2 className="text-lg font-semibold">{copy.entityType}</h2>
@@ -159,7 +178,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
                     key={item.key}
                     type="button"
                     className={cn(
-                      "rounded-lg border p-4 text-left transition",
+                      "rounded-xl border p-4 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.985]",
                       active
                         ? "border-primary/40 bg-primary/10 shadow-sm"
                         : "border-border bg-card hover:border-border-strong hover:bg-muted",
@@ -286,11 +305,11 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
             </div>
           </section>
         ) : null}
-      </div>
+        </div>
 
-      {formError ? <p className="mt-4 text-sm text-danger">{formError}</p> : null}
+        {formError ? <p className="mx-5 mb-4 text-sm text-danger sm:mx-7">{formError}</p> : null}
 
-      <div className="mt-6 flex justify-between gap-3">
+        <div className="flex justify-between gap-3 border-t border-border bg-muted/25 px-5 py-4 sm:px-7">
         <Button
           type="button"
           variant="outline"
@@ -310,6 +329,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
             {isSubmitting ? copy.creating : copy.startDiagnosis}
           </Button>
         )}
+        </div>
       </div>
     </div>
   );

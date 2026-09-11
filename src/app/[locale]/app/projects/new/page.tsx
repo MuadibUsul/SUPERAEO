@@ -13,10 +13,10 @@ export default async function NewProjectPage({ params }: PageProps) {
   const copy = dictionary.projectWizard;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
-      <div>
+    <div className="mx-auto w-full max-w-6xl space-y-7">
+      <div className="border-b border-border pb-6">
         <p className="eyebrow text-primary">{copy.eyebrow}</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-normal text-foreground">{copy.title}</h1>
+        <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] text-foreground">{copy.title}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{copy.subtitle}</p>
       </div>
       <ProjectForm locale={locale} />

@@ -74,7 +74,7 @@ const stageOrder: StageKey[] = [
 // lines that convey real motion without exposing raw internals.
 const stageThoughts: Record<StageKey, { "zh-CN": string[]; en: string[] }> = {
   DIAGNOSIS_UNDERSTANDING_ENTITY: {
-    "zh-CN": ["正在读取你的实体画像…", "判断 AI 应该如何理解你…", "锁定品类与目标人群…"],
+    "zh-CN": ["正在读取你的实体画像…", "确定本次抽样的实体边界…", "锁定品类与目标人群…"],
     en: ["Reading your entity profile…", "Working out how AI should frame you…", "Locking onto category and audience…"],
   },
   DIAGNOSIS_BUILDING_QUESTION_MAP: {
@@ -287,6 +287,29 @@ export function AuditStatusPanel({
             </Button>
           </div>
         </div>
+      </section>
+    );
+  }
+
+  if (variant === "compact" && !active && !isCompleted && !isFailed) {
+    return (
+      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+            <Play className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-foreground">{copy.title}</p>
+              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{statusLabel}</span>
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{copy.subtitle}</p>
+          </div>
+        </div>
+        <Button type="button" className="shrink-0" disabled={!canStart} onClick={startDiagnosis}>
+          {isStarting ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+          {copy.start}
+        </Button>
       </section>
     );
   }

@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { UNLIMITED } from "../src/server/billing/plans";
 import { hashPassword } from "../src/server/auth/password";
 
 const prisma = new PrismaClient({
@@ -13,6 +14,7 @@ const prisma = new PrismaClient({
 async function main() {
   const operatorPassword = await hashPassword("Operator@123456");
   const customerPassword = await hashPassword("Customer@123456");
+  const demoUnlimited = { projects: UNLIMITED, auditsPerMonth: UNLIMITED, experiments: UNLIMITED, seats: UNLIMITED };
 
   const operator = await prisma.user.upsert({
     where: { email: "operator@aeo.local" },
@@ -75,12 +77,13 @@ async function main() {
 
   const customerOrg = await prisma.organization.upsert({
     where: { slug: "demo-customer" },
-    update: { plan: "pro", planRenewsAt: new Date(Date.now() + 24 * 86400000) },
+    update: { plan: "pro", planRenewsAt: new Date(Date.now() + 24 * 86400000), quotaOverrides: demoUnlimited },
     create: {
       name: "Demo Customer",
       slug: "demo-customer",
       type: "customer",
       plan: "pro",
+      quotaOverrides: demoUnlimited,
       planRenewsAt: new Date(Date.now() + 24 * 86400000),
       defaultLocale: "zh-CN",
     },

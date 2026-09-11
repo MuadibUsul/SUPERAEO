@@ -21,6 +21,9 @@ export type MetricReliability = {
   hasAuthoritySignal: boolean;
   /** A semantic coverage snapshot exists (coverage is measured, not assumed 0). */
   hasCoverageSignal: boolean;
+  modelDisagreement?: boolean;
+  disagreementThreshold?: number;
+  missingComponents?: string[];
 };
 
 export type EntityMetrics = {
@@ -44,9 +47,16 @@ export type ModelBreakdown = {
   recommendationShare: number;
   citationRate: number;
   accuracyScore: number;
+  reliable?: boolean;
+  confidence?: {
+    mentionRate: { estimate: number; lowerBound: number; upperBound: number };
+    recommendationShare: { estimate: number; lowerBound: number; upperBound: number };
+    citationRate: { estimate: number; lowerBound: number; upperBound: number };
+  };
 };
 
 export type CipMetricBundle = {
+  methodVersion?: string;
   runId: string | null;
   sampleCount: number;
   metrics: {
@@ -108,6 +118,7 @@ export async function buildCipMetricBundle(projectId: string, subjectId?: string
 
   if (!latestRun) {
     return {
+      methodVersion: "2026-09-09.metrics.v1",
       runId: null,
       sampleCount: 0,
       metrics: emptyMetrics(),
@@ -149,6 +160,10 @@ export async function buildCipMetricBundle(projectId: string, subjectId?: string
   const hallucinationRiskScore = Math.min(1, hallucinationAlerts / Math.max(1, sampleCount));
   const entityMetrics = aggregateEntityMetrics(accuracyRows, entityType, entityProfile?.authorityScore ?? 0);
   const modelBreakdown = aggregateModelBreakdown(responses, entityType);
+  const disagreementThreshold = 0.25;
+  const modelRates = modelBreakdown.map((row) => row.mentionRate);
+  const modelDisagreement = modelRates.length > 1 && Math.max(...modelRates) - Math.min(...modelRates) > disagreementThreshold;
+  const missingComponents = [!hasAccuracySignal && "accuracy", !hasAuthoritySignal && "authority", !hasCoverageSignal && "semanticCoverage"].filter((item): item is string => Boolean(item));
 
   // Weighted average over only the components we actually measured. When every
   // component is present the present-weights sum to 1.0, so this is identical
@@ -169,6 +184,7 @@ export async function buildCipMetricBundle(projectId: string, subjectId?: string
   });
 
   return {
+    methodVersion: "2026-09-09.metrics.v1",
     runId: latestRun.id,
     sampleCount,
     metrics: {
@@ -197,6 +213,9 @@ export async function buildCipMetricBundle(projectId: string, subjectId?: string
       hasAccuracySignal,
       hasAuthoritySignal,
       hasCoverageSignal,
+      modelDisagreement,
+      disagreementThreshold,
+      missingComponents,
     },
   };
 }
@@ -265,6 +284,7 @@ export function metricSnapshotDataFromBundle(input: {
     confidenceMetadata: bundle.confidence as Prisma.InputJsonValue,
     metadata: {
       source: input.source,
+      methodVersion: bundle.methodVersion ?? "legacy.metrics",
       entityMetrics: bundle.entityMetrics,
       modelBreakdown: bundle.modelBreakdown,
       reliability: bundle.reliability ?? null,
@@ -380,6 +400,9 @@ function aggregateModelBreakdown(responses: ResponseWithNormalizedResult[], enti
 
   return [...groups.entries()].map(([modelKey, group]) => {
     const sampleCount = group.responses.length;
+    const mentionSuccesses = group.responses.filter(targetMentioned).length;
+    const recommendationSuccesses = group.responses.filter(targetRecommended).length;
+    const citationSuccesses = group.responses.filter(targetCited).length;
     const first = group.responses[0];
     const entityMetrics = aggregateEntityMetrics(
       group.responses.map((response) => normalizedEntityAccuracy(response)),
@@ -394,10 +417,16 @@ function aggregateModelBreakdown(responses: ResponseWithNormalizedResult[], enti
       model: first.model,
       platform: first.platform,
       sampleCount,
-      mentionRate: sampleCount ? group.responses.filter(targetMentioned).length / sampleCount : 0,
-      recommendationShare: sampleCount ? group.responses.filter(targetRecommended).length / sampleCount : 0,
-      citationRate: sampleCount ? group.responses.filter(targetCited).length / sampleCount : 0,
+      mentionRate: sampleCount ? mentionSuccesses / sampleCount : 0,
+      recommendationShare: sampleCount ? recommendationSuccesses / sampleCount : 0,
+      citationRate: sampleCount ? citationSuccesses / sampleCount : 0,
       accuracyScore: entityMetrics.accuracyScore,
+      reliable: sampleCount >= MIN_RELIABLE_SAMPLES,
+      confidence: {
+        mentionRate: wilsonInterval(mentionSuccesses, sampleCount),
+        recommendationShare: wilsonInterval(recommendationSuccesses, sampleCount),
+        citationRate: wilsonInterval(citationSuccesses, sampleCount),
+      },
     };
   }).sort((a, b) => b.sampleCount - a.sampleCount || a.modelKey.localeCompare(b.modelKey));
 }
@@ -429,6 +458,7 @@ function bundleFromSnapshot(snapshot: {
 }): CipMetricBundle {
   const metadata = isRecord(snapshot.metadata) ? snapshot.metadata : {};
   return {
+    methodVersion: typeof metadata.methodVersion === "string" ? metadata.methodVersion : "legacy.metrics",
     runId: snapshot.runId,
     sampleCount: snapshot.sampleCount,
     metrics: {
@@ -460,6 +490,9 @@ function parseReliability(value: unknown, sampleCount: number): MetricReliabilit
     hasAccuracySignal: boolOr(record.hasAccuracySignal, false),
     hasAuthoritySignal: boolOr(record.hasAuthoritySignal, false),
     hasCoverageSignal: boolOr(record.hasCoverageSignal, false),
+    modelDisagreement: boolOr(record.modelDisagreement, false),
+    disagreementThreshold: numberOrDefault(record.disagreementThreshold, 0.25),
+    missingComponents: Array.isArray(record.missingComponents) ? record.missingComponents.filter((item): item is string => typeof item === "string") : [],
   };
 }
 
@@ -493,6 +526,12 @@ function parseModelBreakdown(value: unknown): ModelBreakdown[] {
       recommendationShare: clamp01(numberOrDefault(row.recommendationShare, 0)),
       citationRate: clamp01(numberOrDefault(row.citationRate, 0)),
       accuracyScore: clamp01(numberOrDefault(row.accuracyScore, 0)),
+      reliable: typeof row.reliable === "boolean" ? row.reliable : numberOrDefault(row.sampleCount, 0) >= MIN_RELIABLE_SAMPLES,
+      confidence: isRecord(row.confidence) ? row.confidence as ModelBreakdown["confidence"] : {
+        mentionRate: wilsonInterval(0, 0),
+        recommendationShare: wilsonInterval(0, 0),
+        citationRate: wilsonInterval(0, 0),
+      },
     };
   });
 }
@@ -543,5 +582,8 @@ function emptyReliability(): MetricReliability {
     hasAccuracySignal: false,
     hasAuthoritySignal: false,
     hasCoverageSignal: false,
+    modelDisagreement: false,
+    disagreementThreshold: 0.25,
+    missingComponents: ["accuracy", "authority", "semanticCoverage"],
   };
 }

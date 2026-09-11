@@ -17,6 +17,7 @@ const project = {
   language: "zh-CN",
   createdAt: new Date(),
   updatedAt: new Date(),
+  deletedAt: null,
 };
 
 const subject = {

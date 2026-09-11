@@ -23,10 +23,10 @@ export default async function PricingPage({ params }: PageProps) {
   const zh = locale === "zh-CN";
 
   const recommended: OrganizationPlan = "pro";
-  const heroTitle = zh ? "为「证明 AI 认知改善」而设计的定价" : "Pricing built to prove AI cognition improves";
+  const heroTitle = zh ? "为可复测的 AI 回答变化而设计" : "Pricing for repeatable AI-answer measurement";
   const heroSubtitle = zh
-    ? "从一次免费审计开始。当你需要持续监测、并用处理/对照实验证明是你的内容起了作用时，再升级。"
-    : "Start with a free audit. Upgrade when you need continuous monitoring and treatment/control experiments that prove your content — not model drift — moved the needle.";
+    ? "从一次免费审计开始；需要持续监测和处理/对照净效果估计时再升级。"
+    : "Start with a free audit; upgrade for continuous monitoring and treatment/control net-effect estimates.";
   const planName: Record<OrganizationPlan, string> = { free: planCopy.free, pro: planCopy.pro, scale: planCopy.scale };
 
   return (
@@ -115,8 +115,8 @@ export default async function PricingPage({ params }: PageProps) {
               </h3>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-dim">
                 {zh
-                  ? "Pro 及以上提供因果验证：把问题分成处理组与对照组，扣除模型漂移，证明是你的干预带来了净提升——并把 AI 可见度和真实业务结果挂钩。"
-                  : "Pro and up include the Proof layer: treatment/control experiments that remove model drift to show your intervention caused the lift — and tie AI visibility to real business outcomes."}
+                  ? "Pro 及以上提供准实验评估：使用处理组与对照组估计扣除共同变化后的净差异；仅在预注册、功效和配置一致性门槛通过时提供确认性结论。"
+                  : "Pro and up include quasi-experimental estimates. Confirmatory language is used only when preregistration, power, and configuration-consistency gates pass."}
               </p>
             </div>
           </div>

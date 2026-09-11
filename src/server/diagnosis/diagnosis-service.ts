@@ -11,6 +11,7 @@ import { analyzeSiteReadiness } from "@/server/website-audit/site-readiness-serv
 import { generateLongTailOpportunitySnapshot } from "@/server/opportunity/opportunity-service";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { buildReportSnapshot } from "@/server/report/report-snapshot";
+import { createReportEvidence } from "@/server/evidence/evidence-service";
 import { buildSemanticNebulaSnapshotsFromExploration } from "@/server/semantic-nebula/nebula-service";
 import { generateSemanticKeywordsForProject } from "@/server/workflow/keyword-service";
 import { getTraceContext } from "@/server/observability/trace-context";
@@ -167,7 +168,7 @@ async function createDiagnosisReport(input: {
   });
   const summary = summaryFromSnapshot(snapshot, input.subjectName);
 
-  return prisma.report.create({
+  const report = await prisma.report.create({
     data: {
       projectId: input.projectId,
       runId: input.runId,
@@ -178,6 +179,8 @@ async function createDiagnosisReport(input: {
       html: renderReportHtml(title, summary),
     },
   });
+  await createReportEvidence(report.id);
+  return report;
 }
 
 function summaryFromSnapshot(snapshot: Prisma.InputJsonValue, subjectName: string) {

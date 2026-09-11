@@ -34,6 +34,12 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run build
+      - name: Validate production container roles
+        run: |
+          cp .env.production.example deploy/.env
+          trap 'rm -f deploy/.env' EXIT
+          docker compose -p aeo-preflight -f deploy/docker-compose.shared.yml config --format json \
+            | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const c=JSON.parse(s);if(c.services.worker.healthcheck?.disable!==true)throw new Error('Worker inherited the web healthcheck');if(c.services.web.healthcheck?.disable===true)throw new Error('Web healthcheck is disabled');console.log('Container roles are valid.')})"
 
   deploy:
     needs: validate
@@ -105,5 +111,6 @@ jobs:
             docker compose -p aeo -f deploy/docker-compose.shared.yml pull
             docker compose -p aeo -f deploy/docker-compose.shared.yml up -d --wait --wait-timeout 120
             docker compose -p aeo -f deploy/docker-compose.shared.yml exec -T web npm run trust:readiness
+            docker compose -p aeo -f deploy/docker-compose.shared.yml exec -T web npm run worker:readiness
             docker compose -p aeo -f deploy/docker-compose.shared.yml ps
           REMOTE

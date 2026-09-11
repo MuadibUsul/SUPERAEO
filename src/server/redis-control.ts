@@ -19,6 +19,7 @@ const CONTROL_REDIS_OPTIONS = {
 } as const;
 
 let controlRedis: IORedis | null = null;
+let controlRedisConnect: Promise<void> | null = null;
 
 export function isControlRedisConfigured() {
   return Boolean(process.env.REDIS_URL);
@@ -36,7 +37,10 @@ export function getControlRedis() {
     });
     // A dead socket must not be cached, or every later caller inherits it.
     connection.on("end", () => {
-      if (controlRedis === connection) controlRedis = null;
+      if (controlRedis === connection) {
+        controlRedis = null;
+        controlRedisConnect = null;
+      }
     });
     controlRedis = connection;
   }
@@ -48,12 +52,17 @@ export function getControlRedis() {
 export async function connectedControlRedis() {
   const redis = getControlRedis();
   if (redis.status === "wait") {
+    controlRedisConnect ??= redis.connect().then(() => undefined);
+  }
+  if (controlRedisConnect) {
     try {
-      await redis.connect();
+      await controlRedisConnect;
     } catch (error) {
       redis.disconnect(false);
       if (controlRedis === redis) controlRedis = null;
       throw error;
+    } finally {
+      controlRedisConnect = null;
     }
   }
   return redis;
@@ -63,5 +72,6 @@ export async function closeControlRedis() {
   if (!controlRedis) return;
   const connection = controlRedis;
   controlRedis = null;
+  controlRedisConnect = null;
   await connection.quit().catch(() => connection.disconnect(false));
 }

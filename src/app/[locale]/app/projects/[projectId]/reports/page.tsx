@@ -51,7 +51,7 @@ function copyFor(locale: string) {
       ? "当前证据范围：单模型采样。启用多模型矩阵后会显示各模型差异。"
       : "Evidence scope: single-model sampling. Enable a model matrix to compare models here.",
     title: zh ? "认知报告" : "Cognition Report",
-    subtitle: zh ? "AI 当前如何理解你 —— 每个结论都可追溯到证据。" : "How AI understands you right now — every claim traces to evidence.",
+    subtitle: zh ? "指定模型在指定问题与时间下的抽样表现；每个结论都可追溯。" : "Sampled outputs from specified models, questions, and times; every claim is traceable.",
     generatedOn: zh ? "生成于" : "Generated",
     export: zh ? "导出 PDF" : "Export PDF",
     share: zh ? "复制分享链接" : "Copy share link",
@@ -79,9 +79,9 @@ function copyFor(locale: string) {
     whyNow: zh ? "为什么是现在" : "Why now",
     whoOwns: zh ? "谁占着" : "Who owns it",
     whatBuild: zh ? "该做什么" : "What to build",
-    proof: zh ? "证明：是你改好的，不是模型漂移" : "Proof: your impact, not model drift",
+    proof: zh ? "准实验效果评估" : "Quasi-experimental effect estimate",
     correlation: zh ? "与真实业务结果相关性" : "Correlation with real outcomes",
-    noProof: zh ? "运行一次受控实验后，这里会出现因果证明。" : "Run a controlled experiment to populate causal proof here.",
+    noProof: zh ? "运行符合要求的处理/对照实验后，这里会显示方向性或确认性结果。" : "Run a qualified treatment/control experiment to populate directional or confirmatory evidence.",
     appendix: zh ? "证据附录" : "Evidence appendix",
     appendixHint: zh ? "结论背后的原始 AI 回答样本。" : "Raw AI answer samples behind the findings.",
     nextActions: zh ? "建议的下一步" : "Recommended next actions",
@@ -229,29 +229,30 @@ export default async function ReportsPage({ params }: PageProps) {
       workflowState={project._count}
     >
       {!brief.hasEvidence ? <StatusCallout title={copy.title} message={briefCopy.pendingSummary} /> : null}
+      {latestReport && String(reportSnapshot.version ?? "").startsWith("2026-09-09") === false ? <StatusCallout title={locale === "zh-CN" ? "历史证据不完整" : "Legacy evidence is incomplete"} message={locale === "zh-CN" ? "该报告生成于结构化证据链上线前；缺失的调用参数和来源不会被推测回填。" : "This report predates structured provenance. Missing invocation settings and sources are not fabricated during backfill."} /> : null}
 
-      <article className="mx-auto w-full max-w-4xl space-y-5">
+      <article className="evidence-paper mx-auto w-full max-w-5xl space-y-0 overflow-hidden rounded-2xl border border-border shadow-[0_24px_80px_-32px_rgba(0,0,0,0.55)] print:max-w-none print:border-0 print:shadow-none">
         {/* Cover */}
-        <header className="panel-strong relative overflow-hidden p-7">
+        <header className="relative overflow-hidden border-b border-border px-7 py-9 sm:px-10">
           <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div>
               <Badge variant="outline" className="gap-1.5 border-primary/20 bg-primary/10 text-primary">
                 <Sparkles className="h-3 w-3" />
                 {subjectName}
               </Badge>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">{copy.title}</h2>
+              <h2 className="mt-5 text-4xl font-semibold tracking-[-0.05em] text-foreground sm:text-5xl">{copy.title}</h2>
               <p className="mt-1.5 text-sm text-faint">
                 {copy.generatedOn} {generatedAt} · {brief.summary.evidenceLevel}
               </p>
             </div>
-            <ReportActions exportLabel={copy.export} shareLabel={copy.share} copiedLabel={copy.copied} />
+            <ReportActions projectId={projectId} reportId={latestReport?.id} exportLabel={copy.export} shareLabel={copy.share} copiedLabel={copy.copied} />
           </div>
         </header>
 
         {/* 1. Verdict */}
         <Section index={1} title={copy.verdict}>
           <p className="mb-3 text-xs uppercase tracking-wide text-cyan">
-            {locale === "zh-CN" ? "AI 目前怎么理解它" : "How AI currently understands it"} · {verdictLens}
+            {locale === "zh-CN" ? "本次抽样中模型如何描述它" : "How sampled models describe it"} · {verdictLens}
           </p>
           <p className="text-xl font-medium leading-8 text-foreground md:text-2xl">{position.headline}</p>
           {position.explanation ? <p className="mt-2 text-sm leading-6 text-dim">{position.explanation}</p> : null}
@@ -293,7 +294,7 @@ export default async function ReportsPage({ params }: PageProps) {
         </Section>
 
         {/* 2. Scores */}
-        <Section index={2} title={copy.scores}>
+        {metricsBundle.reliability?.sufficient && !metricsBundle.reliability.modelDisagreement ? <Section index={2} title={copy.scores}>
           <p className="mb-4 text-sm text-faint">
             {copy.primarySignals}:{" "}
             <span className="text-dim">
@@ -311,7 +312,8 @@ export default async function ReportsPage({ params }: PageProps) {
             ))}
           </div>
           <ModelComparison rows={metricsBundle.modelBreakdown} copy={copy} />
-        </Section>
+          <p className="mt-4 font-mono text-xs text-faint">n={metricsBundle.sampleCount} · {metricsBundle.methodVersion ?? "legacy.metrics"} · missing: {metricsBundle.reliability.missingComponents?.join(", ") || "none"}</p>
+        </Section> : <StatusCallout title={locale === "zh-CN" ? "证据不足，暂不显示综合评分" : "Insufficient evidence; composite scores are hidden"} message={metricsBundle.reliability?.modelDisagreement ? (locale === "zh-CN" ? "模型间结果差异超过阈值，请分别查看模型数据。" : "Results differ across models beyond the configured threshold; inspect each model separately.") : (locale === "zh-CN" ? `当前 ${metricsBundle.sampleCount} 条样本，至少需要 ${metricsBundle.reliability?.minSamples ?? 20} 条。` : `${metricsBundle.sampleCount} samples available; at least ${metricsBundle.reliability?.minSamples ?? 20} are required.`)} />}
 
         {/* 3. Cognition over time */}
         <Section index={3} title={copy.trend}>
@@ -480,10 +482,10 @@ export default async function ReportsPage({ params }: PageProps) {
 
 function Section({ index, title, action, children }: { index: number; title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="panel p-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-3 text-base font-semibold text-foreground">
-          <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 font-mono text-xs text-primary">{index}</span>
+    <section className="border-b border-border px-7 py-8 sm:px-10">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-3 text-lg font-semibold text-foreground">
+          <span className="font-mono text-xs text-primary">{String(index).padStart(2, "0")}</span>
           {title}
         </h3>
         {action}
@@ -635,6 +637,7 @@ function ModelComparison({ rows, copy }: { rows: ModelBreakdown[]; copy: ReturnT
               <MiniMetric label="Cite" value={row.citationRate} />
               <MiniMetric label="Acc" value={row.accuracyScore} />
             </div>
+            {!row.reliable ? <p className="mt-2 text-[11px] text-warning">n&lt;20 · {copy.singleModelScope}</p> : null}
           </div>
         ))}
       </div>

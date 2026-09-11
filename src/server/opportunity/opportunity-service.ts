@@ -14,7 +14,7 @@ import {
 } from "@/server/ai/prompts/opportunity/question-cluster-generator";
 import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
-import { buildQuestionTerritoryMap } from "@/server/opportunity/question-territory-builder";
+import { buildQuestionTerritoryMap, questionTerritoryVersion } from "@/server/opportunity/question-territory-builder";
 import { buildContentAssets, scoreLongTailOpportunity } from "@/server/opportunity/opportunity-scorer";
 import {
   type LongTailOpportunity,
@@ -195,13 +195,13 @@ export async function generateLongTailOpportunitySnapshot(input: {
     },
   });
 
-  const territory = buildQuestionTerritoryMap({ opportunities, targetName: subject.displayName });
+  const territory = buildQuestionTerritoryMap({ opportunities });
   const territorySnapshot = await prisma.questionTerritorySnapshot.create({
     data: {
       projectId: input.projectId,
       subjectId: subject.id,
       runId: responses[0]?.runId,
-      version: opportunityVersion,
+      version: questionTerritoryVersion,
       territoryJson: territory.territory as Prisma.InputJsonValue,
       summaryJson: territory.summary as Prisma.InputJsonValue,
     },
@@ -234,13 +234,13 @@ export async function buildQuestionTerritorySnapshot(input: {
   if (!subject) throw new Error("Project subject not found.");
   const latest = await getLatestOpportunitySnapshot(input.projectId, subject.id);
   const opportunities = latest && Array.isArray(latest.opportunityJson) ? (latest.opportunityJson as LongTailOpportunity[]) : [];
-  const territory = buildQuestionTerritoryMap({ opportunities, targetName: subject.displayName });
+  const territory = buildQuestionTerritoryMap({ opportunities });
   const snapshot = await prisma.questionTerritorySnapshot.create({
     data: {
       projectId: input.projectId,
       subjectId: subject.id,
       runId: latest?.runId,
-      version: opportunityVersion,
+      version: questionTerritoryVersion,
       territoryJson: territory.territory as Prisma.InputJsonValue,
       summaryJson: {
         ...territory.summary,

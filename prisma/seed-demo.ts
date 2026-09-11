@@ -590,6 +590,9 @@ async function main() {
         "Publishing a transparent methodology page and a sample evidence export will increase how often AI recommends us for transparency questions — beyond background model drift.",
       metricKey: "mention_rate",
       status: "concluded",
+      assignmentSeed: "demo-seed-v1",
+      preregistered: true,
+      protocol: { version: "demo.v1", confirmatory: false, analysisUnit: "question" },
     },
   });
   // Split the question set into treatment (intervention applied) and control.

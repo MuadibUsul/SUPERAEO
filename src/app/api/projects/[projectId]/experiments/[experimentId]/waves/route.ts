@@ -16,7 +16,7 @@ type Context = {
 const createWaveSchema = z.object({
   waveType: z.enum(["baseline", "retest"]),
   label: z.string().trim().max(120).optional(),
-  sampleCountPerQuery: z.coerce.number().int().min(1).max(5).default(1),
+  sampleCountPerQuery: z.coerce.number().int().min(1).max(5).default(3),
 });
 
 export const POST = withApiTrace<Context>({ subsystem: "proof", operation: "experiments.waves.create" }, async function POST(request: Request, { params }: Context) {

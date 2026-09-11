@@ -148,6 +148,77 @@ export type DifferenceInDifferences = {
   significant: boolean;
 };
 
+export type QuestionOutcome = {
+  queryId: string;
+  arm: "treatment" | "control";
+  preRate: number;
+  postRate: number;
+};
+
+export type ClusteredDifferenceInDifferences = DifferenceInDifferences & {
+  confidenceLower: number;
+  confidenceUpper: number;
+  iterations: number;
+  analysisUnit: "question";
+};
+
+/** Question-cluster bootstrap CI + seeded randomization test. Repeated model
+ * answers are averaged inside a question before questions enter inference. */
+export function clusteredDifferenceInDifferences(outcomes: QuestionOutcome[], options: { iterations?: number; seed?: string; alpha?: number } = {}): ClusteredDifferenceInDifferences {
+  const iterations = Math.max(200, options.iterations ?? 2000);
+  const alpha = options.alpha ?? 0.05;
+  const treatment = outcomes.filter((item) => item.arm === "treatment");
+  const control = outcomes.filter((item) => item.arm === "control");
+  const estimate = mean(treatment.map(delta)) - mean(control.map(delta));
+  const rng = seededRandom(options.seed ?? "cip-experiment-v1");
+  const bootstrap = Array.from({ length: iterations }, () => mean(resample(treatment, rng).map(delta)) - mean(resample(control, rng).map(delta))).sort((a, b) => a - b);
+  const pooled = outcomes.map(delta);
+  const treatmentSize = treatment.length;
+  let extreme = 0;
+  for (let i = 0; i < iterations; i += 1) {
+    const shuffled = shuffle([...pooled], rng);
+    const permuted = mean(shuffled.slice(0, treatmentSize)) - mean(shuffled.slice(treatmentSize));
+    if (Math.abs(permuted) >= Math.abs(estimate)) extreme += 1;
+  }
+  const pValue = (extreme + 1) / (iterations + 1);
+  const treatmentPreRate = mean(treatment.map((item) => item.preRate));
+  const treatmentPostRate = mean(treatment.map((item) => item.postRate));
+  const controlPreRate = mean(control.map((item) => item.preRate));
+  const controlPostRate = mean(control.map((item) => item.postRate));
+  return {
+    treatmentPreRate,
+    treatmentPostRate,
+    controlPreRate,
+    controlPostRate,
+    treatmentDelta: treatmentPostRate - treatmentPreRate,
+    controlDelta: controlPostRate - controlPreRate,
+    netLift: estimate,
+    z: 0,
+    pValue,
+    significant: pValue < alpha,
+    confidenceLower: quantile(bootstrap, alpha / 2),
+    confidenceUpper: quantile(bootstrap, 1 - alpha / 2),
+    iterations,
+    analysisUnit: "question",
+  };
+}
+
+export function requiredQuestionsPerArm(baselineRate: number, minimumDetectableEffect = 0.15, alpha = 0.05, power = 0.8) {
+  const p1 = clampRange(baselineRate, 0.01, 0.99);
+  const p2 = clampRange(p1 + minimumDetectableEffect, 0.01, 0.99);
+  const pooled = (p1 + p2) / 2;
+  const zAlpha = alpha === 0.05 ? 1.96 : 1.96;
+  const zPower = power === 0.8 ? 0.8416 : 0.8416;
+  const numerator = (zAlpha * Math.sqrt(2 * pooled * (1 - pooled)) + zPower * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2))) ** 2;
+  return Math.max(20, Math.ceil(numerator / ((p2 - p1) ** 2)));
+}
+
+function delta(item: QuestionOutcome) { return item.postRate - item.preRate; }
+function resample<T>(items: T[], rng: () => number) { return items.length ? Array.from({ length: items.length }, () => items[Math.floor(rng() * items.length)]) : []; }
+function shuffle<T>(items: T[], rng: () => number) { for (let i = items.length - 1; i > 0; i -= 1) { const j = Math.floor(rng() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; } return items; }
+function quantile(values: number[], q: number) { if (!values.length) return 0; return values[Math.min(values.length - 1, Math.max(0, Math.floor(q * (values.length - 1))))]; }
+function seededRandom(seed: string) { let state = 2166136261; for (const char of seed) state = Math.imul(state ^ char.charCodeAt(0), 16777619); return () => { state += 0x6d2b79f5; let t = state; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
 /**
  * Difference-in-differences for proportions.
  *

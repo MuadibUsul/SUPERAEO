@@ -16,6 +16,9 @@ const createExperimentSchema = z.object({
   hypothesis: z.string().trim().max(1000).optional(),
   metricKey: z.string().trim().min(1).max(80).optional(),
   queryIds: z.array(z.string().trim().min(1)).optional(),
+  sampleCountPerQuery: z.coerce.number().int().min(1).max(5).default(3),
+  preregistered: z.boolean().default(true),
+  confirmatory: z.boolean().default(false),
   assignments: z
     .array(
       z.object({
@@ -76,6 +79,9 @@ export const POST = withApiTrace<Context>({ subsystem: "proof", operation: "expe
       metricKey: parsed.data.metricKey,
       queryIds,
       assignments: parsed.data.assignments,
+      sampleCountPerQuery: parsed.data.sampleCountPerQuery,
+      preregistered: parsed.data.preregistered,
+      confirmatory: parsed.data.confirmatory,
     });
     return NextResponse.json({ experiment }, { status: 201 });
   } catch (error) {

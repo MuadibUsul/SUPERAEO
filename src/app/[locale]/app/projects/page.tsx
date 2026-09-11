@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { ArrowRight, Plus, Sparkles } from "lucide-react";
+import { ArrowRight, FolderKanban, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusCallout } from "@/components/ui/status-callout";
 import { normalizeLocale, type Locale } from "@/i18n/config";
@@ -64,14 +63,10 @@ export default async function ProjectsPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="panel-strong p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-5 border-b border-border pb-7 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <Badge variant="outline" className="gap-1.5 border-primary/20 bg-primary/10 text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              {copy.badge}
-            </Badge>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">{dictionary.app.projects}</h1>
+            <p className="eyebrow text-primary">{copy.badge}</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] text-foreground">{dictionary.app.projects}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-dim">{copy.description}</p>
           </div>
           <Button asChild size="lg">
@@ -80,7 +75,6 @@ export default async function ProjectsPage({ params }: PageProps) {
               {dictionary.app.newProject}
             </Link>
           </Button>
-        </div>
       </div>
 
       {usage ? <PlanUsageStrip usage={usage} renewDays={renewDays} locale={locale} copy={copy} /> : null}
@@ -103,39 +97,43 @@ export default async function ProjectsPage({ params }: PageProps) {
       ) : null}
 
       {projects.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="grid grid-cols-[1fr_auto] items-center border-b border-border bg-muted/45 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:grid-cols-[1fr_330px_36px]">
+            <span>{locale === "zh-CN" ? "审计对象" : "Audit subject"}</span>
+            <span className="hidden lg:block">{locale === "zh-CN" ? "当前数据" : "Current data"}</span>
+            <span />
+          </div>
+          <div className="divide-y divide-border">
           {projects.map((project) => (
-            <Card key={project.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>{project.name}</CardTitle>
-                    <p className="mt-1 font-mono text-xs text-faint">{project.domain}</p>
-                  </div>
-                  <Badge variant="outline">{project.subjects[0]?.entityType ?? "BRAND"}</Badge>
+            <Link
+              key={project.id}
+              href={`/${locale}/app/projects/${project.id}/dashboard`}
+              className="interactive-row group grid grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-5 hover:bg-accent/45 lg:grid-cols-[52px_1fr_330px_36px]"
+            >
+              <span className="flex size-12 items-center justify-center rounded-xl border border-border bg-background text-primary shadow-sm">
+                <FolderKanban className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="truncate text-base font-semibold text-foreground">{project.name}</h2>
+                  <Badge variant="outline" className="h-5 bg-background text-[10px]">{project.subjects[0]?.entityType ?? "BRAND"}</Badge>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{project.brandName}</p>
-                  <p className="mt-1 text-sm text-dim">{project.industry}</p>
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <ProjectCount label={copy.questionMap} value={project._count.queries} />
-                  <ProjectCount label={copy.evidenceBatches} value={project._count.runs} />
-                  <ProjectCount label={copy.comparisonSet} value={project._count.competitors} />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button asChild variant="outline" className="w-full">
-                  <Link href={`/${locale}/app/projects/${project.id}/dashboard`}>
-                    {copy.openBrief}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-              </CardFooter>
-            </Card>
+                <p className="mt-1 truncate text-sm text-muted-foreground">
+                  {project.brandName}{project.industry ? ` · ${project.industry}` : ""}
+                </p>
+                {project.domain ? <p className="mt-1 truncate font-mono text-[11px] text-faint">{project.domain}</p> : null}
+              </div>
+              <div className="hidden grid-cols-3 gap-5 lg:grid">
+                <ProjectCount label={copy.questionMap} value={project._count.queries} />
+                <ProjectCount label={copy.evidenceBatches} value={project._count.runs} />
+                <ProjectCount label={copy.comparisonSet} value={project._count.competitors} />
+              </div>
+              <span className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-[background-color,color,transform] duration-150 group-hover:translate-x-0.5 group-hover:bg-background group-hover:text-primary">
+                <ArrowRight className="size-4" />
+              </span>
+            </Link>
           ))}
+          </div>
         </div>
       ) : null}
     </div>
@@ -197,9 +195,9 @@ function PlanUsageStrip({
 
 function ProjectCount({ label, value }: { label: string; value: number }) {
   return (
-    <div className="panel-inset px-3 py-2">
-      <div className="font-mono text-lg font-semibold text-foreground">{value}</div>
-      <div className="text-xs text-faint">{label}</div>
+    <div>
+      <div className="metric-number text-lg font-semibold text-foreground">{value}</div>
+      <div className="mt-0.5 text-[11px] text-faint">{label}</div>
     </div>
   );
 }

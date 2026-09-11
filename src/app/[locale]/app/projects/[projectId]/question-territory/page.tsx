@@ -33,6 +33,28 @@ type TerritoryItem = {
   topCompetitors: string[];
   reasonOwnership?: string[];
   evidence?: { excerpt: string }[];
+  validationStatus?: "UNVALIDATED" | "INSUFFICIENT_EVIDENCE" | "VALIDATED";
+  supportingSampleCount?: number;
+  entityFitScore?: number;
+  competitorWeaknessScore?: number;
+  answerInclusionPotential?: number;
+  contentFeasibilityScore?: number;
+  conversionValueScore?: number;
+  recommendedContentAssets?: string[];
+  missingEvidence?: string[];
+  suggestedProbeQueries?: string[];
+};
+
+type OpportunityDetail = {
+  question: string;
+  entityFitScore?: number;
+  competitorWeaknessScore?: number;
+  answerInclusionPotential?: number;
+  contentFeasibilityScore?: number;
+  conversionValueScore?: number;
+  recommendedContentAssets?: string[];
+  missingEvidence?: string[];
+  suggestedProbeQueries?: string[];
 };
 
 export default async function QuestionTerritoryPage({ params }: PageProps) {
@@ -53,9 +75,15 @@ export default async function QuestionTerritoryPage({ params }: PageProps) {
   if (!state.data) notFound();
   const runsReady = state.data._count.runs > 0;
   const subject = state.data.subjects[0];
-  const [snapshot, latestJob] = await Promise.all([
+  const [snapshot, latestOpportunitySnapshot, latestJob] = await Promise.all([
     subject
       ? getPrisma().questionTerritorySnapshot.findFirst({
+          where: { projectId, subjectId: subject.id },
+          orderBy: { createdAt: "desc" },
+        })
+      : null,
+    subject
+      ? getPrisma().longTailOpportunitySnapshot.findFirst({
           where: { projectId, subjectId: subject.id },
           orderBy: { createdAt: "desc" },
         })
@@ -66,7 +94,16 @@ export default async function QuestionTerritoryPage({ params }: PageProps) {
     }),
   ]);
   const summary = asRecord(snapshot?.summaryJson);
-  const territory = Array.isArray(snapshot?.territoryJson) ? (snapshot.territoryJson as TerritoryItem[]) : [];
+  const opportunityDetails = Array.isArray(latestOpportunitySnapshot?.opportunityJson)
+    ? (latestOpportunitySnapshot.opportunityJson as OpportunityDetail[])
+    : [];
+  const opportunityByQuestion = new Map(opportunityDetails.map((item) => [item.question, item]));
+  const territory = (Array.isArray(snapshot?.territoryJson) ? (snapshot.territoryJson as TerritoryItem[]) : []).map((item) => ({
+    ...opportunityByQuestion.get(item.question),
+    ...item,
+  }));
+  const validatedTerritory = territory.filter((item) => item.validationStatus === "VALIDATED");
+  const awaitingValidation = territory.length - validatedTerritory.length;
 
   return (
     <ProjectPageShell
@@ -85,11 +122,11 @@ export default async function QuestionTerritoryPage({ params }: PageProps) {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-5">
-        <MetricTile label={dictionary.semanticIntelligence.territory.targetOwned} value={summary.targetOwned} />
-        <MetricTile label={dictionary.semanticIntelligence.territory.competitorOwned} value={summary.competitorOwned} />
-        <MetricTile label={dictionary.semanticIntelligence.territory.openTerritories} value={summary.noClearWinner} />
+        <MetricTile label={dictionary.semanticIntelligence.territory.targetOwned} value={validatedTerritory.filter((item) => item.winnerType === "TARGET").length} />
+        <MetricTile label={dictionary.semanticIntelligence.territory.competitorOwned} value={validatedTerritory.filter((item) => item.winnerType === "COMPETITOR").length} />
+        <MetricTile label={dictionary.semanticIntelligence.territory.openTerritories} value={validatedTerritory.filter((item) => item.winnerType === "NO_CLEAR_WINNER").length} />
+        <MetricTile label={dictionary.semanticIntelligence.territory.awaitingValidation} value={awaitingValidation} />
         <MetricTile label={dictionary.semanticIntelligence.territory.highOpportunity} value={summary.highOpportunity} />
-        <MetricTile label={dictionary.semanticIntelligence.territory.lowValue} value={summary.lowValue} />
       </div>
 
       <Card>
@@ -130,6 +167,28 @@ export default async function QuestionTerritoryPage({ params }: PageProps) {
                 noEvidence: dictionary.semanticIntelligence.evidenceDrawer.noEvidence,
                 close: dictionary.semanticIntelligence.evidenceDrawer.close,
                 summary: dictionary.semanticIntelligence.evidenceDrawer.summary,
+                mapTitle: dictionary.semanticIntelligence.territory.mapTitle,
+                mapDescription: dictionary.semanticIntelligence.territory.mapDescription,
+                scoreOrder: dictionary.semanticIntelligence.territory.scoreOrder,
+                noQuestions: dictionary.semanticIntelligence.territory.noQuestions,
+                candidateTitle: dictionary.semanticIntelligence.territory.candidateTitle,
+                candidateDescription: dictionary.semanticIntelligence.territory.candidateDescription,
+                awaitingValidation: dictionary.semanticIntelligence.territory.awaitingValidation,
+                predictedDifficulty: dictionary.semanticIntelligence.territory.predictedDifficulty,
+                supportingSamples: dictionary.semanticIntelligence.territory.supportingSamples,
+                whyCandidate: dictionary.semanticIntelligence.opportunities.whyThisExists,
+                scoreSignals: dictionary.semanticIntelligence.evidenceDrawer.scoreBreakdown,
+                recommendedAssets: dictionary.semanticIntelligence.evidenceDrawer.recommendedAssets,
+                missingEvidence: dictionary.semanticIntelligence.evidenceDrawer.missingEvidence,
+                suggestedQueries: dictionary.semanticIntelligence.evidenceDrawer.suggestedQueries,
+                entityFit: dictionary.semanticIntelligence.opportunities.entityFit,
+                competitorWeakness: dictionary.semanticIntelligence.opportunities.competitorWeakness,
+                answerInclusionPotential: dictionary.semanticIntelligence.opportunities.answerInclusionPotential,
+                contentFeasibility: dictionary.semanticIntelligence.opportunities.contentFeasibility,
+                targetOwned: dictionary.semanticIntelligence.territory.targetOwned,
+                competitorOwned: dictionary.semanticIntelligence.territory.competitorOwned,
+                openTerritories: dictionary.semanticIntelligence.territory.openTerritories,
+                difficultyLevels: dictionary.semanticIntelligence.territory.difficultyLevels,
                 quadrants: dictionary.semanticIntelligence.territory.quadrants,
               }}
             />

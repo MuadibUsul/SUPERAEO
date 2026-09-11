@@ -10,7 +10,7 @@
  * Pure and deterministic so it can be unit tested.
  */
 import type { Locale } from "@/i18n/config";
-import type { CipMetricBundle } from "@/server/metrics/cip-metrics";
+import { MIN_RELIABLE_SAMPLES, type CipMetricBundle } from "@/server/metrics/cip-metrics";
 import {
   getEntityMetricLabel,
   getEntityProfile,
@@ -48,6 +48,11 @@ export function toneForScore(value: number | null): MetricTone {
 function metricValue(key: EntityMetricKey, bundle: CipMetricBundle): number | null {
   const m = bundle.metrics;
   const e = bundle.entityMetrics;
+  const r = bundle.reliability;
+  // Derived metrics (accuracy, authority, coverage) are null when their signal
+  // was never measured — the UI renders that as "not enough evidence" rather
+  // than a fabricated 0 that reads as "wrong". The `r &&` guard keeps behavior
+  // unchanged when a bundle carries no reliability block.
   switch (key) {
     case "recognition":
       return m.mentionRate;
@@ -56,13 +61,13 @@ function metricValue(key: EntityMetricKey, bundle: CipMetricBundle): number | nu
     case "citationRate":
       return m.citationRate;
     case "semanticCoverage":
-      return m.semanticCoverage;
+      return r && !r.hasCoverageSignal ? null : m.semanticCoverage;
     case "authority":
-      return e.authority;
+      return r && !r.hasAuthoritySignal ? null : e.authority;
     case "accuracy":
-      return e.accuracyScore;
+      return r && !r.hasAccuracySignal ? null : e.accuracyScore;
     case "featureAccuracy":
-      return e.featureAccuracy;
+      return r && !r.hasAccuracySignal ? null : e.featureAccuracy;
     case "competitorDelta":
       return m.competitorDelta;
     default:
@@ -101,6 +106,12 @@ export type CognitionFocus = {
   topRisk: string;
   /** Per-model visibility, spectrum-coded, strongest first. */
   models: ModelDatum[];
+  /** How many sampled answers this read is based on. */
+  sampleCount: number;
+  /** True once the sample clears the floor — below it, numbers are directional. */
+  reliable: boolean;
+  /** The sample floor, so the UI can say "n < 20" without hard-coding it. */
+  minSamples: number;
 };
 
 export function buildCognitionFocus(input: {
@@ -138,5 +149,17 @@ export function buildCognitionFocus(input: {
     }))
     .sort((a, b) => b.visibility - a.visibility);
 
-  return { primary, supporting, biggestGap, topRisk: profile.topRisk[input.locale], models };
+  const sampleCount = input.bundle.sampleCount;
+  const reliable = input.bundle.reliability?.sufficient ?? sampleCount >= MIN_RELIABLE_SAMPLES;
+
+  return {
+    primary,
+    supporting,
+    biggestGap,
+    topRisk: profile.topRisk[input.locale],
+    models,
+    sampleCount,
+    reliable,
+    minSamples: input.bundle.reliability?.minSamples ?? MIN_RELIABLE_SAMPLES,
+  };
 }

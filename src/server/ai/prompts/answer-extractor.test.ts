@@ -31,3 +31,26 @@ test("normalizes common provider shape drift before validating AnswerAnalysis", 
 test("still rejects non-object analysis output", () => {
   assert.equal(answerExtractorOutputSchema.safeParse(["not", "an", "analysis"]).success, false);
 });
+
+test("keeps well-formed semantic units and drops malformed ones without failing extraction", () => {
+  const parsed = answerExtractorOutputSchema.safeParse({
+    targetMentioned: true,
+    semanticUnits: [
+      { domain: "ATTRIBUTE", type: "PROPERTY", canonicalLabel: "fast retrieval", object: "fast retrieval", confidence: 0.7 },
+      { domain: "NOT_A_REAL_DOMAIN", type: "PROPERTY", canonicalLabel: "junk" }, // dropped: bad domain
+      { type: "PROPERTY", canonicalLabel: "missing domain" }, // dropped: no domain
+    ],
+  });
+
+  assert.equal(parsed.success, true);
+  if (!parsed.success) return;
+  assert.equal(parsed.data.semanticUnits.length, 1);
+  assert.equal(parsed.data.semanticUnits[0]?.canonicalLabel, "fast retrieval");
+});
+
+test("semanticUnits defaults to an empty list when absent", () => {
+  const parsed = answerExtractorOutputSchema.safeParse({ targetMentioned: false });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) return;
+  assert.deepEqual(parsed.data.semanticUnits, []);
+});

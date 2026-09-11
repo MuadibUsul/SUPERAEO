@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { UNLIMITED } from "../src/server/billing/plans";
 import { hashPassword } from "../src/server/auth/password";
 
 const prisma = new PrismaClient({
@@ -11,18 +12,21 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
-  const operatorPassword = await hashPassword("Operator@123456");
-  const customerPassword = await hashPassword("Customer@123456");
+  const operatorEmail = seedValue("SEED_OPERATOR_EMAIL", "operator@aeo.local");
+  const customerEmail = seedValue("SEED_CUSTOMER_EMAIL", "demo@observable-ai.local");
+  const operatorPassword = await hashPassword(seedValue("SEED_OPERATOR_PASSWORD", "Operator@123456"));
+  const customerPassword = await hashPassword(seedValue("SEED_CUSTOMER_PASSWORD", "Customer@123456"));
+  const demoUnlimited = { projects: UNLIMITED, auditsPerMonth: UNLIMITED, experiments: UNLIMITED, seats: UNLIMITED };
 
   const operator = await prisma.user.upsert({
-    where: { email: "operator@aeo.local" },
+    where: { email: operatorEmail },
     update: {
       passwordHash: operatorPassword,
       role: "platform_owner",
       preferredLocale: "zh-CN",
     },
     create: {
-      email: "operator@aeo.local",
+      email: operatorEmail,
       name: "Platform Owner",
       passwordHash: operatorPassword,
       role: "platform_owner",
@@ -58,14 +62,14 @@ async function main() {
   });
 
   const customer = await prisma.user.upsert({
-    where: { email: "demo@observable-ai.local" },
+    where: { email: customerEmail },
     update: {
       passwordHash: customerPassword,
       role: "customer_owner",
       preferredLocale: "zh-CN",
     },
     create: {
-      email: "demo@observable-ai.local",
+      email: customerEmail,
       name: "Demo Customer",
       passwordHash: customerPassword,
       role: "customer_owner",
@@ -75,12 +79,13 @@ async function main() {
 
   const customerOrg = await prisma.organization.upsert({
     where: { slug: "demo-customer" },
-    update: { plan: "pro", planRenewsAt: new Date(Date.now() + 24 * 86400000) },
+    update: { plan: "pro", planRenewsAt: new Date(Date.now() + 24 * 86400000), quotaOverrides: demoUnlimited },
     create: {
       name: "Demo Customer",
       slug: "demo-customer",
       type: "customer",
       plan: "pro",
+      quotaOverrides: demoUnlimited,
       planRenewsAt: new Date(Date.now() + 24 * 86400000),
       defaultLocale: "zh-CN",
     },
@@ -358,6 +363,15 @@ async function main() {
       create: policy,
     });
   }
+}
+
+function seedValue(name: string, developmentDefault: string) {
+  const value = process.env[name]?.trim();
+  if (value) return value;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`${name} must be supplied when seeding production.`);
+  }
+  return developmentDefault;
 }
 
 main()

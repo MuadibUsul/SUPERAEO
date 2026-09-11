@@ -63,7 +63,7 @@ export type ProbeSemanticUnitSource = {
     audiences?: string[];
     risk_words?: string[];
     opportunity_words?: string[];
-    recommended_brands?: Array<{ brand: string; score?: number | null; reason_tags?: string[] }>;
+    recommended_entities?: Array<{ entity: string; score?: number | null; reason_tags?: string[] }>;
     confidence?: number | null;
   };
 };
@@ -138,8 +138,8 @@ function fallbackUnits(zone: string, data: ProbeSemanticUnitSource["data"]): Sem
   add("CONTEXT", "AUDIENCE", data.audiences ?? [], "PREFERRED_BY");
   add("RISK_OPPORTUNITY", "RISK", data.risk_words ?? []);
   add("RISK_OPPORTUNITY", "OPPORTUNITY", data.opportunity_words ?? []);
-  for (const brand of data.recommended_brands ?? []) {
-    units.push({ domain: "EVALUATION", type: "RECOMMENDATION", canonicalLabel: brand.brand, surfaceForm: brand.brand, object: brand.brand, predicate: "RECOMMENDS", confidence, intensity: typeof brand.score === "number" ? brand.score / 100 : undefined, description: brand.reason_tags?.join(", ") });
+  for (const recommended of data.recommended_entities ?? []) {
+    units.push({ domain: "EVALUATION", type: "RECOMMENDATION", canonicalLabel: recommended.entity, surfaceForm: recommended.entity, object: recommended.entity, predicate: "RECOMMENDS", confidence, intensity: typeof recommended.score === "number" ? recommended.score / 100 : undefined, description: recommended.reason_tags?.join(", ") });
   }
   return units;
 }

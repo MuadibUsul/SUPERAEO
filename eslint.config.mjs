@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local generated presentation artifacts are not part of the application.
+    "docs/pitch/**",
   ]),
 ]);
 

@@ -68,7 +68,7 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
         />
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3 xl:grid-cols-6">
         <MetricTile label={dictionary.semanticIntelligence.nebula.totalTerms} value={summary.totalTerms} />
         <MetricTile label={dictionary.semanticIntelligence.nebula.positiveGravity} value={summary.positiveGravity} />
         <MetricTile label={dictionary.semanticIntelligence.nebula.negativeGravity} value={summary.negativeGravity} />
@@ -77,9 +77,9 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
         <MetricTile label={dictionary.semanticIntelligence.concepts.incorrectAssociationRisk} value={summary.incorrectAssociationRisk} />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>{dictionary.semanticIntelligence.concepts.observableAnswerSpace}</CardTitle>
+      <Card className="border-border bg-[#03050b] shadow-[0_24px_80px_-36px_rgba(30,180,220,0.24)]">
+        <CardHeader className="flex flex-col gap-3 border-b border-white/8 sm:flex-row sm:items-center sm:justify-between">
+          <div><div className="eyebrow text-primary">Cognition field</div><CardTitle className="mt-1 text-white">{dictionary.semanticIntelligence.concepts.observableAnswerSpace}</CardTitle></div>
           <SemanticJobAction
             endpoint={`/api/projects/${projectId}/semantic-nebula`}
             label={dictionary.semanticIntelligence.actions.buildNebula}
@@ -91,12 +91,12 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
             }}
           />
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0 pb-0">
           <CognitionUniverse
             subjectName={subject?.displayName ?? state.data.brandName}
             nodes={adaptNebulaNodes(overall?.nodeJson, Number.POSITIVE_INFINITY, undefined, false)}
             evidenceEndpoint={overall ? `/api/projects/${projectId}/semantic-nebula/evidence?snapshotId=${overall.id}` : undefined}
-            className="h-[560px]"
+            className="h-[620px] lg:h-[720px]"
             copy={{
               legend:
                 locale === "zh-CN"
@@ -122,12 +122,10 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
 
 function MetricTile({ label, value }: { label: string; value: unknown }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-2 font-mono text-2xl font-semibold">{typeof value === "number" ? value : "--"}</div>
-      </CardContent>
-    </Card>
+    <div className="bg-card px-4 py-4">
+      <div className="text-[11px] leading-4 text-muted-foreground">{label}</div>
+      <div className="metric-number mt-2 text-2xl font-semibold">{typeof value === "number" ? value : "--"}</div>
+    </div>
   );
 }
 

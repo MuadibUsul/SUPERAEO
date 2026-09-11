@@ -3,6 +3,7 @@ import { getPrisma } from "@/server/db";
 import { updateAnalysisJobStage } from "@/server/jobs/stage";
 import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
 import { buildSemanticNebula } from "@/server/semantic-nebula/nebula-builder";
+import { clusterBaselineUnits, semanticUnitsFromResponses } from "@/server/semantic-nebula/baseline-nebula";
 import { attachEntityVectorPositions, buildEntityVectorSpace } from "@/server/semantic-nebula/entity-vector-space";
 import type { SemanticCluster } from "@/server/semantic-nebula/semantic-clustering";
 import { buildStructuredSemanticNebula, type StructuredSemanticEvidence } from "@/server/semantic-nebula/structured-nebula-builder";
@@ -98,6 +99,11 @@ export async function buildSemanticNebulaSnapshots(input: {
         query: true,
         analysis: true,
         provider: { select: { name: true } },
+        probeResults: {
+          where: { probeFamily: "answer_extraction" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -112,6 +118,39 @@ export async function buildSemanticNebulaSnapshots(input: {
 
   const requestedScopes = input.scopes?.length ? input.scopes : [...nebulaScopes];
   const analyzedResponses = responses.filter((response) => response.analysis !== null);
+
+  // Prefer the structured path (LLM semantic units → same builder the
+  // exploration path uses) when enabled and the run actually carried units;
+  // otherwise fall back to the legacy regex term scraper. Flag-gated so it can
+  // be rolled out and reverted without a deploy.
+  const useStructuredSource = process.env.NEBULA_BASELINE_SOURCE === "structured";
+  const units = useStructuredSource
+    ? semanticUnitsFromResponses({
+        projectId: input.projectId,
+        subjectId: subject.id,
+        responses: responses.map((response) => ({
+          id: response.id,
+          runId: response.runId,
+          providerId: response.providerId,
+          model: response.model,
+          normalizedJson: response.probeResults[0]?.normalizedJson ?? null,
+        })),
+      })
+    : [];
+  const clusters = units.length > 0 ? clusterBaselineUnits(units) : [];
+  const useStructured = useStructuredSource && clusters.length > 0;
+  const evidenceByResponseId = useStructured
+    ? new Map<string, StructuredSemanticEvidence>(
+        responses.map((response) => [response.id, {
+          prompt: response.query.queryText,
+          rawResponse: response.normalizedAnswer ?? response.rawResponse,
+          provider: response.provider?.name ?? null,
+          model: response.model,
+          createdAt: response.createdAt,
+        }]),
+      )
+    : undefined;
+
   const snapshots = [];
 
   for (const scope of requestedScopes) {
@@ -121,15 +160,25 @@ export async function buildSemanticNebulaSnapshots(input: {
       message: `Calculating semantic gravity for ${scope}.`,
     });
 
-    const graph = buildSemanticNebula(
-      {
-        subject,
-        competitors: project.competitors,
-        keywords,
-        responses: analyzedResponses,
-      },
-      scope,
-    );
+    const graph = useStructured
+      ? buildStructuredSemanticNebula({
+          subjectName: subject.displayName,
+          entityType: subject.entityType,
+          scope,
+          iteration: 0,
+          units,
+          clusters,
+          evidenceByResponseId,
+        })
+      : buildSemanticNebula(
+          {
+            subject,
+            competitors: project.competitors,
+            keywords,
+            responses: analyzedResponses,
+          },
+          scope,
+        );
 
     await updateAnalysisJobStage({
       analysisJobId: input.analysisJobId,
@@ -168,7 +217,10 @@ export async function buildSemanticNebulaSnapshots(input: {
         version: graph.summary.version,
         nodeJson: nodesToStore as Prisma.InputJsonValue,
         edgeJson: graph.edges as Prisma.InputJsonValue,
-        summaryJson: graph.summary as Prisma.InputJsonValue,
+        summaryJson: {
+          ...graph.summary,
+          source: useStructured ? "baseline_structured" : "baseline_legacy",
+        } as Prisma.InputJsonValue,
         evidenceJson: graph.evidence as Prisma.InputJsonValue,
       },
     });

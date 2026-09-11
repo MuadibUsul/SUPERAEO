@@ -37,7 +37,7 @@ export async function countAccessibleProjectsForUser(input: {
   const prisma = getPrisma();
 
   if (isOperatorRole(input.role)) {
-    return prisma.project.count();
+    return prisma.project.count({ where: { deletedAt: null } });
   }
 
   const organizationIds =
@@ -56,6 +56,7 @@ export async function countAccessibleProjectsForUser(input: {
 
   return prisma.project.count({
     where: {
+      deletedAt: null,
       organizationId: {
         in: organizationIds,
       },

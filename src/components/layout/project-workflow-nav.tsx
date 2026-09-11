@@ -94,48 +94,33 @@ export function ProjectWorkflowNav({
         key={hub.key}
         href={href}
         className={cn(
-          "group inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-          isActive && "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
+          "group flex h-12 min-w-[72px] flex-1 shrink-0 items-center gap-2 rounded-lg px-2 text-sm font-medium text-muted-foreground transition-[background-color,color,transform,box-shadow] duration-150 ease-out hover:bg-accent hover:text-foreground active:scale-[0.985] md:min-w-32 md:gap-3 md:px-3",
+          isActive && "bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:text-primary-foreground",
         )}
       >
-        {stageIndex >= 0 ? (
-          <span
-            className={cn(
-              "font-mono text-[11px] tabular-nums",
-              isActive ? "text-primary" : "text-faint group-hover:text-muted-foreground",
-            )}
-          >
-            {stageIndex + 1}
+        <Icon className={cn("size-4 shrink-0", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-foreground")} />
+        <span className="flex min-w-0 flex-col">
+          <span className={cn("text-[9px] font-semibold uppercase tracking-[0.12em]", isActive ? "text-primary-foreground/70" : "text-faint")}>
+            {stageIndex >= 0 ? String(stageIndex + 1).padStart(2, "0") : "—"}
           </span>
-        ) : (
-          <Icon className={cn("h-4 w-4", isActive && "text-primary")} />
-        )}
-        {dictionary.app.hubs[hub.key]}
+          <span className="truncate leading-4">{dictionary.app.hubs[hub.key]}</span>
+        </span>
       </Link>
     );
   };
 
   return (
     <div className="space-y-3">
-      <AuditStatusPanel projectId={projectId} locale={currentLocale} copy={dictionary.auditStatus} variant={statusVariant} />
-      <nav className="panel flex items-center gap-1 overflow-x-auto p-1.5">
-        {stageHubs.map((hub, index) => (
-          <div key={hub.key} className="flex shrink-0 items-center">
-            {renderHub(hub)}
-            {index < stageHubs.length - 1 ? (
-              <span className="mx-0.5 text-border-strong" aria-hidden>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M9 6l6 6-6 6" />
-                </svg>
-              </span>
-            ) : null}
-          </div>
-        ))}
-        <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
+      <nav className="flex gap-1.5 overflow-x-auto rounded-xl border border-border bg-card p-1.5 shadow-sm">
+        {stageHubs.map(renderHub)}
+        <span className="my-2 w-px shrink-0 bg-border" aria-hidden />
         {renderHub(settingsHub)}
       </nav>
       {activeHub.segments.length > 1 ? (
-        <div className="flex gap-1 overflow-x-auto px-1">
+        <div className="flex items-center gap-1 overflow-x-auto px-1">
+          <span className="mr-2 shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            {currentLocale === "zh-CN" ? "当前阶段" : "Current stage"}
+          </span>
           {activeHub.segments.map((segment) => {
             const href = `/${currentLocale}/app/projects/${projectId}/${segment}`;
             const isActive = segment === activeSegment;
@@ -145,8 +130,8 @@ export function ProjectWorkflowNav({
                 key={segment}
                 href={href}
                 className={cn(
-                  "inline-flex h-7 shrink-0 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
-                  isActive && "bg-primary/10 text-primary",
+                  "inline-flex h-8 shrink-0 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 hover:bg-card hover:text-foreground active:scale-[0.98]",
+                  isActive && "bg-card text-primary shadow-sm ring-1 ring-border",
                 )}
               >
                 {dictionary.app[labelKey]}
@@ -155,6 +140,7 @@ export function ProjectWorkflowNav({
           })}
         </div>
       ) : null}
+      <AuditStatusPanel projectId={projectId} locale={currentLocale} copy={dictionary.auditStatus} variant={statusVariant} />
     </div>
   );
 }

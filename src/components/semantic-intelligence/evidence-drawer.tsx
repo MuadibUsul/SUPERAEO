@@ -62,7 +62,7 @@ export function EvidenceDrawer({
   return (
     <div className="dark fixed inset-0 z-50 flex justify-end bg-[oklch(0.06_0.03_264/72%)] backdrop-blur-sm">
       <button type="button" className="absolute inset-0 cursor-default" aria-label={closeLabel} onClick={onClose} />
-      <aside className="relative flex h-full w-full max-w-xl flex-col border-l border-border bg-[oklch(0.12_0.03_264)] text-foreground shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
+      <aside role="dialog" aria-modal="true" aria-label={title} className="relative flex h-full w-full max-w-xl flex-col border-l border-border bg-[oklch(0.12_0.03_264)] text-foreground shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-5">
           <div className="min-w-0">
             <p className="eyebrow text-[oklch(0.82_0.13_205)]">{subtitle}</p>

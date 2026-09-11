@@ -87,11 +87,15 @@ export function renderProbePrompt(input: RenderInput): RenderOutput {
   const lang = resolveLang(input.language);
   const variables = { brand: input.brand, scenario, audience, intent, risk, opportunity, warm, cold, competitors, depthLevel, entityType: input.entityType };
   const corePrompt = buildPrompt(input.entityType, input.questionType, variables, depthLevel, lang);
-  const fields = `probe_id, mentioned_brand, recommended_brands, keywords, competitors, scenarios, audiences, risk_words, opportunity_words, sentiment_score, recommendation_score, confidence${input.semanticExploration || process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? ", semantic_units" : ""}`;
+  const fields = `probe_id, target_mentioned, recommended_entities, keywords, competitors, scenarios, audiences, risk_words, opportunity_words, sentiment_score, recommendation_score, confidence${input.semanticExploration || process.env.SEMANTIC_EXPLORATION_ENABLED === "true" ? ", semantic_units" : ""}`;
   const fieldsLine = lang === "zh" ? `统一输出字段：${fields}。` : `Output these fields: ${fields}.`;
+  // Says what `recommended_entities` and `competitors` should contain for this
+  // audit type. Without it the model reads the generic field names against a
+  // person or a website and defaults to brand-style commercial recommendations.
+  const comparisonLine = comparisonGuidance(input.entityType, lang);
 
   return {
-    prompt: `${corePrompt}\n\n${fieldsLine}\n${schemaInstruction(lang, input.semanticExploration)}`,
+    prompt: `${corePrompt}\n\n${fieldsLine}\n${comparisonLine}\n${schemaInstruction(lang, input.semanticExploration)}`,
     corePrompt,
     depthLevel,
     variables,
@@ -114,6 +118,36 @@ type PromptVars = {
   cold: string;
   competitors: string;
 };
+
+/**
+ * What "the thing being compared against" means for each audit type. A person is
+ * ranked against peers by authority, a site against alternative sources by
+ * citation-worthiness, a product against substitutes on features and specs.
+ */
+function comparisonGuidance(entityType: EntityType, lang: Lang) {
+  if (lang === "zh") {
+    switch (entityType) {
+      case "PERSON":
+        return "recommended_entities 填同领域的人物（按权威性与可引用性排序），competitors 填同行专家；不要填品牌或商品。";
+      case "WEBSITE":
+        return "recommended_entities 填你会引用的信息来源站点（按可信度排序），competitors 填替代信息源；不要填商业品牌推荐。";
+      case "PRODUCT":
+        return "recommended_entities 填能完成同一任务的产品（按适配度排序），competitors 填替代产品；理由标签需指向具体功能或规格。";
+      default:
+        return "recommended_entities 填品牌或商品（按推荐顺序），competitors 填直接竞品。";
+    }
+  }
+  switch (entityType) {
+    case "PERSON":
+      return "Fill recommended_entities with people in the field, ranked by authority and citation-worthiness, and competitors with peer experts. Do not list brands or products.";
+    case "WEBSITE":
+      return "Fill recommended_entities with sources you would cite, ranked by credibility, and competitors with alternative sources. Do not give commercial brand recommendations.";
+    case "PRODUCT":
+      return "Fill recommended_entities with products that accomplish the same task, ranked by fit, and competitors with substitutes. Reason tags should name a concrete feature or spec.";
+    default:
+      return "Fill recommended_entities with brands or products in recommended order, and competitors with direct competitors.";
+  }
+}
 
 function buildPrompt(entityType: EntityType, questionType: ProbeQuestionType, variables: Record<string, unknown>, depth: ProbeDepthLevel, lang: Lang) {
   const join = lang === "zh" ? "、" : ", ";

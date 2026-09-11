@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { canWriteCustomerData } from "@/server/auth/roles";
+import { writeAuditLog } from "@/server/audit/log";
 import { requireApiSession } from "@/server/auth/session";
 import { getPrisma, isDatabaseConfigured } from "@/server/db";
 import { getProject } from "@/server/data/projects";
@@ -123,12 +124,14 @@ export const DELETE = withApiTrace<ProjectContext>({ subsystem: "project", opera
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
 
-  await getPrisma().project.delete({
+  await getPrisma().project.update({
     where: { id: projectId },
+    data: { deletedAt: new Date() },
   });
+  await writeAuditLog({ actorUserId: auth.session.user.id, organizationId: existing.data.organizationId ?? undefined, action: "project.access_disabled", targetType: "Project", targetId: projectId, metadata: { purgeAfterDays: 30 } });
 
   return NextResponse.json({
     ok: true,
-    message: "Project deleted.",
+    message: "Project access disabled. Raw evidence is scheduled for deletion within 30 days.",
   });
 });

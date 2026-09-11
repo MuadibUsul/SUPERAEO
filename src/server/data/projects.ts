@@ -90,7 +90,7 @@ export async function listProjects(
   try {
     const prisma = getPrisma();
     const projects = await prisma.project.findMany({
-      where: session ? projectAccessWhere(session) : {},
+      where: { deletedAt: null, ...(session ? projectAccessWhere(session) : {}) },
       orderBy: { createdAt: "desc" },
       include: {
         organization: {
@@ -148,6 +148,7 @@ export async function getProject(
     const project = await prisma.project.findFirst({
       where: {
         id: projectId,
+        deletedAt: null,
         ...projectAccessWhere(session),
       },
       include: {

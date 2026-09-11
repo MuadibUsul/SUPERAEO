@@ -18,8 +18,8 @@ type ProbeWithRun = BrandProbe & {
 
 const probeResultExample = JSON.stringify({
   probe_id: "input-probe-id",
-  mentioned_brand: null,
-  recommended_brands: [{ brand: "name", rank: 1, score: 80, reason_tags: ["short tag"] }],
+  target_mentioned: null,
+  recommended_entities: [{ entity: "name", rank: 1, score: 80, reason_tags: ["short tag"] }],
   keywords: ["keyword"],
   competitors: ["competitor"],
   scenarios: ["scenario"],
@@ -495,7 +495,7 @@ async function persistProbeSuccess(input: {
   const prisma = getPrisma();
   const data = {
     ...input.data,
-    mentioned_brand: inferMentionedBrand(input.data, input.brandAliases),
+    target_mentioned: inferMentionedBrand(input.data, input.brandAliases),
   };
   const response = await prisma.brandProbeResponse.create({
     data: {

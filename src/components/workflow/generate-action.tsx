@@ -145,7 +145,7 @@ export function GenerateAction({
       ) : null}
       {error ? <p className="max-w-xl text-sm text-destructive">{error}</p> : null}
       <div
-        className={`max-w-xl overflow-hidden rounded-2xl border bg-background/60 transition-all duration-200 ${
+        className={`max-w-xl overflow-hidden rounded-2xl border bg-background/60 transition-[border-color,background-color,box-shadow] duration-200 ${
           isLoading
             ? "max-h-[32rem] border-border/70 p-4 opacity-100"
             : "max-h-0 border-transparent p-0 opacity-0"
@@ -183,7 +183,7 @@ export function GenerateAction({
             </div>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
                 style={{ width: `${progressValue}%` }}
               />
             </div>

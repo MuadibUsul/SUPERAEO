@@ -67,12 +67,12 @@ export function ProofExperimentBuilder({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const initialIds = useMemo(() => queries.slice(0, 24).map((query) => query.id), [queries]);
-  const [name, setName] = useState(locale === "zh-CN" ? "内容干预验证" : "Content intervention proof");
+  const [name, setName] = useState(locale === "zh-CN" ? "内容干预评估" : "Content intervention evaluation");
   const [hypothesis, setHypothesis] = useState("");
   const [metricKey, setMetricKey] = useState(defaultMetric);
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [selectedIds, setSelectedIds] = useState<string[]>(initialIds);
-  const [sampleCountPerQuery, setSampleCountPerQuery] = useState(1);
+  const [sampleCountPerQuery, setSampleCountPerQuery] = useState(3);
   const [arms, setArms] = useState<Record<string, Arm>>(() => {
     const midpoint = Math.ceil(initialIds.length / 2);
     return Object.fromEntries(initialIds.map((id, index) => [id, index < midpoint ? "treatment" : "control"]));
@@ -104,6 +104,8 @@ export function ProofExperimentBuilder({
           metricKey,
           queryIds: selectedIds,
           sampleCountPerQuery,
+          preregistered: Boolean(hypothesis.trim()),
+          confirmatory: selectedIds.length >= 40,
           assignments:
             mode === "manual"
               ? selectedQueries
@@ -292,7 +294,7 @@ export function ExperimentWaveActions({
         <Button
           type="button"
           size="sm"
-          onClick={() => post(wavePath, { waveType: "baseline", sampleCountPerQuery: 1 }, "baseline")}
+          onClick={() => post(wavePath, { waveType: "baseline", sampleCountPerQuery: 3 }, "baseline")}
           disabled={Boolean(pendingAction)}
         >
           <Play className="h-4 w-4" />
@@ -303,7 +305,7 @@ export function ExperimentWaveActions({
         <Button
           type="button"
           size="sm"
-          onClick={() => post(wavePath, { waveType: "retest", sampleCountPerQuery: 1 }, "retest")}
+          onClick={() => post(wavePath, { waveType: "retest", sampleCountPerQuery: 3 }, "retest")}
           disabled={Boolean(pendingAction)}
         >
           <RefreshCw className="h-4 w-4" />

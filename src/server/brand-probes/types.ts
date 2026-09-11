@@ -85,14 +85,14 @@ export type GeneratedProbe = {
   qualityScore: number;
 };
 
-const strictRecommendedBrandSchema = z.object({
-  brand: z.string().trim().min(1),
+const strictRecommendedEntitySchema = z.object({
+  entity: z.string().trim().min(1),
   rank: z.number().int().min(1).max(20).nullable().optional(),
   score: z.number().min(0).max(100).nullable().optional(),
   reason_tags: z.array(z.string().trim().min(1)).max(8).default([]),
 });
 
-export const recommendedBrandSchema = z.preprocess(normalizeRecommendedBrand, strictRecommendedBrandSchema);
+export const recommendedEntitySchema = z.preprocess(normalizeRecommendedEntity, strictRecommendedEntitySchema);
 
 const nullableString = z.string().trim().nullable().optional().transform((value) => value ?? undefined);
 const nullableNumber = z.number().nullable().optional().transform((value) => value ?? undefined);
@@ -121,8 +121,8 @@ export const probeSemanticUnitSchema = z.preprocess(normalizeSemanticUnit, stric
 
 const strictProbeResponseSchema = z.object({
   probe_id: z.string().trim().min(1),
-  mentioned_brand: z.boolean().nullable().optional(),
-  recommended_brands: z.array(recommendedBrandSchema).max(10).default([]),
+  target_mentioned: z.boolean().nullable().optional(),
+  recommended_entities: z.array(recommendedEntitySchema).max(10).default([]),
   keywords: z.array(z.string().trim().min(1)).max(10).default([]),
   competitors: z.array(z.string().trim().min(1)).max(5).default([]),
   scenarios: z.array(z.string().trim().min(1)).max(5).default([]),
@@ -149,8 +149,8 @@ export const probeResponseJsonSchema = {
   additionalProperties: false,
   required: [
     "probe_id",
-    "mentioned_brand",
-    "recommended_brands",
+    "target_mentioned",
+    "recommended_entities",
     "keywords",
     "competitors",
     "scenarios",
@@ -164,16 +164,16 @@ export const probeResponseJsonSchema = {
   ],
   properties: {
     probe_id: { type: "string" },
-    mentioned_brand: { type: ["boolean", "null"] },
-    recommended_brands: {
+    target_mentioned: { type: ["boolean", "null"] },
+    recommended_entities: {
       type: "array",
       maxItems: 10,
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["brand", "rank", "score", "reason_tags"],
+        required: ["entity", "rank", "score", "reason_tags"],
         properties: {
-          brand: { type: "string" },
+          entity: { type: "string" },
           rank: { type: ["number", "null"] },
           score: { type: ["number", "null"] },
           reason_tags: { type: "array", maxItems: 8, items: { type: "string" } },
@@ -263,8 +263,8 @@ function normalizeProbeResponse(value: unknown) {
   if (!source) return value;
   return {
     ...source,
-    mentioned_brand: booleanOrNull(source.mentioned_brand),
-    recommended_brands: arrayValue(source.recommended_brands),
+    target_mentioned: booleanOrNull(source.target_mentioned ?? source.mentioned_brand),
+    recommended_entities: arrayValue(source.recommended_entities ?? source.recommended_brands),
     keywords: stringArray(source.keywords),
     competitors: stringArray(source.competitors),
     scenarios: stringArray(source.scenarios),
@@ -275,12 +275,12 @@ function normalizeProbeResponse(value: unknown) {
   };
 }
 
-function normalizeRecommendedBrand(value: unknown) {
-  if (typeof value === "string") return { brand: value.trim(), reason_tags: [] };
+function normalizeRecommendedEntity(value: unknown) {
+  if (typeof value === "string") return { entity: value.trim(), reason_tags: [] };
   const source = asRecord(value);
   if (!source) return value;
   return {
-    brand: stringValue(source.brand ?? source.name ?? source.product ?? source.entity),
+    entity: stringValue(source.entity ?? source.brand ?? source.name ?? source.product),
     rank: numberOrNull(source.rank),
     score: numberOrNull(source.score),
     reason_tags: stringArray(source.reason_tags ?? source.reason_tag ?? source.reason),

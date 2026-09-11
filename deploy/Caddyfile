@@ -1,0 +1,12 @@
+# CIP production reverse proxy.
+#
+# Replace your.domain.com with your real domain. The DNS A record must point
+# at this server's public IP BEFORE starting the stack, otherwise Caddy cannot
+# obtain the Let's Encrypt certificate (it retries automatically afterwards).
+#
+# Caddy sets X-Forwarded-For on proxied requests, which the app trusts when
+# TRUSTED_PROXY=true (per-IP auth rate limiting).
+
+your.domain.com {
+	reverse_proxy web:3000
+}

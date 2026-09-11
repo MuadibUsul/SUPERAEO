@@ -55,7 +55,7 @@ test("preserves negation, uncertainty, condition, temporal, and quantity modifie
 test("a probe premise is not a discovery until a response supplies a semantic unit", () => {
   const units = extractProbeSemanticUnits({
     projectId: "project-1", subjectId: "subject-1", runId: "run-1", probeId: "probe-1", responseId: "response-1", model: "model-a", zone: "competition",
-    data: { keywords: [], competitors: [], scenarios: [], audiences: [], risk_words: [], opportunity_words: [], recommended_brands: [] },
+    data: { keywords: [], competitors: [], scenarios: [], audiences: [], risk_words: [], opportunity_words: [], recommended_entities: [] },
   });
   assert.deepEqual(units, []);
 });

@@ -43,20 +43,20 @@ test("drivers pull from competitor-owned + risk terms when the metric is weak", 
   assert.match(drivers, /pricing unclear/);
 });
 
-test("a significant experiment becomes the causal read on the lead metric", () => {
+test("a significant experiment is reported as a qualified quasi-experimental estimate", () => {
   const a = buildReportAnalysis({
     entityType: "BRAND", subjectName: "X", bundle: bundle(), nebulaSummary: nebula, correlation: null,
     experiments: [{ name: "Homepage rewrite", significant: true, netEffect: 0.25, pValue: 0.02 }], locale: "en",
   });
-  assert.match(a.metrics[0].causal ?? "", /Proven.*25pts.*p=0\.02/);
+  assert.match(a.metrics[0].causal ?? "", /Quasi-experimental estimate.*25pt.*p=0\.02.*assumptions/);
 });
 
-test("without an experiment, a strong correlation carries the causal read", () => {
+test("without an experiment, correlation is explicitly observational", () => {
   const a = buildReportAnalysis({
     entityType: "BRAND", subjectName: "X", bundle: bundle(), nebulaSummary: nebula,
     correlation: { bestLagCorrelation: 0.82, sourceName: "signups" }, experiments: [], locale: "en",
   });
-  assert.match(a.metrics[0].causal ?? "", /tracks signups.*r=0\.82/);
+  assert.match(a.metrics[0].causal ?? "", /Observational result.*correlates with signups.*r=0\.82.*does not establish causation/);
 });
 
 test("competitorDelta reads as a signed gap, not a percent", () => {

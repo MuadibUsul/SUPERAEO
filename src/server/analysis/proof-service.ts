@@ -8,11 +8,17 @@
  *    with an imported business-outcome series and reports correlation + lag.
  */
 import type { ExperimentArm, ExperimentWaveType, Prisma, SubjectEntityType } from "@/generated/prisma/client";
+import { createHash } from "node:crypto";
 import { getPrisma } from "@/server/db";
+import { resolveTaskExecutionPlan } from "@/server/ai/execution-policies";
+import { platformFromProviderType } from "@/server/ai/platform";
+import { modelKeyFromParts } from "@/server/metrics/cip-metrics";
 import {
   differenceInDifferences,
+  clusteredDifferenceInDifferences,
   laggedCorrelation,
   pearson,
+  requiredQuestionsPerArm,
   type DifferenceInDifferences,
   type LaggedCorrelation,
 } from "@/server/analysis/causal-statistics";
@@ -38,6 +44,9 @@ export async function createCognitionExperiment(input: {
   metricKey?: string | null;
   queryIds: string[];
   assignments?: ExperimentAssignmentInput[];
+  sampleCountPerQuery?: number;
+  preregistered?: boolean;
+  confirmatory?: boolean;
 }) {
   const prisma = getPrisma();
   const subject = input.subjectId
@@ -54,7 +63,7 @@ export async function createCognitionExperiment(input: {
 
   const queries = await prisma.aeoQuery.findMany({
     where: { projectId: input.projectId, id: { in: queryIds } },
-    select: { id: true },
+    select: { id: true, queryType: true, confidence: true },
     orderBy: { createdAt: "asc" },
   });
   if (queries.length < 2) {
@@ -62,7 +71,8 @@ export async function createCognitionExperiment(input: {
   }
 
   const validQueryIds = queries.map((query) => query.id);
-  const assignments = normalizeAssignments(validQueryIds, input.assignments);
+  const assignmentSeed = createHash("sha256").update(`${input.projectId}:${input.name}:${validQueryIds.sort().join(",")}`).digest("hex").slice(0, 24);
+  const assignments = normalizeAssignments(queries, input.assignments, assignmentSeed);
   const treatmentCount = assignments.filter((assignment) => assignment.arm === "treatment").length;
   const controlCount = assignments.filter((assignment) => assignment.arm === "control").length;
   if (treatmentCount === 0 || controlCount === 0) {
@@ -76,6 +86,22 @@ export async function createCognitionExperiment(input: {
       name: input.name,
       hypothesis: input.hypothesis || null,
       metricKey: input.metricKey || defaultExperimentMetricForEntity(subject?.entityType),
+      assignmentSeed,
+      preregistered: input.preregistered === true,
+      protocol: {
+        version: "2026-09-09.quasi-experiment.v1",
+        frozenAt: new Date().toISOString(),
+        hypothesis: input.hypothesis || null,
+        primaryMetric: input.metricKey || defaultExperimentMetricForEntity(subject?.entityType),
+        sampling: { samplesPerQuestionPerModelPerWave: input.sampleCountPerQuery ?? 3 },
+        assignment: { method: "seeded_stratified", seed: assignmentSeed, strata: ["queryType", "baselineConfidenceBand"] },
+        analysisUnit: "question",
+        minimumDetectableEffect: 0.15,
+        alpha: 0.05,
+        power: 0.8,
+        confirmatory: input.confirmatory === true,
+        exclusionRules: ["failed_call", "missing_metric_assessment", "model_configuration_changed"],
+      } as Prisma.InputJsonValue,
       status: "draft",
       assignments: {
         create: assignments.map((assignment) => ({
@@ -92,7 +118,8 @@ export async function createCognitionExperiment(input: {
   });
 }
 
-function normalizeAssignments(queryIds: string[], assignments?: ExperimentAssignmentInput[]) {
+function normalizeAssignments(queries: Array<{ id: string; queryType: string; confidence: number | null }>, assignments: ExperimentAssignmentInput[] | undefined, seed: string) {
+  const queryIds = queries.map((query) => query.id);
   if (assignments?.length) {
     const valid = new Set(queryIds);
     const byQuery = new Map<string, ExperimentArm>();
@@ -105,11 +132,18 @@ function normalizeAssignments(queryIds: string[], assignments?: ExperimentAssign
     }));
   }
 
-  return queryIds.map((queryId, index) => ({
-    queryId,
-    arm: index % 2 === 0 ? "treatment" as const : "control" as const,
-  }));
+  const strata = new Map<string, typeof queries>();
+  for (const query of queries) {
+    const confidenceBand = query.confidence === null ? "unknown" : query.confidence >= 0.7 ? "high" : "low";
+    const key = `${query.queryType}:${confidenceBand}`;
+    strata.set(key, [...(strata.get(key) ?? []), query]);
+  }
+  return [...strata.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([key, items]) =>
+    [...items].sort((a, b) => seededOrder(`${seed}:${key}:${a.id}`) - seededOrder(`${seed}:${key}:${b.id}`)).map((query, index) => ({ queryId: query.id, arm: index % 2 === 0 ? "treatment" as const : "control" as const })),
+  );
 }
+
+function seededOrder(value: string) { return Number.parseInt(createHash("sha256").update(value).digest("hex").slice(0, 8), 16); }
 
 /**
  * Recompute the difference-in-differences result for an experiment from its
@@ -120,7 +154,7 @@ export async function computeExperimentResult(experimentId: string) {
   const prisma = getPrisma();
   const experiment = await prisma.cognitionExperiment.findUnique({
     where: { id: experimentId },
-    include: { waves: { include: { observations: true }, orderBy: { measuredAt: "asc" } } },
+    include: { assignments: true, waves: { include: { observations: true }, orderBy: { measuredAt: "asc" } } },
   });
   if (!experiment) return null;
 
@@ -134,9 +168,20 @@ export async function computeExperimentResult(experimentId: string) {
   const controlPre = armProportion(baselineWave.observations, "control");
   const controlPost = armProportion(latestRetest.observations, "control");
 
-  const did = differenceInDifferences({ treatmentPre, treatmentPost, controlPre, controlPost });
+  const clustered = await computeQuestionLevelResult(experiment, baselineWave.runId, latestRetest.runId);
+  const did = clustered ?? differenceInDifferences({ treatmentPre, treatmentPost, controlPre, controlPost });
+  const protocol = isRecord(experiment.protocol) ? experiment.protocol : {};
+  const confirmatory = protocol.confirmatory === true;
+  const treatmentQuestions = experiment.assignments?.filter((item: { arm: ExperimentArm }) => item.arm === "treatment").length ?? 0;
+  const controlQuestions = experiment.assignments?.filter((item: { arm: ExperimentArm }) => item.arm === "control").length ?? 0;
+  const requiredPerArm = requiredQuestionsPerArm(0.5, 0.15, 0.05, 0.8);
+  const minimumPerArm = confirmatory ? requiredPerArm : 10;
+  const modelConfigStable = clustered?.modelConfigStable ?? false;
+  const failureRate = clustered?.failureRate ?? 1;
+  const protocolQualified = experiment.preregistered && treatmentQuestions >= minimumPerArm && controlQuestions >= minimumPerArm && modelConfigStable && failureRate <= 0.1;
+  const resultGrade = protocolQualified ? (confirmatory ? "CONFIRMATORY" : "CORROBORATED") : "DIRECTIONAL";
 
-  return prisma.experimentResult.create({
+  const result = await prisma.experimentResult.create({
     data: {
       experimentId,
       metricKey: experiment.metricKey,
@@ -150,15 +195,64 @@ export async function computeExperimentResult(experimentId: string) {
       zScore: did.z,
       pValue: did.pValue,
       significant: did.significant,
+      confidenceLower: clustered?.confidenceLower,
+      confidenceUpper: clustered?.confidenceUpper,
+      evidenceGrade: resultGrade,
       metadata: {
         baselineWaveId: baselineWave.id,
         retestWaveId: latestRetest.id,
         metricKey: experiment.metricKey,
         baselineMeasuredAt: baselineWave.measuredAt.toISOString(),
         retestMeasuredAt: latestRetest.measuredAt.toISOString(),
+        analysisUnit: clustered ? "question" : "aggregate_legacy_fallback",
+        bootstrapIterations: clustered?.iterations ?? 0,
+        randomizationPValue: clustered?.pValue ?? null,
+        assignmentSeed: experiment.assignmentSeed,
+        preregistered: experiment.preregistered,
+        confirmatory,
+        requiredQuestionsPerArm: minimumPerArm,
+        treatmentQuestions,
+        controlQuestions,
+        modelConfigStable,
+        failureRate,
+        protocolQualified,
+        limitations: protocolQualified ? [] : ["Result is directional because one or more protocol gates were not met."],
       } as Prisma.InputJsonValue,
     },
   });
+
+  await prisma.evidenceClaim.deleteMany({
+    where: { links: { some: { experimentResult: { experimentId } } } },
+  });
+  await prisma.evidenceClaim.create({
+    data: {
+      projectId: experiment.projectId,
+      claimType: "EXPERIMENT",
+      supportStatus: protocolQualified ? "SUPPORTED" : "INSUFFICIENT",
+      evidenceGrade: resultGrade,
+      statement: `The quasi-experimental estimate for ${experiment.metricKey} was ${(did.netLift * 100).toFixed(1)} percentage points.`,
+      methodVersion: "2026-09-09.clustered-did.v1",
+      supportingCount: did.netLift > 0 ? 1 : 0,
+      opposingCount: did.netLift < 0 ? 1 : 0,
+      uncertainCount: protocolQualified ? 0 : 1,
+      metadata: {
+        experimentId,
+        protocolQualified,
+        confidenceLower: clustered?.confidenceLower ?? null,
+        confidenceUpper: clustered?.confidenceUpper ?? null,
+        pValue: did.pValue,
+        limitations: protocolQualified ? [] : ["Directional result; one or more preregistered protocol gates were not met."],
+      } as Prisma.InputJsonValue,
+      links: {
+        create: {
+          experimentResultId: result.id,
+          relation: protocolQualified ? "SUPPORTS" : "UNCERTAIN",
+          excerpt: `Difference-in-differences ${(did.netLift * 100).toFixed(1)}pp; p=${did.pValue.toFixed(4)}.`,
+        },
+      },
+    },
+  });
+  return result;
 }
 
 function armProportion(observations: Array<{ arm: ExperimentArm; samples: number; successes: number }>, arm: ExperimentArm): ArmProportion {
@@ -178,6 +272,11 @@ export type ExperimentSummary = {
   controlSamples: number;
   hasBaseline: boolean;
   hasRetest: boolean;
+  evidenceGrade: "INSUFFICIENT" | "DIRECTIONAL" | "CORROBORATED" | "CONFIRMATORY";
+  confidenceLower: number | null;
+  confidenceUpper: number | null;
+  protocolQualified: boolean;
+  limitations: string[];
 };
 
 /** Latest persisted result per experiment for a project (recomputes if stale/missing). */
@@ -211,7 +310,7 @@ export async function listExperimentSummaries(projectId: string): Promise<Experi
         return toSummary(experiment, did, null);
       }
     }
-    return toSummary(experiment, result ? resultToDid(result) : null, result?.computedAt.toISOString() ?? null);
+    return toSummary(experiment, result ? resultToDid(result) : null, result?.computedAt.toISOString() ?? null, result);
   });
 }
 
@@ -329,6 +428,7 @@ function toSummary(
   },
   result: DifferenceInDifferences | null,
   computedAt: string | null,
+  persisted?: { evidenceGrade: string; confidenceLower: number | null; confidenceUpper: number | null; metadata: unknown } | null,
 ): ExperimentSummary {
   const treatmentSamples = sumArmSamples(experiment.waves, "treatment");
   const controlSamples = sumArmSamples(experiment.waves, "control");
@@ -344,11 +444,61 @@ function toSummary(
     controlSamples,
     hasBaseline: experiment.waves.some((wave) => wave.waveType === "baseline"),
     hasRetest: experiment.waves.some((wave) => wave.waveType === "retest"),
+    evidenceGrade: (persisted?.evidenceGrade as ExperimentSummary["evidenceGrade"]) ?? "DIRECTIONAL",
+    confidenceLower: persisted?.confidenceLower ?? null,
+    confidenceUpper: persisted?.confidenceUpper ?? null,
+    protocolQualified: asBoolean(persisted?.metadata, "protocolQualified"),
+    limitations: asStringArray(persisted?.metadata, "limitations"),
   };
 }
 
+function asBoolean(value: unknown, key: string) { return isRecord(value) && value[key] === true; }
+function asStringArray(value: unknown, key: string) { return isRecord(value) && Array.isArray(value[key]) ? (value[key] as unknown[]).filter((item): item is string => typeof item === "string") : []; }
+
 function sumArmSamples(waves: Array<{ observations: Array<{ arm: ExperimentArm; samples: number }> }>, arm: ExperimentArm): number {
   return waves.reduce((total, wave) => total + wave.observations.filter((o) => o.arm === arm).reduce((s, o) => s + o.samples, 0), 0);
+}
+
+async function computeQuestionLevelResult(
+  experiment: { metricKey: string; assignmentSeed: string; assignments: Array<{ queryId: string; arm: ExperimentArm }> },
+  baselineRunId: string | null,
+  retestRunId: string | null,
+) {
+  if (!baselineRunId || !retestRunId) return null;
+  const prisma = getPrisma();
+  const include = { analysis: true, citationSources: true, probeResults: { where: { probeFamily: "answer_extraction" as const }, orderBy: { createdAt: "desc" as const }, take: 1 } };
+  const [baselineRun, retestRun] = await Promise.all([
+    prisma.samplingRun.findUnique({ where: { id: baselineRunId }, include: { responses: { include } } }),
+    prisma.samplingRun.findUnique({ where: { id: retestRunId }, include: { responses: { include } } }),
+  ]);
+  if (!baselineRun || !retestRun) return null;
+  const pre = ratesByQuestion(experiment.metricKey, baselineRun.responses);
+  const post = ratesByQuestion(experiment.metricKey, retestRun.responses);
+  const outcomes = experiment.assignments.flatMap((assignment) => pre.has(assignment.queryId) && post.has(assignment.queryId) ? [{ queryId: assignment.queryId, arm: assignment.arm, preRate: pre.get(assignment.queryId)!, postRate: post.get(assignment.queryId)! }] : []);
+  if (!outcomes.some((item) => item.arm === "treatment") || !outcomes.some((item) => item.arm === "control")) return null;
+  const result = clusteredDifferenceInDifferences(outcomes, { seed: experiment.assignmentSeed, iterations: 2000 });
+  const expected = Math.max(1, baselineRun.sampleCount + retestRun.sampleCount);
+  const completed = baselineRun.responses.length + retestRun.responses.length;
+  return {
+    ...result,
+    modelConfigStable: modelSet(baselineRun.responses).join("|") === modelSet(retestRun.responses).join("|"),
+    failureRate: Math.max(0, 1 - completed / expected),
+  };
+}
+
+function ratesByQuestion(metricKey: string, responses: ResponseForMetric[]) {
+  const buckets = new Map<string, { total: number; successes: number }>();
+  for (const response of responses) {
+    const bucket = buckets.get(response.queryId) ?? { total: 0, successes: 0 };
+    bucket.total += 1;
+    if (responseSucceeded(metricKey, response)) bucket.successes += 1;
+    buckets.set(response.queryId, bucket);
+  }
+  return new Map([...buckets].map(([queryId, bucket]) => [queryId, bucket.successes / bucket.total]));
+}
+
+function modelSet(responses: Array<{ providerId: string | null; modelId: string | null; model: string }>) {
+  return [...new Set(responses.map((item) => `${item.providerId ?? "provider"}:${item.modelId ?? item.model}`))].sort();
 }
 
 function resultToDid(result: {
@@ -394,14 +544,30 @@ export async function createExperimentWaveRun(input: {
   if (experiment.assignments.length < 2) throw new Error("Experiment has no assigned questions.");
 
   const selectedQueryIds = experiment.assignments.map((assignment) => assignment.queryId);
-  const sampleCountPerQuery = input.sampleCountPerQuery ?? 1;
+  const protocol = isRecord(experiment.protocol) ? experiment.protocol : {};
+  const sampling = isRecord(protocol.sampling) ? protocol.sampling : {};
+  const frozenSampleCount = typeof sampling.samplesPerQuestionPerModelPerWave === "number" ? sampling.samplesPerQuestionPerModelPerWave : 3;
+  const sampleCountPerQuery = input.sampleCountPerQuery ?? frozenSampleCount;
+  const baselineWave = input.waveType === "retest"
+    ? await prisma.experimentWave.findFirst({ where: { experimentId: experiment.id, waveType: "baseline", runId: { not: null } }, include: { run: true }, orderBy: { measuredAt: "asc" } })
+    : null;
+  const baselineStrategy = isRecord(baselineWave?.run?.samplingStrategy) ? baselineWave.run.samplingStrategy : {};
+  const baselineMatrix = Array.isArray(baselineStrategy.modelMatrix)
+    ? baselineStrategy.modelMatrix.flatMap((value) => {
+        const row = isRecord(value) ? value : {};
+        return typeof row.providerId === "string" && typeof row.model === "string" && typeof row.platform === "string"
+          ? [{ providerId: row.providerId, providerName: typeof row.providerName === "string" ? row.providerName : null, modelId: typeof row.modelId === "string" ? row.modelId : null, model: row.model, platform: row.platform, modelKey: typeof row.modelKey === "string" ? row.modelKey : `${row.providerId}:${row.model}` }]
+          : [];
+      })
+    : [];
+  const frozenMatrix = baselineMatrix.length ? baselineMatrix : await resolveExperimentModelMatrix(selectedQueryIds.length * sampleCountPerQuery);
   const run = await prisma.samplingRun.create({
     data: {
       projectId: experiment.projectId,
       subjectId: experiment.subjectId,
       runType: input.waveType === "baseline" ? "baseline" : "retest",
       status: input.queued ? "queued" : "draft",
-      platforms: ["openai"],
+      platforms: [...new Set(frozenMatrix.map((item) => item.platform))],
       sampleCountPerQuery,
       selectedQueryIds,
       sampleCount: selectedQueryIds.length * sampleCountPerQuery,
@@ -410,6 +576,9 @@ export async function createExperimentWaveRun(input: {
         experimentId: experiment.id,
         waveType: input.waveType,
         metricKey: experiment.metricKey,
+        protocolVersion: typeof protocol.version === "string" ? protocol.version : "legacy",
+        assignmentSeed: experiment.assignmentSeed,
+        modelMatrix: frozenMatrix,
       },
       scheduledAt: new Date(),
       traceId: input.traceId,
@@ -428,6 +597,24 @@ export async function createExperimentWaveRun(input: {
     data: { status: input.waveType === "baseline" ? "running" : "measuring" },
   });
   return { experiment, run, wave };
+}
+
+async function resolveExperimentModelMatrix(workUnits: number) {
+  const prisma = getPrisma();
+  const plan = await resolveTaskExecutionPlan({ task: "answer_sampling", workUnits });
+  return Promise.all(plan.lanes.map(async (lane) => {
+    const provider = await prisma.aIProvider.findUnique({ where: { id: lane.providerId } });
+    if (!provider) throw new Error("Experiment model provider is unavailable.");
+    const model = await prisma.aIModel.findFirst({ where: { providerId: provider.id, OR: [{ name: lane.model }, { displayName: lane.model }] } });
+    return {
+      providerId: provider.id,
+      providerName: provider.name,
+      modelId: model?.id ?? null,
+      model: model?.name ?? lane.model,
+      platform: platformFromProviderType(provider.providerType),
+      modelKey: modelKeyFromParts({ providerId: provider.id, modelId: model?.id, model: model?.name ?? lane.model }),
+    };
+  }));
 }
 
 export type OutcomeCorrelation = {
@@ -545,4 +732,3 @@ function normalizedResult(response: Pick<ResponseForMetric, "probeResults">) {
   const value = response.probeResults[0]?.normalizedJson;
   return isRecord(value) ? value : {};
 }
-

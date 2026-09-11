@@ -29,6 +29,7 @@ export type OpportunityIntent = (typeof opportunityIntents)[number];
 
 export type OpportunityDifficulty = "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
 export type OpportunityPriority = "P0" | "P1" | "P2" | "P3";
+export type TerritoryValidationStatus = "UNVALIDATED" | "INSUFFICIENT_EVIDENCE" | "VALIDATED";
 
 export type OpportunityScoreComponents = {
   intentStrength: number;
@@ -103,5 +104,14 @@ export type QuestionTerritoryItem = {
   difficulty: OpportunityDifficulty;
   priority: OpportunityPriority;
   evidence: OpportunityEvidence[];
+  validationStatus: TerritoryValidationStatus;
+  supportingSampleCount: number;
+  entityFitScore: number;
+  competitorWeaknessScore: number;
+  answerInclusionPotential: number;
+  contentFeasibilityScore: number;
+  conversionValueScore: number;
+  recommendedContentAssets: string[];
+  missingEvidence: string[];
+  suggestedProbeQueries: string[];
 };
-

@@ -1,4 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
+import { createHash } from "node:crypto";
 import { resolveTaskExecutionPlan } from "@/server/ai/execution-policies";
 import { platformFromProviderType } from "@/server/ai/platform";
 import { getProviderRuntimeContext, logAIUsage } from "@/server/ai/provider-registry";
@@ -8,6 +9,7 @@ import { createSemanticCoverageSnapshot } from "@/server/analysis/semantic-cover
 import { createRunStatistics } from "@/server/analysis/stability";
 import { getPrisma } from "@/server/db";
 import { storeObjectArtifact } from "@/server/external/object-storage";
+import { verifyCitationSource } from "@/server/evidence/source-verifier";
 import { buildCipMetricBundle, metricSnapshotDataFromBundle, modelKeyFromParts } from "@/server/metrics/cip-metrics";
 import { runWithConcurrency } from "@/server/orchestration/concurrency";
 
@@ -93,9 +95,16 @@ export async function executeSamplingRun(runId: string, requestedByUserId?: stri
     const laneContext = fixedModelMatrix
       ? laneContexts[job.modelIndex % laneContexts.length]
       : laneContexts[laneIndex % laneContexts.length];
-    const started = Date.now();
+    const startedAt = new Date();
+    const started = startedAt.getTime();
     const persona = query.personaType ?? query.persona ?? "buyer";
     const region = query.region ?? "US";
+    const systemPrompt = [
+      "You answer as a mainstream AI assistant.",
+      "Provide a helpful answer to the user query.",
+      "Do not mention that this is an audit.",
+      `Assume persona: ${persona}. Region: ${region}. Context: ${query.contextMode}.`,
+    ].join(" ");
     try {
       await prisma.querySample.upsert({
         where: {
@@ -131,21 +140,17 @@ export async function executeSamplingRun(runId: string, requestedByUserId?: stri
       });
 
       const result = await laneContext.runtime.generateText({
-        system: [
-          "You answer as a mainstream AI assistant.",
-          "Provide a helpful answer to the user query.",
-          "Do not mention that this is an audit.",
-          `Assume persona: ${persona}. Region: ${region}. Context: ${query.contextMode}.`,
-        ].join(" "),
+        system: systemPrompt,
         prompt: query.queryText,
         operation: "answer_sampling",
         model: laneContext.lane.model,
       });
 
       const rawResponse = JSON.stringify(result.raw);
+      const responseHash = createHash("sha256").update(rawResponse).digest("hex");
       const objectKey =
         rawResponse.length > 100_000
-          ? `ai-responses/${run.projectId}/${run.id}/${query.id}-${sampleIndex}.json`
+          ? `ai-responses/${run.projectId}/${run.id}/${query.id}-${laneContext.modelKey}-${sampleIndex}.json`
           : null;
       if (objectKey) {
         await storeObjectArtifact({
@@ -172,6 +177,25 @@ export async function executeSamplingRun(runId: string, requestedByUserId?: stri
           rawResponse: objectKey ? `stored:${objectKey}` : rawResponse,
           normalizedAnswer: result.text,
           citations: (asRecord(result.raw).citations ?? null) as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput,
+          systemPrompt,
+          userPrompt: query.queryText,
+          requestParams: { operation: "answer_sampling" },
+          providerRequestId: String(asRecord(result.raw).id ?? asRecord(result.raw).request_id ?? "") || null,
+          requestStartedAt: startedAt,
+          requestCompletedAt: new Date(),
+          responseHash,
+          samplingConfig: {
+            modelKey: laneContext.modelKey,
+            providerId: laneContext.provider.id,
+            modelId: laneContext.modelRecord?.id ?? null,
+            model: laneContext.lane.model,
+            sampleIndex,
+            persona: String(persona),
+            region,
+            contextMode: query.contextMode,
+            strategy: run.samplingStrategy,
+          },
+          evidenceStatus: "SUPPORTED",
         },
       });
 
@@ -259,6 +283,19 @@ export async function executeSamplingRun(runId: string, requestedByUserId?: stri
   await runWithConcurrency(collectedResponseIds, analysisLanes, async (responseId) => {
     await analyzeResponse(responseId, requestedByUserId).catch((error) => {
       failures.push(`analysis:${responseId}: ${error instanceof Error ? error.message : "unknown"}`);
+    });
+  });
+
+  // Source verification runs inside the durable sampling worker, after answer
+  // extraction, so citation network latency never blocks model sampling.
+  const citations = await prisma.citationSource.findMany({
+    where: { responseId: { in: collectedResponseIds }, sourceUrl: { not: null } },
+    select: { id: true, sourceUrl: true },
+  });
+  await runWithConcurrency(citations, Math.min(3, Math.max(1, citations.length)), async (citation) => {
+    if (!citation.sourceUrl) return;
+    await verifyCitationSource({ projectId: run.projectId, citationSourceId: citation.id, url: citation.sourceUrl, subjectDomain: run.subject?.websiteUrl ?? run.project.domain }).catch((error) => {
+      console.error("Source verification failed before a status could be persisted.", { citationId: citation.id, error });
     });
   });
 

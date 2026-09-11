@@ -5,6 +5,7 @@ import { getProject } from "@/server/data/projects";
 import { getPrisma } from "@/server/db";
 import { withApiTrace } from "@/server/observability/api-wrapper";
 import { buildReportSnapshot } from "@/server/report/report-snapshot";
+import { createReportEvidence } from "@/server/evidence/evidence-service";
 
 type Context = {
   params: Promise<{ projectId: string }>;
@@ -74,6 +75,7 @@ export const POST = withApiTrace<Context>({ subsystem: "report", operation: "rep
       ].join(""),
     },
   });
+  await createReportEvidence(report.id);
 
   return NextResponse.json({ report }, { status: 201 });
 });

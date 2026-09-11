@@ -4,7 +4,7 @@
 import type { Locale } from "@/i18n/config";
 import type { Prisma } from "@/generated/prisma/client";
 import { getPrisma } from "@/server/db";
-import { getPlan, type PlanLimits } from "@/server/billing/plans";
+import { applyLimitOverrides, getPlan, type PlanLimits } from "@/server/billing/plans";
 
 export type UsageMetric = {
   key: keyof PlanLimits;
@@ -52,6 +52,7 @@ export async function getOrganizationUsage(organizationId: string): Promise<Orga
   if (!organization) return null;
 
   const plan = getPlan(organization.plan);
+  const limits = applyLimitOverrides(plan.limits, organization.quotaOverrides);
   const monthStart = startOfMonthUtc();
 
   const [projects, auditsThisMonth, experiments, seats] = await Promise.all([
@@ -68,11 +69,11 @@ export async function getOrganizationUsage(organizationId: string): Promise<Orga
     seats,
   };
 
-  const metrics: UsageMetric[] = (Object.keys(plan.limits) as Array<keyof PlanLimits>).map((key) => ({
+  const metrics: UsageMetric[] = (Object.keys(limits) as Array<keyof PlanLimits>).map((key) => ({
     key,
     used: used[key],
-    limit: plan.limits[key],
-    exceeded: used[key] >= plan.limits[key],
+    limit: limits[key],
+    exceeded: used[key] >= limits[key],
   }));
 
   const planRenewsInDays = organization.planRenewsAt
@@ -129,7 +130,7 @@ export async function reserveDiagnosisAudit(input: DiagnosisReservationInput): P
     if (activeJob) return { status: "existing", job: activeJob };
 
     const monthStart = startOfMonthUtc();
-    const limit = getPlan(organization.plan).limits.auditsPerMonth;
+    const limit = applyLimitOverrides(getPlan(organization.plan).limits, organization.quotaOverrides).auditsPerMonth;
     const used = await tx.analysisJob.count({
       where: consumedAuditsWhere(input.organizationId, monthStart),
     });
@@ -161,7 +162,7 @@ export async function canCreateProject(organizationId: string): Promise<QuotaChe
   const prisma = getPrisma();
   const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
   if (!organization) return { allowed: true }; // fail open: don't block when org is unknown
-  const limit = getPlan(organization.plan).limits.projects;
+  const limit = applyLimitOverrides(getPlan(organization.plan).limits, organization.quotaOverrides).projects;
   const used = await prisma.project.count({ where: { organizationId } });
   return used >= limit ? { allowed: false, limit, used } : { allowed: true };
 }

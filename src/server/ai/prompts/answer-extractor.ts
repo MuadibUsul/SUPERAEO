@@ -1,8 +1,9 @@
 import { z } from "zod";
 
 import type { SubjectContext } from "@/server/projects/subject-service";
+import { semanticUnitInputSchema } from "@/server/semantic-nebula/semantic-unit";
 
-export const answerExtractorPromptVersion = "2026-08-14.v3";
+export const answerExtractorPromptVersion = "2026-08-24.v4";
 
 const sentimentSchema = z.enum(["positive", "neutral", "negative", "mixed", "unknown"]);
 
@@ -79,6 +80,10 @@ const strictAnswerExtractorOutputSchema = z.object({
     confidence: 0.5,
     errorClaims: [],
   }),
+  // Structured semantic units let the model do the segmentation (far better than
+  // regex/markdown scraping for CN/EN/mixed text) so the semantic nebula can be
+  // built from typed subject/predicate/object units instead of scraped phrases.
+  semanticUnits: z.array(semanticUnitInputSchema).max(12).default([]),
   confidence: z.number().min(0).max(1),
 });
 
@@ -160,12 +165,28 @@ export function buildAnswerExtractorPrompt(input: {
           confidence: 0.5,
           errorClaims: [],
         },
+        semanticUnits: [
+          {
+            domain: "ATTRIBUTE",
+            type: "PROPERTY",
+            canonicalLabel: "concept the answer associates with the subject",
+            subject: "subject or entity the claim is about",
+            predicate: "HAS_PROPERTY",
+            object: "the associated concept",
+            polarity: "positive",
+            negated: false,
+            uncertainty: "certain",
+            confidence: 0.6,
+          },
+        ],
         confidence: 0.5,
       }),
       "Allowed sentiment values: positive, neutral, negative, mixed, unknown. Allowed riskLevel values: P1, P2, P3.",
       "Use null for unknown nullable scalar values and [] for unknown lists. recommendationWinner must be a string or null, never an object.",
       "For mentionedEntities.role: use target for the subject itself, comparison for competing or alternative entities, source for cited publishers, concept for non-entity concepts, and unknown only when none applies.",
       "Use supportsTarget on each citation to show whether it substantiates the target subject, not a generic category claim.",
+      "semanticUnits: at most 12 units that capture the meaningful concepts, relations, scenarios, and evaluations the answer actually states about the subject. Classify each by semantic role (domain/type) and keep subject/predicate/object, plus negation, uncertainty, condition, time, quantities, and confidence when present.",
+      "Extract semanticUnits from the meaning of the sentences, not from formatting: never emit a section heading, a list bullet, or a bold label as a unit unless it is itself a real concept. Never treat a premise in the question as a discovered fact.",
     ].join("\n"),
   };
 }
@@ -194,8 +215,24 @@ function normalizeAnswerExtractorOutput(value: unknown) {
       .filter((item): item is NonNullable<typeof item> => Boolean(item)),
     entityProfile: normalizeEntityProfile(source.entityProfile),
     entityAccuracy: normalizeEntityAccuracy(source.entityAccuracy),
+    semanticUnits: normalizeSemanticUnits(source.semanticUnits),
     confidence: scoreValue(source.confidence),
   };
+}
+
+/**
+ * Keep only units that satisfy the shared semantic-unit schema, dropping
+ * malformed entries individually so one bad unit never fails the whole
+ * extraction. Capped to match the strict schema's limit.
+ */
+function normalizeSemanticUnits(value: unknown) {
+  const units: z.infer<typeof semanticUnitInputSchema>[] = [];
+  for (const item of arrayValue(value)) {
+    const parsed = semanticUnitInputSchema.safeParse(item);
+    if (parsed.success) units.push(parsed.data);
+    if (units.length >= 12) break;
+  }
+  return units;
 }
 
 function normalizeMentionedEntity(value: unknown) {
@@ -378,6 +415,7 @@ export function toNormalizedProbeJson(data: AnswerExtractorOutput, subject: Subj
     risks: data.risks,
     entityProfile: data.entityProfile,
     entityAccuracy: data.entityAccuracy,
+    semanticUnits: data.semanticUnits,
     confidence: data.confidence,
   };
 }

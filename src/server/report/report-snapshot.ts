@@ -12,7 +12,7 @@ import { asRecord, asRecordArray } from "@/server/utils/coerce";
 
 const REPORT_LOCALES: Locale[] = ["zh-CN", "en"];
 
-const snapshotVersion = "2026-06-21.a-layer.v1";
+const snapshotVersion = "2026-09-09.evidence.v2";
 
 export async function buildReportSnapshot(input: {
   projectId: string;
@@ -170,6 +170,7 @@ export async function buildReportSnapshot(input: {
       model: response.model,
       normalizedAnswer: response.normalizedAnswer,
       rawResponse: response.rawResponse,
+      responseHash: response.responseHash,
       createdAt: response.createdAt.toISOString(),
     })),
   });
@@ -184,4 +185,3 @@ export function getSnapshotBrief(snapshot: unknown, locale: Locale) {
 export function toJsonValue<T>(value: T): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
-

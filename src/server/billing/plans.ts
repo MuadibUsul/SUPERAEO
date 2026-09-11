@@ -54,6 +54,22 @@ export function getPlan(plan: OrganizationPlan): PlanDefinition {
   return PLANS[plan] ?? PLANS.free;
 }
 
+export function applyLimitOverrides(limits: PlanLimits, overrides: unknown): PlanLimits {
+  const values = overrides && typeof overrides === "object" && !Array.isArray(overrides)
+    ? overrides as Record<string, unknown>
+    : {};
+  const value = (key: keyof PlanLimits) => {
+    const override = values[key];
+    return typeof override === "number" && Number.isSafeInteger(override) && override >= 0 ? override : limits[key];
+  };
+  return {
+    projects: value("projects"),
+    auditsPerMonth: value("auditsPerMonth"),
+    experiments: value("experiments"),
+    seats: value("seats"),
+  };
+}
+
 /** Localized, presentation-only copy for plans (names, taglines, feature labels). */
 export function getPlanCopy(locale: Locale) {
   const zh = locale === "zh-CN";
@@ -64,8 +80,8 @@ export function getPlanCopy(locale: Locale) {
     pro: zh ? "专业版" : "Pro",
     scale: zh ? "规模版" : "Scale",
     taglines: {
-      free: zh ? "先看看 AI 怎么理解你" : "See how AI understands you",
-      pro: zh ? "持续监测，并证明你的干预有效" : "Monitor continuously and prove your impact",
+      free: zh ? "先观察指定模型如何描述你" : "Observe how specified models describe you",
+      pro: zh ? "持续监测，并评估干预净效果" : "Monitor continuously and estimate intervention effects",
       scale: zh ? "为团队和代理商提供规模化与集成" : "Scale, integrations, and control for teams & agencies",
     } as Record<OrganizationPlan, string>,
     limitLabels: {
@@ -80,7 +96,7 @@ export function getPlanCopy(locale: Locale) {
       evidence: zh ? "统一证据抽屉" : "Unified evidence drawer",
       communitySupport: zh ? "社区支持" : "Community support",
       everythingFree: zh ? "包含免费版全部功能" : "Everything in Free",
-      proof: zh ? "因果验证（处理/对照 + 净提升）" : "Proof layer (treatment/control net lift)",
+      proof: zh ? "准实验评估（处理/对照 + 净差异）" : "Quasi-experimental layer (treatment/control net difference)",
       ga4: zh ? "GA4 / 真实结果相关性" : "GA4 / real-outcome correlation",
       report: zh ? "可分享的咨询式报告" : "Shareable consulting-grade reports",
       emailSupport: zh ? "邮件支持" : "Email support",

@@ -35,7 +35,6 @@ export type ReportAnalysis = {
 
 type ExperimentSummary = { name?: string; significant?: boolean; netEffect?: number; pValue?: number };
 
-const HEALTHY = 0.66;
 const WEAK = 0.4;
 
 function pct(value: number): number {
@@ -123,12 +122,12 @@ export function buildReportAnalysis(input: {
     const causal =
       index === 0 && sig
         ? (zh
-            ? `已验证：${sig.name ?? "一项实验"}扣除模型漂移后净提升 ${Math.round((sig.netEffect ?? 0) * 100)} 个点（p=${(sig.pValue ?? 0).toFixed(2)}）——是干预而非漂移。`
-            : `Proven: ${sig.name ?? "an experiment"} lifted this ${Math.round((sig.netEffect ?? 0) * 100)}pts net of model drift (p=${(sig.pValue ?? 0).toFixed(2)}) — intervention, not drift.`)
+            ? `准实验估计：${sig.name ?? "一项实验"}的处理/对照净差异为 ${Math.round((sig.netEffect ?? 0) * 100)} 个点（p=${(sig.pValue ?? 0).toFixed(2)}）；仍依赖共同趋势等假设。`
+            : `Quasi-experimental estimate: ${sig.name ?? "an experiment"} produced a ${Math.round((sig.netEffect ?? 0) * 100)}pt treatment/control net difference (p=${(sig.pValue ?? 0).toFixed(2)}); assumptions still apply.`)
         : index === 0 && corr !== null && Math.abs(corr) >= 0.5
           ? (zh
-              ? `AI 可见度与${corrSource || "业务结果"}相关（r=${corr.toFixed(2)}）——它不是虚荣指标。`
-              : `AI visibility tracks ${corrSource || "the business outcome"} (r=${corr.toFixed(2)}) — not a vanity metric.`)
+              ? `观察性结果：AI 可见度与${corrSource || "业务结果"}相关（r=${corr.toFixed(2)}），不能据此判断因果。`
+              : `Observational result: AI visibility correlates with ${corrSource || "the business outcome"} (r=${corr.toFixed(2)}); this does not establish causation.`)
           : null;
 
     const impact =
@@ -143,7 +142,7 @@ export function buildReportAnalysis(input: {
 
   const lead = focus.primary;
   const verdict = profile.verdictLead[input.locale].replace("{subject}", input.subjectName);
-  const headline =
+  const baseHeadline =
     lead && lead.percent !== null
       ? zh
         ? `${lead.label}为 ${lead.percent}${lead.isDelta ? " 个点" : "%"}，是当前最该盯的指标。`
@@ -151,6 +150,15 @@ export function buildReportAnalysis(input: {
       : zh
         ? "证据尚不足以给出判定，先完成一次完整审计。"
         : "Not enough evidence for a verdict yet — run a full audit first.";
+  // Below the sample floor the numbers are directional; say so up front rather
+  // than letting a small-n read masquerade as a settled verdict.
+  const caveat =
+    focus.sampleCount > 0 && !focus.reliable
+      ? zh
+        ? `（基于 ${focus.sampleCount} 个采样，样本偏少，方向性参考）`
+        : ` (based on ${focus.sampleCount} samples — directional only)`
+      : "";
+  const headline = baseHeadline + caveat;
 
   return { headline, verdict, metrics };
 }

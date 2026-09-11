@@ -37,7 +37,7 @@ test("no evidence => unlocated", () => {
   const p = buildPositionSummary({ subjectName: "X", nebulaSummary: { totalTerms: 0 }, locale: "en" });
   assert.equal(p.clarity, "unlocated");
   assert.equal(p.anchor, null);
-  assert.match(p.headline, /isn't enough data/);
+  assert.match(p.headline, /not enough sampled evidence/);
 });
 
 test("partial when owned meanings are thin or confusions crowd", () => {

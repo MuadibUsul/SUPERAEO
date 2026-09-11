@@ -5,9 +5,9 @@
 #   - web:    next start (default CMD)
 #   - worker: npm run worker  (BullMQ; set via compose command override)
 #
-# Both processes need devDependencies at runtime (worker runs via tsx, and
-# prisma migrate deploy needs the Prisma CLI), so the runner keeps the full
-# dependency tree instead of the slimmer standalone output.
+# Worker and migrations need `tsx` and the Prisma CLI at runtime; those tools
+# are production dependencies. The runtime image intentionally omits lint,
+# test, browser, and compiler-only packages.
 
 # ---------------------------------------------------------------------------
 # Builder
@@ -35,6 +35,15 @@ COPY . .
 RUN npm run build
 
 # ---------------------------------------------------------------------------
+# Runtime dependencies
+# ---------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS runtime-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev \
+  && npm cache clean --force
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm-slim AS runner
@@ -53,7 +62,7 @@ RUN groupadd --system --gid 1001 nodejs \
   && useradd --system --uid 1001 --gid nodejs nextjs
 
 COPY --from=builder --chown=nextjs:nodejs /app/package.json /app/package-lock.json ./
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=runtime-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma

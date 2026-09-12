@@ -68,7 +68,7 @@ export default async function OpportunitiesPage({ params }: PageProps) {
     <ProjectPageShell
       projectId={projectId}
       locale={locale}
-      title={dictionary.semanticIntelligence.opportunities.title}
+      title={locale === "zh-CN" ? "优先行动" : "Priority actions"}
       eyebrow={state.data.brandName}
       description={dictionary.semanticIntelligence.opportunities.description}
       workflowState={state.data._count}
@@ -106,6 +106,7 @@ export default async function OpportunitiesPage({ params }: PageProps) {
             <p className="text-sm text-dim">{dictionary.semanticIntelligence.states.noData}</p>
           ) : (
             <OpportunityBoard
+              locale={locale}
               opportunities={opportunities}
               labels={{
                 lanes: laneLabels,

@@ -31,16 +31,16 @@ export default async function HomePage({ params }: PageProps) {
       ];
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
       <SiteHeader locale={locale} variant="cosmic" />
       <main>
         <PublicNebulaHero locale={locale} hero={dictionary.homeHero} />
 
-        <section className="mx-auto max-w-[1440px] px-5 py-24 sm:px-8 lg:px-12">
+        <section id="how-it-works" className="mx-auto max-w-[1440px] scroll-mt-24 px-5 py-16 sm:px-8 lg:px-12">
           <div className="grid gap-12 lg:grid-cols-[0.72fr_1.28fr]">
             <div>
               <p className="eyebrow text-primary">{zh ? "从回答到证据" : "From answer to evidence"}</p>
-              <h2 className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-balance sm:text-5xl">{zh ? "一套有边界的认知观测流程。" : "A bounded cognition-observation workflow."}</h2>
+              <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-balance sm:text-4xl">{zh ? "复杂的分析，清楚的下一步。" : "Complex analysis. A clear next step."}</h2>
               <p className="mt-5 max-w-md text-sm leading-7 text-muted-foreground">{zh ? "CIP 不声称读取模型内部状态。它记录指定模型在指定条件下如何回答，并让每个判断都能回到原始材料。" : "CIP does not claim access to hidden model state. It records how specified models answer under specified conditions and keeps every judgment traceable."}</p>
             </div>
             <div className="grid border-t border-border md:grid-cols-2">
@@ -59,7 +59,6 @@ export default async function HomePage({ params }: PageProps) {
 
         <section className="mx-auto max-w-[1440px] px-5 py-24 sm:px-8 lg:px-12">
           <div className="panel-strong relative overflow-hidden p-8 sm:p-12 lg:flex lg:items-end lg:justify-between">
-            <div className="absolute inset-x-0 top-0 h-0.5 bg-[var(--spectrum)]" />
             <div className="max-w-3xl"><FlaskConical className="size-6 text-primary" /><h2 className="mt-5 text-3xl font-semibold tracking-[-0.045em] sm:text-4xl">{zh ? "先观察，再行动，最后验证。" : "Observe first. Act second. Validate last."}</h2><p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">{zh ? "从一次免费审计开始。样本不足时，系统会明确告诉你还不能得出什么。" : "Start with one audit. When evidence is insufficient, the system tells you what cannot yet be concluded."}</p></div>
             <Button asChild size="lg" className="mt-8 shrink-0 lg:mt-0"><Link href={`/${locale}/start`}>{zh ? "生成我的认知审计" : "Create my cognition audit"}<ArrowRight /></Link></Button>
           </div>

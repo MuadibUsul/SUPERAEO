@@ -77,7 +77,7 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
         <MetricTile label={dictionary.semanticIntelligence.concepts.incorrectAssociationRisk} value={summary.incorrectAssociationRisk} />
       </div>
 
-      <Card className="border-border bg-[#03050b] shadow-[0_24px_80px_-36px_rgba(30,180,220,0.24)]">
+      <Card className="dark border-border bg-[#03050b] text-foreground shadow-[0_24px_80px_-36px_rgba(30,180,220,0.24)]">
         <CardHeader className="flex flex-col gap-3 border-b border-white/8 sm:flex-row sm:items-center sm:justify-between">
           <div><div className="eyebrow text-primary">Cognition field</div><CardTitle className="mt-1 text-white">{dictionary.semanticIntelligence.concepts.observableAnswerSpace}</CardTitle></div>
           <SemanticJobAction

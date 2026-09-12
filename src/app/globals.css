@@ -73,13 +73,13 @@
    print and daytime use. Spectral hues are darkened here for contrast on paper.
 ============================================================================ */
 :root {
-  --background: oklch(0.99 0.004 275);
-  --foreground: oklch(0.23 0.02 274);
+  --background: #f8f9fb;
+  --foreground: #20222b;
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.23 0.02 274);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.23 0.02 274);
-  --primary: oklch(0.58 0.13 218);
+  --primary: #5b52cf;
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.968 0.004 274);
   --secondary-foreground: oklch(0.3 0.02 274);
@@ -92,7 +92,7 @@
   --border-strong: oklch(0.87 0.008 274);
   --input: oklch(0.9 0.007 274);
   --ring: oklch(0.58 0.13 218 / 45%);
-  --radius: 0.625rem;
+  --radius: 0.75rem;
 
   /* Spectrum stops (darkened for white ground) */
   --sp-magenta: oklch(0.55 0.22 356);
@@ -242,9 +242,7 @@
 
   .app-canvas {
     background-color: var(--background);
-    background-image: linear-gradient(color-mix(in oklch, var(--border) 22%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--border) 22%, transparent) 1px, transparent 1px);
-    background-size: 48px 48px;
-    background-position: -1px -1px;
+    background-image: none;
   }
 
   .section-frame { border-top: 1px solid var(--border); padding-top: 1.25rem; }
@@ -269,21 +267,21 @@
 
   .workspace-shell {
     color-scheme: light;
-    --background: oklch(0.975 0.004 255);
+    --background: #f8f9fb;
     --foreground: oklch(0.22 0.018 258);
     --card: oklch(0.995 0.002 255);
     --card-foreground: var(--foreground);
     --popover: oklch(1 0 0);
     --popover-foreground: var(--foreground);
-    --primary: oklch(0.5 0.125 218);
+    --primary: #5b52cf;
     --primary-foreground: oklch(0.99 0 0);
     --secondary: oklch(0.95 0.006 255);
     --secondary-foreground: oklch(0.29 0.02 258);
-    --muted: oklch(0.95 0.006 255);
+    --muted: #f1f2f6;
     --muted-foreground: oklch(0.5 0.018 258);
-    --accent: oklch(0.94 0.014 222);
+    --accent: #eeecfa;
     --accent-foreground: oklch(0.27 0.035 230);
-    --border: oklch(0.895 0.009 255);
+    --border: #e5e6ed;
     --border-strong: oklch(0.8 0.014 255);
     --input: oklch(0.87 0.01 255);
     --ring: oklch(0.5 0.125 218 / 38%);
@@ -306,8 +304,7 @@
   }
 
   .workspace-shell .app-canvas {
-    background-image: radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--border) 55%, transparent) 1px, transparent 0);
-    background-size: 24px 24px;
+    background-image: none;
   }
 
 .evidence-paper {
@@ -371,6 +368,33 @@
 @keyframes spectrum-fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.workspace-sidebar { background: #f3f4f8; }
+.workspace-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 40px;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.workspace-nav-link.pl-10 { padding-left: 2.5rem; }
+.workspace-nav-link:hover { background: var(--muted); color: var(--foreground); }
+.workspace-nav-link.is-active { background: #e9e7f7; color: #5045b9; font-weight: 600; }
+.workspace-shell .text-faint { color: var(--muted-foreground); }
+.project-heading { padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+.skip-link { position: fixed; top: -100px; left: 16px; z-index: 100; background: var(--card); padding: 12px 18px; border: 2px solid var(--primary); border-radius: 8px; }
+.skip-link:focus { top: 12px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+summary::-webkit-details-marker { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
 @layer base {

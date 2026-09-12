@@ -104,11 +104,13 @@ export function AuditStatusPanel({
   locale,
   copy,
   variant = "expanded",
+  activityOnly = false,
 }: {
   projectId: string;
   locale: string;
   copy: AuditStatusCopy;
   variant?: "expanded" | "compact";
+  activityOnly?: boolean;
 }) {
   const [status, setStatus] = useState<DiagnosisStatus | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -246,6 +248,14 @@ export function AuditStatusPanel({
     setStatus((current) => ({ ...current, ...payload, job: payload.job ?? current?.job ?? null }));
     setExpanded(true);
     void loadStatus();
+  }
+
+  if (activityOnly) {
+    if (!active && !isFailed && !error) return null;
+    return <section role="status" className={cn("flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm", isFailed || error || workerDelayed ? "border-warning/30 bg-warning/5" : "border-primary/20 bg-accent/50")}>
+      <div className="flex min-w-0 items-center gap-2">{active && !workerDelayed ? <Loader2 className="size-4 shrink-0 animate-spin text-primary" /> : <AlertTriangle className="size-4 shrink-0 text-warning" />}<span>{error || (workerDelayed ? copy.delayed : isFailed ? copy.failed : stageLabel)}</span></div>
+      <Link href={`/${locale}/app/projects/${projectId}/runs`} className="shrink-0 text-xs font-medium text-primary underline underline-offset-4">{locale === "zh-CN" ? "查看运行详情" : "View run details"}</Link>
+    </section>;
   }
 
   if (isCompleted && !expanded) {

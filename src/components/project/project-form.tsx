@@ -125,35 +125,36 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
   }
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
-      <aside className="rounded-xl border border-border bg-card p-3 shadow-sm lg:sticky lg:top-24">
-        <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+    <div className="mx-auto grid max-w-3xl items-start gap-6">
+      <aside aria-label={safeLocale === "zh-CN" ? "创建进度" : "Setup progress"}>
+        <p className="sr-only">
           {safeLocale === "zh-CN" ? "创建流程" : "Setup flow"}
         </p>
-        <div className="mt-2 space-y-1">
+        <div className="grid grid-cols-3 gap-2">
         {copy.steps.map((label, index) => (
           <button
             key={label}
             type="button"
+            aria-current={index === step ? "step" : undefined}
             disabled={index > step}
             onClick={() => index < step && setStep(index)}
             className={cn(
-              "flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98] disabled:cursor-default",
+              "flex w-full items-center gap-2 rounded-lg px-2 py-3 text-left text-xs transition-[background-color,color] duration-150 disabled:cursor-default sm:gap-3 sm:px-3 sm:text-sm",
               index === step
-                ? "bg-primary text-primary-foreground shadow-sm"
+                ? "bg-accent text-primary"
                 : index < step
                   ? "text-foreground hover:bg-accent"
                   : "text-faint",
             )}
           >
-            <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[10px]", index === step ? "border-white/30 bg-white/12" : index < step ? "border-success/30 bg-success/10 text-success" : "border-border")}>
+            <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[10px]", index === step ? "border-primary bg-primary text-white" : index < step ? "border-success/30 bg-success/10 text-success" : "border-border")}>
               {index < step ? <Check className="size-3" /> : index + 1}
             </span>
             <span className="font-medium">{label}</span>
           </button>
         ))}
         </div>
-        <p className="mt-4 border-t border-border px-3 pt-4 text-xs leading-5 text-muted-foreground">
+        <p className="mt-3 px-3 text-xs leading-5 text-muted-foreground">
           {safeLocale === "zh-CN" ? "只需提供最少信息，系统会自动生成问题地图并开始采样。" : "Provide the minimum context. CIP builds the question map and starts sampling."}
         </p>
       </aside>
@@ -177,6 +178,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
                   <button
                     key={item.key}
                     type="button"
+                    aria-pressed={active}
                     className={cn(
                       "rounded-xl border p-4 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.985]",
                       active
@@ -204,6 +206,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={contextConfig.subjectLabel}>
                 <Input
+                  aria-label={contextConfig.subjectLabel}
                   value={subjectName}
                   onChange={(event) => setSubjectName(event.target.value)}
                   placeholder={contextConfig.subjectPlaceholder}
@@ -211,6 +214,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
               </Field>
               <Field label={contextConfig.websiteLabel} optional={!requiresWebsite} required={requiresWebsite} optionalLabel={contextConfig.optionalLabel}>
                 <Input
+                  aria-label={contextConfig.websiteLabel}
                   value={domain}
                   onChange={(event) => setDomain(event.target.value)}
                   placeholder={contextConfig.websitePlaceholder}
@@ -218,6 +222,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
               </Field>
               <Field label={contextConfig.categoryLabel}>
                 <Input
+                  aria-label={contextConfig.categoryLabel}
                   value={industry}
                   onChange={(event) => setIndustry(event.target.value)}
                   placeholder={contextConfig.categoryPlaceholder}
@@ -226,13 +231,14 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
               <Field label={copy.language}>
                 <div className="flex items-center gap-2">
                   <Input
+                    aria-label={copy.language}
                     value={language}
                     onChange={(event) => setLanguageOverride(event.target.value)}
                     placeholder="en"
                   />
                   {languageOverride === null ? (
-                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[oklch(0.82_0.13_205/25%)] bg-[oklch(0.82_0.13_205/10%)] px-2.5 py-1.5 text-xs text-[oklch(0.82_0.13_205)]">
-                      <span className="size-1.5 rounded-full bg-[oklch(0.82_0.13_205)]" />
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/20 bg-accent px-2.5 py-1.5 text-xs text-primary">
+                      <span className="size-1.5 rounded-full bg-primary" />
                       {safeLocale === "zh-CN" ? "自动检测" : "Auto"}
                     </span>
                   ) : (
@@ -252,6 +258,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
             </div>
             <Field label={contextConfig.audienceLabel}>
               <Textarea
+                aria-label={contextConfig.audienceLabel}
                 value={targetMarket}
                 onChange={(event) => setTargetMarket(event.target.value)}
                 rows={3}
@@ -260,6 +267,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
             </Field>
             <Field label={copy.desiredUnderstanding}>
               <Textarea
+                aria-label={copy.desiredUnderstanding}
                 value={desiredUnderstanding}
                 onChange={(event) => setDesiredUnderstanding(event.target.value)}
                 rows={4}
@@ -278,6 +286,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={copy.projectName} optional optionalLabel={contextConfig.optionalLabel}>
                 <Input
+                  aria-label={copy.projectName}
                   value={projectName}
                   onChange={(event) => setProjectName(event.target.value)}
                   placeholder={generatedProjectName}
@@ -288,6 +297,7 @@ export function ProjectForm({ locale = "zh-CN" }: { locale?: string }) {
               </Field>
               <Field label={contextConfig.comparisonLabel} optional optionalLabel={contextConfig.optionalLabel}>
                 <Input
+                  aria-label={contextConfig.comparisonLabel}
                   value={competitors}
                   onChange={(event) => setCompetitors(event.target.value)}
                   placeholder={contextConfig.comparisonPlaceholder}

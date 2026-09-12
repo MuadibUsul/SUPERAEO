@@ -74,6 +74,7 @@ export default async function RunsPage({ params }: PageProps) {
           : "Create baseline or retest runs and sample real queries through the configured AI provider."
       }
       workflowState={state.data._count}
+      statusVariant="expanded"
     >
       {disableCreate ? <StatusCallout title="Workflow prerequisite" message={runWarning ?? ""} /> : null}
       {!aiReadiness.queueReady ? (

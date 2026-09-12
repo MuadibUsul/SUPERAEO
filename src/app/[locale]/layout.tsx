@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { SiteFooter } from "@/components/layout/site-footer";
 
 import { isLocale, type Locale } from "@/i18n/config";
 
@@ -15,10 +16,9 @@ export default async function LocaleLayout({
     notFound();
   }
 
-  return children;
+  return <>{children}<SiteFooter locale={locale} /></>;
 }
 
 export function generateStaticParams(): { locale: Locale }[] {
   return [{ locale: "zh-CN" }, { locale: "en" }];
 }
-

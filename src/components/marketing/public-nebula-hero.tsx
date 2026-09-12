@@ -1,68 +1,31 @@
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react";
-
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { CognitionUniverse } from "@/components/semantic-intelligence/cognition-universe";
 import { demoUniverseNodes } from "@/components/semantic-intelligence/demo-universe";
 import { Button } from "@/components/ui/button";
 import type { Locale } from "@/i18n/config";
 import type { getDictionary } from "@/i18n/dictionaries";
 
-type Dictionary = ReturnType<typeof getDictionary>;
-
-export function PublicNebulaHero({
-  locale,
-  hero,
-}: {
-  locale: Locale;
-  hero: Dictionary["homeHero"];
-}) {
+export function PublicNebulaHero({ locale, hero }: { locale: Locale; hero: ReturnType<typeof getDictionary>["homeHero"] }) {
   const zh = locale === "zh-CN";
-  return (
-    <section
-      aria-label={hero.title}
-      className="relative min-h-[720px] overflow-hidden border-b border-white/8 bg-background"
-    >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_74%_42%,rgba(33,184,211,0.09)_0%,transparent_30%),radial-gradient(circle_at_82%_58%,rgba(123,80,210,0.08)_0%,transparent_34%)]" />
-      <div className="absolute inset-y-0 right-0 w-full lg:w-[66%]">
-        <CognitionUniverse variant="ambient" nodes={demoUniverseNodes()} subjectName={zh ? "你的品牌" : "Your brand"} className="absolute inset-0 h-full w-full" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,var(--background)_0%,color-mix(in_oklch,var(--background)_86%,transparent)_18%,transparent_52%),linear-gradient(180deg,var(--background)_0%,transparent_20%,transparent_75%,var(--background)_100%)]" />
-      </div>
-
-      <div className="relative z-20 mx-auto flex min-h-[720px] max-w-[1440px] items-center px-5 py-20 sm:px-8 lg:px-12">
-        <div className="max-w-[650px] lg:w-[48%]">
-          <div className="eyebrow inline-flex items-center gap-2 rounded-md border border-primary/20 bg-primary/8 px-2.5 py-1.5 text-primary">
-            <span className="size-1.5 rounded-full bg-primary shadow-[0_0_10px_var(--primary)]" />
-            Cognition Intelligence Platform
-          </div>
-          <h1 className="mt-7 text-[clamp(2.8rem,5vw,4.6rem)] font-semibold leading-[1.01] tracking-[-0.06em] text-foreground">
-            {zh ? (
-              <>
-                <span className="block whitespace-nowrap">观察指定 AI 模型</span>
-                <span className="block">如何描述你。</span>
-              </>
-            ) : (
-              <span className="text-balance">{hero.title}</span>
-            )}
-          </h1>
-          <p className="mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">{hero.subtitle}</p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Button asChild size="lg">
-              <Link href={`/${locale}/start`}>{zh ? "开始认知审计" : "Start an audit"}<ArrowRight /></Link>
-            </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link href={`/${locale}/methodology`}>{zh ? "查看方法与边界" : "Read the methodology"}</Link>
-            </Button>
-          </div>
-          <div className="mt-9 grid max-w-xl gap-3 border-t border-border pt-5 text-xs leading-5 text-muted-foreground sm:grid-cols-2">
-            <p className="flex gap-2"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />{zh ? "结论可追溯到模型回答与来源" : "Claims trace back to answers and sources"}</p>
-            <p className="flex gap-2"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />{zh ? "低样本自动拒绝强结论" : "Low samples block strong conclusions"}</p>
-          </div>
+  return <section className="mx-auto max-w-[1440px] px-5 pb-12 pt-12 sm:px-8 lg:px-12 lg:pt-20">
+    <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
+      <div className="py-4 lg:pb-16">
+        <p className="flex items-center gap-2 text-[11px] font-medium tracking-[0.12em] text-muted-foreground"><span className="size-1.5 rounded-full bg-primary" />COGNITION INTELLIGENCE PLATFORM</p>
+        <h1 className="mt-7 text-[clamp(2.6rem,4.3vw,4.4rem)] font-semibold leading-[1.18] tracking-[-0.055em]">{zh ? <>从 AI 的回答里，<br />找到你的<span className="text-primary">下一步。</span></> : <>Find your next move<br />in <span className="text-primary">AI answers.</span></>}</h1>
+        <p className="mt-6 max-w-lg text-base leading-8 text-muted-foreground">{zh ? "观察指定模型在指定问题和时间下如何描述你。看见认知缺口，回到原始证据，让优化有重点。" : "Observe how specified models describe you for selected questions and times. Find gaps, inspect the evidence, and focus your improvements."}</p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <Button asChild size="lg"><Link href={`/${locale}/start`}>{zh ? "开始我的分析" : "Start my analysis"}<ArrowRight /></Link></Button>
+          <Link href="#how-it-works" className="inline-flex h-11 items-center gap-2 px-3 text-sm font-medium text-muted-foreground hover:text-foreground">{zh ? "了解工作流程" : "See how it works"}<ArrowUpRight className="size-4" /></Link>
         </div>
+        <p className="mt-5 text-xs text-muted-foreground">{zh ? "品牌 · 人物 · 网站 · 产品" : "Brands · People · Websites · Products"}</p>
       </div>
-
-      <div className="pointer-events-none absolute right-5 bottom-5 z-20 hidden rounded-md border border-border bg-background/70 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur-md lg:block">
-        <span className="font-mono text-primary">LIVE DEMO</span> · {hero.demoLabel}
+      <div className="dark relative isolate h-[380px] overflow-hidden rounded-[24px] border border-white/10 bg-[#060911] text-white shadow-[0_24px_70px_-32px_rgba(39,29,85,0.45)] sm:h-[480px] lg:h-[550px]">
+        <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b border-white/10 px-5 py-4 text-[11px]"><span className="font-medium tracking-wide text-slate-200">{zh ? "认知星云" : "COGNITION NEBULA"}</span><span className="rounded-full border border-white/15 px-2 py-1 text-slate-400">{zh ? "演示数据" : "Demo data"}</span></div>
+        <CognitionUniverse variant="ambient" nodes={demoUniverseNodes()} subjectName={zh ? "你的品牌" : "Your brand"} className="absolute inset-0 h-full w-full" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#060911] to-transparent px-5 pb-5 pt-20"><p className="text-sm font-medium">{zh ? "让分散的回答，呈现关系。" : "See the connections in scattered answers."}</p><p className="mt-2 text-[11px] leading-5 text-slate-400">{hero.demoLabel}</p></div>
       </div>
-    </section>
-  );
+    </div>
+    <div className="mt-10 grid gap-5 border-y border-border py-5 text-xs text-muted-foreground sm:grid-cols-3"><p><span className="mr-2 font-mono text-primary">01</span>{zh ? "每条判断，可追溯至回答" : "Trace judgments back to answers"}</p><p><span className="mr-2 font-mono text-primary">02</span>{zh ? "模型分歧与样本边界可见" : "Visible disagreement and sample limits"}</p><p><span className="mr-2 font-mono text-primary">03</span>{zh ? "从发现问题，到复测变化" : "From finding gaps to measuring change"}</p></div>
+  </section>;
 }

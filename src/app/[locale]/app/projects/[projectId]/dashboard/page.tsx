@@ -106,9 +106,9 @@ export default async function DashboardPage({ params }: PageProps) {
     <ProjectPageShell
       projectId={project.id}
       locale={locale}
-      title={dictionary.overview.title}
+      title={zh ? "项目总览" : "Project overview"}
       eyebrow={subjectName}
-      description={dictionary.overview.question}
+      description={zh ? "了解本次抽样表现，找到值得优先推进的一步。" : "Understand the latest samples and choose the next useful step."}
       workflowState={project._count}
       statusVariant="compact"
     >
@@ -116,9 +116,22 @@ export default async function DashboardPage({ params }: PageProps) {
         <StatusCallout title={copy.notEnoughEvidence} message={copy.pendingSummary} />
       ) : null}
 
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" aria-label={zh ? "当前重点" : "Current priority"}>
+        <div className="rounded-2xl border border-primary/15 bg-card p-6 sm:p-7">
+          <p className="text-xs font-semibold text-primary">{zh ? "下一步 · 建议优先处理" : "NEXT STEP · RECOMMENDED"}</p>
+          <h2 className="mt-3 text-xl font-semibold leading-snug tracking-tight">{!brief.hasEvidence ? (zh ? "从第一轮采样开始" : "Start your first sample") : !focus.reliable ? (zh ? "先补足证据，再决定如何优化" : "Collect more evidence before optimizing") : brief.opportunities[0]?.title ?? (zh ? "复查关键证据，建立下一轮基线" : "Review evidence for the next baseline")}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{!brief.hasEvidence ? (zh ? "检查问题与模型设置，启动采样后再查看分析结果。" : "Review questions and model settings, then collect answers for analysis.") : !focus.reliable ? (zh ? `当前有 ${focus.sampleCount} 条样本。至少达到 ${focus.minSamples} 条后，再结合模型差异评估结果。` : `${focus.sampleCount} samples available. Collect at least ${focus.minSamples}, then review differences between models.`) : brief.opportunities[0]?.subtitle ?? (zh ? "检查支持与反对样本，让下一步行动有据可依。" : "Inspect supporting and opposing samples before deciding what to do.")}</p>
+          <Button asChild className="mt-5"><Link href={`/${locale}/app/projects/${projectId}/${!brief.hasEvidence || !focus.reliable ? "runs" : brief.opportunities.length ? "opportunities" : "evidence"}`}>{!brief.hasEvidence || !focus.reliable ? (zh ? "前往采样" : "Go to sampling") : brief.opportunities.length ? (zh ? "查看行动详情" : "Review action") : (zh ? "查看证据" : "Review evidence")}<ArrowRight className="size-4" /></Link></Button>
+        </div>
+        <Link href={`/${locale}/app/projects/${projectId}/semantic-nebula`} className="group relative flex min-h-48 flex-col justify-between overflow-hidden rounded-2xl bg-[#101322] p-6 text-white">
+          <div className="pointer-events-none absolute -right-10 -top-10 size-52 rounded-full border border-violet-300/20 shadow-[0_0_65px_10px_rgba(125,100,230,0.15)]" aria-hidden /><div className="pointer-events-none absolute -right-2 -top-2 size-36 rounded-full border border-violet-300/20" aria-hidden />
+          <Sparkles className="relative size-5 text-violet-300" />
+          <div className="relative mt-8"><h2 className="text-lg font-medium">{zh ? "进入认知星云" : "Explore the nebula"}</h2><p className="mt-2 max-w-56 text-xs leading-5 text-slate-300">{zh ? "探索概念关系，点击节点回到对应证据。" : "Explore concept relationships and follow nodes back to evidence."}</p><ArrowRight className="absolute bottom-0 right-0 size-4" /></div>
+        </Link>
+      </section>
+
       {/* Verdict — the one-sentence read on where the subject stands. */}
-      <section className="panel-strong relative overflow-hidden p-6 md:p-7">
-        <div className="absolute inset-x-0 top-0 h-0.5" style={{ background: "var(--spectrum)" }} aria-hidden />
+      <section className="rounded-2xl border border-border bg-card p-6 md:p-7">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-4xl">
             <Badge variant="outline" className="gap-1.5 border-primary/25 bg-primary/10 text-primary">
@@ -139,26 +152,23 @@ export default async function DashboardPage({ params }: PageProps) {
               </div>
             ) : null}
           </div>
-          <div className="shrink-0 rounded-xl border border-border bg-muted px-5 py-4 text-right">
+          <div className="shrink-0 border-l-2 border-primary/30 pl-5 text-left">
             <div className="eyebrow text-primary">{copy.eyebrow}</div>
             <div className="mt-1 text-xl font-semibold tracking-tight text-foreground">{brief.summary.evidenceLevel}</div>
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-2">
-          <Button asChild size="lg">
-            <Link href={`/${locale}/app/projects/${projectId}/semantic-nebula`}>
-              {copy.exploreNebula}
-              <Sparkles className="h-4 w-4" />
-            </Link>
+        <div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4">
+          <Button asChild variant="outline">
+            <Link href={`/${locale}/app/projects/${projectId}/evidence`}>{zh ? "查看支撑证据" : "Inspect evidence"}<ArrowRight className="size-4" /></Link>
           </Button>
-          <Button asChild size="lg" variant="outline">
+          <Button asChild variant="ghost">
             <Link href={`/${locale}/app/projects/${projectId}/opportunities`}>
               {copy.reviewOpportunities}
               <Target className="h-4 w-4" />
             </Link>
           </Button>
-          <Button asChild size="lg" variant="ghost">
+          <Button asChild variant="ghost">
             <Link href={`/${locale}/app/projects/${projectId}/reports`}>
               {copy.openReport}
               <ArrowRight className="h-4 w-4" />
@@ -209,9 +219,9 @@ export default async function DashboardPage({ params }: PageProps) {
 
       {/* Supporting signals — demoted, still available. */}
       {focus.supporting.length > 0 ? (
-        <div>
-          <div className="eyebrow mb-2 text-faint">{t.otherSignals}</div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <details className="rounded-xl border border-border bg-card p-5">
+          <summary className="cursor-pointer text-sm font-medium">{t.otherSignals} <span className="ml-2 text-xs font-normal text-muted-foreground">{zh ? "展开查看辅助指标" : "Expand supporting metrics"}</span></summary>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {focus.supporting.map((metric) => (
               <SupportingTile key={metric.key} metric={metric} />
             ))}
@@ -231,7 +241,7 @@ export default async function DashboardPage({ params }: PageProps) {
                 />
               ))}
           </div>
-        </div>
+        </details>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">

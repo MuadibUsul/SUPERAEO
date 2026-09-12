@@ -67,14 +67,14 @@ export function AuthForm({ mode, locale }: { mode: "login" | "signup"; locale: L
   }
 
   return (
-    <section className="grid w-full max-w-5xl overflow-hidden rounded-xl border border-border bg-card/45 shadow-[0_28px_100px_oklch(0_0_0/35%)] md:grid-cols-[1.08fr_0.92fr]">
-      <div className="relative hidden min-h-[540px] overflow-hidden border-r border-border p-10 md:flex md:flex-col md:justify-between">
+    <section className="grid w-full max-w-[920px] overflow-hidden rounded-2xl border border-border bg-card shadow-[0_16px_60px_-30px_rgba(30,30,60,0.2)] md:grid-cols-[0.9fr_1.1fr]">
+      <div className="dark relative hidden min-h-[540px] overflow-hidden bg-[#101322] p-10 text-foreground md:flex md:flex-col md:justify-between">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_18%,oklch(0.82_0.13_205/13%),transparent_32%),linear-gradient(135deg,transparent_55%,oklch(0.72_0.12_300/7%))]" />
         <div className="relative">
           <p className="eyebrow text-primary">{context.eyebrow}</p>
-          <h1 className="mt-6 whitespace-pre-line text-4xl font-semibold leading-[1.08] tracking-[-0.04em] text-foreground">
+          <h2 className="mt-6 whitespace-pre-line text-4xl font-semibold leading-[1.08] tracking-[-0.04em] text-foreground">
             {context.title}
-          </h1>
+          </h2>
           <p className="mt-5 max-w-md text-sm leading-7 text-dim">{context.body}</p>
         </div>
         <div className="relative space-y-4 border-t border-border pt-6 text-sm text-muted-foreground">
@@ -89,12 +89,12 @@ export function AuthForm({ mode, locale }: { mode: "login" | "signup"; locale: L
           })}
         </div>
       </div>
-      <div className="flex min-h-[500px] items-center bg-background/35 p-6 sm:p-10 md:p-12">
+      <div className="flex min-h-[500px] items-center bg-card p-6 sm:p-10 md:p-12">
         <div className="w-full">
           <p className="eyebrow text-primary md:hidden">{context.eyebrow}</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground md:mt-0">
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground md:mt-0">
             {isSignup ? dictionary.auth.signupTitle : dictionary.auth.loginTitle}
-          </h2>
+          </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {isSignup ? dictionary.auth.signupDescription : dictionary.auth.loginDescription}
           </p>
@@ -131,8 +131,8 @@ export function AuthForm({ mode, locale }: { mode: "login" | "signup"; locale: L
               minLength={8}
             />
           </div>
-          {error ? <p className="text-sm text-danger">{error}</p> : null}
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
+          <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {isSignup ? dictionary.auth.submitSignup : dictionary.auth.submitLogin}
           </Button>

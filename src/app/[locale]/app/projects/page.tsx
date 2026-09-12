@@ -4,6 +4,7 @@ import { ArrowRight, FolderKanban, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
 import { StatusCallout } from "@/components/ui/status-callout";
 import { normalizeLocale, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
@@ -16,12 +17,13 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ q?: string | string[] }>;
 };
 
 const projectListCopy = {
   "zh-CN": {
-    badge: "审计工作台",
-    description: "先查看你已有的审计项目，再决定是否创建新的品牌、人物、网站或产品审计。",
+    badge: "WORKSPACE",
+    description: "选择一个项目继续分析，或创建新的品牌、人物、网站与产品观察。",
     emptyTitle: "还没有审计项目",
     emptyMessage: "先创建一个品牌、人物、网站或产品。CIP 会把复杂的后台流程包装成一次清晰的 AI 认知审计。",
     questionMap: "问题地图",
@@ -34,8 +36,8 @@ const projectListCopy = {
     manage: "查看定价",
   },
   en: {
-    badge: "Audit workspace",
-    description: "Review your existing audit projects first, then decide whether to create a new brand, person, website, or product audit.",
+    badge: "WORKSPACE",
+    description: "Continue an existing project, or start observing a brand, person, website, or product.",
     emptyTitle: "No audit projects yet",
     emptyMessage: "Create a brand, person, website, or product. CIP wraps the backend workflow into one diagnosis.",
     questionMap: "Question map",
@@ -49,14 +51,17 @@ const projectListCopy = {
   },
 } as const;
 
-export default async function ProjectsPage({ params }: PageProps) {
+export default async function ProjectsPage({ params, searchParams }: PageProps) {
   const { locale: rawLocale } = await params;
   const locale = normalizeLocale(rawLocale);
   const dictionary = getDictionary(locale);
   const copy = projectListCopy[locale];
   const session = await requirePageSession(locale);
   const state = await listProjects(session);
-  const projects = state.status === "ready" ? state.data : [];
+  const { q } = await searchParams;
+  const query = typeof q === "string" ? q.trim() : "";
+  const allProjects = state.status === "ready" ? state.data : [];
+  const projects = allProjects.filter(project => [project.name, project.brandName, project.industry, project.domain].join(" ").toLowerCase().includes(query.toLowerCase()));
   const organizationId = session.user.memberships[0]?.organizationId ?? null;
   const usage = organizationId ? await getOrganizationUsage(organizationId) : null;
   const renewDays = usage?.planRenewsInDays ?? null;
@@ -66,7 +71,7 @@ export default async function ProjectsPage({ params }: PageProps) {
       <div className="flex flex-col gap-5 border-b border-border pb-7 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="eyebrow text-primary">{copy.badge}</p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] text-foreground">{dictionary.app.projects}</h1>
+            <h1 className="mt-3 text-[32px] font-semibold tracking-[-0.035em] text-foreground">{locale === "zh-CN" ? "从这里，开始理解。" : "Your next insight starts here."}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-dim">{copy.description}</p>
           </div>
           <Button asChild size="lg">
@@ -77,11 +82,11 @@ export default async function ProjectsPage({ params }: PageProps) {
           </Button>
       </div>
 
-      {usage ? <PlanUsageStrip usage={usage} renewDays={renewDays} locale={locale} copy={copy} /> : null}
-
       {state.status !== "ready" ? <StatusCallout title={copy.databaseUnavailable} message={state.message} /> : null}
 
-      {state.status === "ready" && projects.length === 0 ? (
+      {allProjects.length > 0 ? <form role="search" className="flex flex-wrap items-center gap-3"><Input name="q" defaultValue={query} aria-label={locale === "zh-CN" ? "搜索项目" : "Search projects"} placeholder={locale === "zh-CN" ? "搜索项目名称、品牌或网址…" : "Search name, brand, or website…"} className="max-w-sm bg-card" /><Button type="submit" variant="outline">{locale === "zh-CN" ? "搜索" : "Search"}</Button>{query ? <Link href={`/${locale}/app/projects`} className="text-xs text-muted-foreground underline">{locale === "zh-CN" ? "清除" : "Clear"}</Link> : null}<span className="text-xs text-muted-foreground">{projects.length} {locale === "zh-CN" ? "个项目" : "projects"}</span></form> : null}
+      {query && allProjects.length > 0 && projects.length === 0 ? <p role="status" className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">{locale === "zh-CN" ? "没有找到匹配的项目，请换个关键词。" : "No matching projects. Try another keyword."}</p> : null}
+      {state.status === "ready" && allProjects.length === 0 ? (
         <EmptyState
           title={copy.emptyTitle}
           message={copy.emptyMessage}
@@ -136,6 +141,7 @@ export default async function ProjectsPage({ params }: PageProps) {
           </div>
         </div>
       ) : null}
+      {usage ? <details className="rounded-xl border border-border bg-card p-4"><summary className="cursor-pointer text-sm text-muted-foreground">{locale === "zh-CN" ? "套餐与用量" : "Plan & usage"}</summary><div className="mt-4"><PlanUsageStrip usage={usage} renewDays={renewDays} locale={locale} copy={copy} /></div></details> : null}
     </div>
   );
 }

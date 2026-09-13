@@ -37,57 +37,52 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Cancel the resumed job, then build the report with enough heap
+      - name: Upload the finishing script
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          PROJECT_ID: ${{ github.event.inputs.project }}
-          SAMPLING_RUN: ${{ github.event.inputs.sampling_run }}
-          BRAND_RUN: ${{ github.event.inputs.brand_probe_run }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "PROJECT_ID='$PROJECT_ID' SAMPLING_RUN='$SAMPLING_RUN' BRAND_RUN='$BRAND_RUN' bash -s" <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'cat > /tmp/finish-report.sh && chmod +x /tmp/finish-report.sh && wc -l /tmp/finish-report.sh' <<'SCRIPT'
+          #!/usr/bin/env bash
           set -euo pipefail
           cd /home/deploy/aeo
-          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r'; }
-          POSTGRES_USER="$(env_value POSTGRES_USER)"
-          POSTGRES_DB="$(env_value POSTGRES_DB)"
-          APP_IMAGE_VALUE="$(env_value APP_IMAGE || true)"
-          IMAGE="${APP_IMAGE_VALUE:-ghcr.io/muadibusul/superaeo:latest}"
-          : "${POSTGRES_USER:=aeo}"
-          : "${POSTGRES_DB:=aeo}"
+          : "${PROJECT_ID:?}"; : "${SAMPLING_RUN:?}"; : "${BRAND_RUN:?}"
 
+          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r' || true; }
+          POSTGRES_USER="$(env_value POSTGRES_USER)"; POSTGRES_USER="${POSTGRES_USER:-aeo}"
+          POSTGRES_DB="$(env_value POSTGRES_DB)"; POSTGRES_DB="${POSTGRES_DB:-aeo}"
+          APP_IMAGE_VALUE="$(env_value APP_IMAGE)"
+          IMAGE="${APP_IMAGE_VALUE:-ghcr.io/muadibusul/superaeo:latest}"
           COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
 
-          echo "== 0. Host memory and payload size (heap sizing)"
+          echo "== 0. Host memory and payload sizes"
           awk '/MemTotal|MemAvailable/ {printf "%s %d MB\n", $1, $2/1024}' /proc/meminfo
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT id, pg_size_pretty(pg_column_size(node_json)::bigint) AS node_json_size, created_at
-          FROM semantic_nebula_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 6;
+          SELECT 'nebula_node' AS what, pg_size_pretty(pg_column_size(node_json)::bigint) AS size FROM semantic_nebula_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 1;
+          SELECT 'opportunity' AS what, pg_size_pretty(pg_column_size(opportunity_json)::bigint) AS size FROM long_tail_opportunity_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 1;
+          SELECT 'territory' AS what, pg_size_pretty(pg_column_size(snapshot_json)::bigint) AS size FROM question_territory_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 1;
           SQL
 
           echo "== 1. State: what is active right now"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT id, job_type, status, attempts, created_at, started_at, trace_id FROM analysis_jobs
-          WHERE status IN ('queued','running','retrying') ORDER BY created_at;
-          SELECT id, status, current_stage, completed_probes, failed_probes, created_at FROM brand_probe_runs
-          WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 4;
+          SELECT id, job_type, status, attempts, started_at, trace_id FROM analysis_jobs WHERE status IN ('queued','running','retrying') ORDER BY created_at;
           SELECT count(*) AS calls_last_3min, coalesce(sum(total_tokens),0) AS tokens_last_3min FROM ai_usage_logs WHERE created_at > now() - interval '3 minutes';
           SQL
 
-          echo "== 2. Cancel any resumed job and stop it from ever running again"
-          JOB_IDS=$("${COMPOSE[@]}" exec -T postgres psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT queue_job_id FROM analysis_jobs WHERE status IN ('queued','running','retrying') AND queue_job_id IS NOT NULL" || true)
+          echo "== 2. Cancel any resumed job so it can never run again"
+          JOB_IDS=$("${COMPOSE[@]}" exec -T postgres psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT queue_job_id FROM analysis_jobs WHERE status IN ('queued','running','retrying') AND queue_job_id IS NOT NULL" </dev/null || true)
           for jid in $JOB_IDS; do
             jid="$(printf '%s' "$jid" | tr -d '\r')"
             [ -n "$jid" ] || continue
-            echo "  cancelling job $jid"
+            echo "  cancelling $jid"
             for q in semantic.intelligence sampling.run response.analyze entity.graph.build report.generate; do
               for list in wait active delayed failed prioritized paused; do
-                "${COMPOSE[@]}" exec -T redis redis-cli LREM "bull:$q:$list" 0 "$jid" >/dev/null || true
+                "${COMPOSE[@]}" exec -T redis redis-cli LREM "bull:$q:$list" 0 "$jid" >/dev/null </dev/null || true
               done
-              for key in $("${COMPOSE[@]}" exec -T redis redis-cli --raw KEYS "bull:$q:$jid*" 2>/dev/null | tr -d '\r' || true); do
+              for key in $("${COMPOSE[@]}" exec -T redis redis-cli --raw KEYS "bull:$q:$jid*" </dev/null | tr -d '\r' || true); do
                 [ -n "$key" ] || continue
-                "${COMPOSE[@]}" exec -T redis redis-cli DEL "$key" >/dev/null || true
+                "${COMPOSE[@]}" exec -T redis redis-cli DEL "$key" >/dev/null </dev/null || true
               done
             done
           done
@@ -101,7 +96,7 @@ jobs:
           WHERE status IN ('queued','running');
           COMMIT;
           SQL
-          "${COMPOSE[@]}" stop worker
+          "${COMPOSE[@]}" stop worker </dev/null
           echo "  worker stopped"
 
           echo "== 3. Report-only continuation script"
@@ -145,11 +140,12 @@ jobs:
             if (!project) throw new Error(`Project not found: ${projectId}`);
             const subject = await ensurePrimaryProjectSubject(project);
 
-            const nebulaSnapshots = await prisma.semanticNebulaSnapshot.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, take: 6, select: { id: true, createdAt: true } });
+            const nebulaSnapshots = await prisma.semanticNebulaSnapshot.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, take: 6, select: { id: true } });
             const opportunitySnapshot = await prisma.longTailOpportunitySnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { id: true } });
             const territorySnapshot = await prisma.questionTerritorySnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { id: true } });
 
             const title = `${subject.displayName} AI Cognition Audit`;
+            console.log(JSON.stringify({ step: "building_snapshot" }));
             const snapshot = await buildReportSnapshot({ projectId, subjectId: subject.id, subjectName: subject.displayName });
             console.log(JSON.stringify({ step: "snapshot_built" }));
             const report = await prisma.report.create({
@@ -206,23 +202,36 @@ jobs:
             .catch(async (error) => { console.error(error); await getPrisma().$disconnect(); process.exit(1); });
           TSEOF
 
-          echo "== 4. Running report build in a one-off container with a larger heap"
+          echo "== 4. Build the report in a one-off container with a larger heap"
           FREE_MB=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
           if [ "$FREE_MB" -ge 5000 ]; then HEAP=3584; LIMIT=4g;
-          elif [ "$FREE_MB" -ge 3000 ]; then HEAP=2048; LIMIT=2560m;
-          else HEAP=1280; LIMIT=1536m; fi
+          elif [ "$FREE_MB" -ge 3000 ]; then HEAP=2560; LIMIT=3g;
+          else HEAP=2048; LIMIT=2300m; fi
           echo "  MemAvailable=${FREE_MB}MB -> heap=${HEAP}MB limit=${LIMIT}"
           docker run --rm --network aeo_internal --memory "$LIMIT" \
             -e NODE_OPTIONS="--max-old-space-size=$HEAP" \
             --env-file deploy/.env \
             -v /tmp/continue-report.ts:/app/scripts/continue-report.ts:ro \
-            "$IMAGE" npx tsx scripts/continue-report.ts "$PROJECT_ID" "$SAMPLING_RUN" "$BRAND_RUN"
+            "$IMAGE" npx tsx scripts/continue-report.ts "$PROJECT_ID" "$SAMPLING_RUN" "$BRAND_RUN" </dev/null
 
           echo "== 5. Verification"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v pid="$PROJECT_ID" <<'SQL'
           SELECT id, title, status, created_at FROM reports WHERE project_id = :'pid' ORDER BY created_at DESC LIMIT 3;
+          SELECT id, status, current_stage, completed_probes, failed_probes FROM brand_probe_runs WHERE project_id = :'pid' ORDER BY created_at DESC LIMIT 3;
           SELECT count(*) AS active_jobs FROM analysis_jobs WHERE status IN ('queued','running','retrying');
           SELECT count(*) AS calls_last_3min, coalesce(sum(total_tokens),0) AS tokens_last_3min FROM ai_usage_logs WHERE created_at > now() - interval '3 minutes';
           SQL
-          "${COMPOSE[@]}" ps --format 'table {{.Service}}\t{{.Status}}'
-          REMOTE
+          "${COMPOSE[@]}" ps --format 'table {{.Service}}\t{{.Status}}' </dev/null
+          SCRIPT
+
+      - name: Run the finishing script
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          PROJECT_ID: ${{ github.event.inputs.project }}
+          SAMPLING_RUN: ${{ github.event.inputs.sampling_run }}
+          BRAND_RUN: ${{ github.event.inputs.brand_probe_run }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "PROJECT_ID='$PROJECT_ID' SAMPLING_RUN='$SAMPLING_RUN' BRAND_RUN='$BRAND_RUN' bash /tmp/finish-report.sh" </dev/null

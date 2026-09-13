@@ -41,46 +41,37 @@ jobs:
 
           COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
 
-          echo "== active + recent analysis_jobs"
+          echo "== running analysis job"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT id, job_type, status, queue_name, attempts, created_at, started_at, completed_at, trace_id, left(error, 250) AS error
-          FROM analysis_jobs
-          WHERE status IN ('queued','running','retrying') OR created_at > now() - interval '2 days'
-          ORDER BY created_at DESC LIMIT 30;
+          SELECT id, job_type, status, started_at, attempts, result
+          FROM analysis_jobs WHERE status = 'running' ORDER BY started_at DESC LIMIT 3;
           SQL
 
-          echo "== token burn per trace (last 3 days)"
+          echo "== recent brand_probe_runs"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT project_id, trace_id, count(*) AS calls, coalesce(sum(total_tokens),0) AS tokens, min(created_at) AS first, max(created_at) AS last
-          FROM ai_usage_logs
-          WHERE created_at > now() - interval '3 days'
-          GROUP BY project_id, trace_id
-          ORDER BY tokens DESC NULLS LAST LIMIT 15;
+          SELECT id, project_id, status, mode, total_probes, completed_probes, failed_probes, current_stage, started_at, finished_at, created_at
+          FROM brand_probe_runs ORDER BY created_at DESC LIMIT 5;
           SQL
 
-          echo "== token burn pace (10-minute buckets, last 6 hours)"
+          echo "== brand_probe_responses accounting of latest run"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT date_trunc('hour', created_at) + (floor(date_part('minute', created_at) / 10) * interval '10 minutes') AS bucket,
-                 count(*) AS calls, coalesce(sum(total_tokens),0) AS tokens, count(*) FILTER (WHERE status = 'failed') AS failed
-          FROM ai_usage_logs
-          WHERE created_at > now() - interval '6 hours'
-          GROUP BY 1 ORDER BY 1 DESC;
+          SELECT run_id, count(*) AS rows, count(total_tokens) AS with_tokens, count(cost_estimate) AS with_cost,
+                 coalesce(sum(total_tokens),0) AS sum_tokens, coalesce(sum(cost_estimate),0) AS sum_cost,
+                 count(*) FILTER (WHERE error_message IS NOT NULL) AS with_error, max(created_at) AS last
+          FROM brand_probe_responses
+          WHERE run_id = (SELECT id FROM brand_probe_runs ORDER BY created_at DESC LIMIT 1)
+          GROUP BY run_id;
           SQL
 
-          echo "== recent sampling_runs"
+          echo "== latest run semantic exploration config"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT id, project_id, run_type, status, sample_count, sample_count_per_query, started_at, completed_at, created_at, trace_id, left(failure_summary, 200) AS failure_summary
-          FROM sampling_runs ORDER BY created_at DESC LIMIT 15;
+          SELECT config_json->'semanticExploration' AS exploration
+          FROM brand_probe_runs ORDER BY created_at DESC LIMIT 1;
           SQL
 
-          echo "== redis queue depths"
-          for q in sampling.run response.analyze entity.graph.build report.generate semantic.intelligence; do
-            for st in wait active failed delayed; do
-              printf '%s %-8s ' "$q" "$st"
-              "${COMPOSE[@]}" exec -T redis redis-cli LLEN "bull:$q:$st"
-            done
-          done
-
-          echo "== worker logs (tail 120)"
-          "${COMPOSE[@]}" logs --tail 120 --timestamps worker 2>&1 | tail -120
+          echo "== semantic coverage snapshots (latest run)"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT created_at, evidence->'exploration' AS exploration
+          FROM semantic_coverage_snapshots ORDER BY created_at DESC LIMIT 3;
+          SQL
           REMOTE

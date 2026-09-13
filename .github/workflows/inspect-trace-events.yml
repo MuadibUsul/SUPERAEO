@@ -72,6 +72,21 @@ jobs:
                  (api_key_encrypted IS NOT NULL AND api_key_encrypted <> '') AS has_key
           FROM ai_providers ORDER BY created_at;
           SQL
+
+          echo "== provider call timeline (last 40 calls)"
+          "${PSQL[@]}" <<'SQL'
+          SELECT to_char(created_at, 'HH24:MI:SS') AS at, status, count(*) AS calls, coalesce(sum(total_tokens),0) AS tokens
+          FROM ai_usage_logs
+          WHERE provider_id = 'cmtzvtl0z002r01p5jio0v7vf' AND created_at > now() - interval '3 hours'
+          GROUP BY 1, 2 ORDER BY 1 DESC LIMIT 40;
+          SQL
+
+          echo "== provider success/failure boundary"
+          "${PSQL[@]}" <<'SQL'
+          SELECT
+            (SELECT to_char(max(created_at), 'YYYY-MM-DD HH24:MI:SS') FROM ai_usage_logs WHERE provider_id = 'cmtzvtl0z002r01p5jio0v7vf' AND status = 'success') AS last_success,
+            (SELECT to_char(min(created_at), 'YYYY-MM-DD HH24:MI:SS') FROM ai_usage_logs WHERE provider_id = 'cmtzvtl0z002r01p5jio0v7vf' AND status = 'failed' AND error ILIKE '%Authentication Fails%') AS first_auth_failure;
+          SQL
           SCRIPT
 
       - name: Run the inspection

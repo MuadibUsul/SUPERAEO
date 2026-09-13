@@ -1,0 +1,69 @@
+name: Inspect trace events
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Dump the sampling incident trace
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'cat > /tmp/inspect-events.sh && chmod +x /tmp/inspect-events.sh' <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd /home/deploy/aeo
+          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r' || true; }
+          POSTGRES_USER="$(env_value POSTGRES_USER)"; POSTGRES_USER="${POSTGRES_USER:-aeo}"
+          POSTGRES_DB="$(env_value POSTGRES_DB)"; POSTGRES_DB="${POSTGRES_DB:-aeo}"
+          COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
+
+          echo "== job row"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT id, status, attempts, created_at, started_at, completed_at, left(error, 200) AS error
+          FROM analysis_jobs WHERE id = 'cmtzw2oiu003c01p5zr4phkz1';
+          SQL
+
+          echo "== trace events (14:24 - 14:40)"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT to_char(created_at, 'HH24:MI:SS.MS') AS at, severity, event_type, subsystem, operation, status,
+                 left(error_code, 40) AS code, left(error_message, 220) AS message, left(metadata_json::text, 160) AS meta
+          FROM trace_events
+          WHERE trace_id = '0cdbd5c1-3898-46b8-a1b1-b8a69590b5a5'
+            AND created_at > timestamp '2026-09-13 14:24:00'
+            AND created_at < timestamp '2026-09-13 14:40:00'
+          ORDER BY created_at;
+          SQL
+
+          echo "== worker process restarts"
+          "${COMPOSE[@]}" logs --since 2026-09-13T14:20:00 --until 2026-09-13T14:40:00 --timestamps worker 2>&1 | grep -iE "ready|shutting|error|memory|kill" | head -30 || true
+          SCRIPT
+
+      - name: Run the inspection
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash /tmp/inspect-events.sh' </dev/null

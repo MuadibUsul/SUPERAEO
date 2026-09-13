@@ -1,0 +1,87 @@
+name: Post deploy check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload the check script
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'cat > /tmp/post-deploy-check.sh && chmod +x /tmp/post-deploy-check.sh && wc -l /tmp/post-deploy-check.sh' <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd /home/deploy/aeo
+          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r' || true; }
+          POSTGRES_USER="$(env_value POSTGRES_USER)"; POSTGRES_USER="${POSTGRES_USER:-aeo}"
+          POSTGRES_DB="$(env_value POSTGRES_DB)"; POSTGRES_DB="${POSTGRES_DB:-aeo}"
+          COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
+
+          echo "== 1. Keep the worker stopped (sampling is not to resume)"
+          "${COMPOSE[@]}" stop worker </dev/null
+          echo "  worker stopped"
+
+          echo "== 2. Queues and jobs"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT id, job_type, status, attempts, created_at FROM analysis_jobs
+          WHERE status IN ('queued','running','retrying') ORDER BY created_at DESC LIMIT 5;
+          SELECT count(*) AS active_jobs FROM analysis_jobs WHERE status IN ('queued','running','retrying');
+          SELECT count(*) AS calls_last_5min, coalesce(sum(total_tokens),0) AS tokens_last_5min
+          FROM ai_usage_logs WHERE created_at > now() - interval '5 minutes';
+          SQL
+
+          echo "== 3. Homepage renders the featured field"
+          "${COMPOSE[@]}" exec -T web node -e "
+          fetch('http://127.0.0.1:3000/zh-CN').then(async (r) => {
+            const html = await r.text();
+            console.log('status', r.status, 'bytes', html.length);
+            console.log('subject_badge', /Elon Musk/.test(html) ? 'ELON_MUSK_PRESENT' : 'MISSING');
+            console.log('demo_badge', /演示数据/.test(html) ? 'DEMO_BADGE_PRESENT' : 'NO_DEMO_BADGE');
+            console.log('real_caption', /的语义场/.test(html) ? 'REAL_CAPTION_PRESENT' : 'NO_REAL_CAPTION');
+            console.log('nebula_label', /认知星云/.test(html) ? 'NEBULA_TITLE_PRESENT' : 'MISSING');
+          }).catch((error) => { console.error('fetch failed', error); process.exit(1); });
+          " </dev/null
+
+          echo "== 4. English homepage"
+          "${COMPOSE[@]}" exec -T web node -e "
+          fetch('http://127.0.0.1:3000/en').then(async (r) => {
+            const html = await r.text();
+            console.log('status', r.status, 'bytes', html.length);
+            console.log('subject_badge', /Elon Musk/.test(html) ? 'ELON_MUSK_PRESENT' : 'MISSING');
+            console.log('demo_badge', /Demo data/.test(html) ? 'DEMO_BADGE_PRESENT' : 'NO_DEMO_BADGE');
+          }).catch((error) => { console.error('fetch failed', error); process.exit(1); });
+          " </dev/null
+
+          echo "== 5. Container states"
+          "${COMPOSE[@]}" ps --format 'table {{.Service}}\t{{.Status}}' </dev/null
+          SCRIPT
+
+      - name: Run the check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash /tmp/post-deploy-check.sh' </dev/null

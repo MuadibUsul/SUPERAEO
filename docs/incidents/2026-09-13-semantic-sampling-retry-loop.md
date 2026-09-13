@@ -18,7 +18,7 @@
 
 | 维度 | 结果 |
 | --- | --- |
-| Token 消耗 | 首轮 348 次调用 / **4,433,950 token**（14:08–14:24 实测）；重投轮在止损前完成 162 个探针 + 8 个失败；重投窗口内另计 14 次调用 / 159,328 token（14:33:57–14:36:57） |
+| Token 消耗 | 合计 **7,097,099 token / 557 次调用**（同一 trace 内全部模型调用）。拆分：首轮 4,529,528 token / 356 次调用（14:08–14:26）；被取消的重投轮 2,567,571 token / 201 次调用（14:26:52 起，止损时完成 162 个探针）。其中 **79% 是输出 token**（输出 5,653,474 / 输入 1,443,625） |
 | 持续时间 | 14:08:02 任务创建 → 14:34:29 停止 worker，约 26 分钟 |
 | 用户可见 | 任务状态长时间停留在采样阶段；任务永不结束 |
 | 数据完整性 | 无损坏。首轮 327 条成功响应完整保留并已物化为 SamplingRun |
@@ -35,7 +35,7 @@
 | 14:08:07 | 首次执行开始 | `started_at` |
 | 14:08:26 | 首次模型调用 | `ai_usage_logs` |
 | 14:08:41 | 探针 run #1 创建（360 个探针，标准模式） | `brand_probe_runs` |
-| 14:24:30 | 累计 348 次调用 / 4,433,950 token | `ai_usage_logs` 聚合 |
+| 14:24:30 | 运行中快照：348 次调用 / 4,433,950 token（该轮最终 4,529,528） | `ai_usage_logs` 聚合 |
 | 14:26:13.504 | run #1 完成：327 成功 / 33 失败；语义探索 stopReason=`TOKEN_BUDGET` | `brand_probe.run.completed`、覆盖快照 |
 | 14:26:13 | 成功响应物化为 SamplingRun `cmtzwpz6j0bhx0wo63ay8lg95`（327 条响应） | `sampling_runs` |
 | 14:26:14.5–14:26:19.9 | 后段阶段推进：11 次 `job.stage.changed`（星云/机会连续推进） | `trace_events` |
@@ -70,6 +70,22 @@ BullMQ 的 stalled 重投上限默认为 1 次（`maxStalledCount`），所以�
 1. **预算闸门位置不对**：`SEMANTIC_EXPLORATION_MAX_TOKENS`（默认 1,000,000）只在基础探针 run **完成之后**评估，基础 run 本身不受预算约束。结果是预算"生效"时 4.4M token 已经花掉（stopReason 记的正是 `TOKEN_BUDGET`）。
 2. **单轮成本高**：360 探针 × 微批 5、并发 24，单轮即数百万 token；重跑代价巨大。
 3. **没有护栏**：token 消耗速率、任务重投次数均无告警或熔断，问题只能靠人工发现。
+
+### 4.4 成本结构（实测，供成本控制参考）
+
+同一次审计（trace `0cdbd5c1`）的模型调用构成：
+
+| 调用类型 | 次数 | 输入 token | 输出 token | 合计 | 单次均值 |
+| --- | --- | --- | --- | --- | --- |
+| `brand_semantic_probe_single` | 436 | 903,231 | 3,912,893 | 4,816,124 | 11,046 |
+| `brand_semantic_probe_batch` | 118 | 538,360 | 1,622,744 | 2,161,104 | 19,162 |
+| `semantic_keyword_generator` | 3 | 2,034 | 17,837 | 19,871 | 6,624 |
+
+- 一次「标准」级别审计 = **360 个探针**，但实际发出 **557 次调用**：360 个探针中有 **280 个发生过重试/修复**（`retry_count` 最多 2）。
+- 每个探针的最终响应平均 **9,483 token**（其中输出约 7,600）——**输出是成本主体，占整体的 79%**。
+- standard 的 zone 分布：implicit_recommendation 80、competition 80、scenario_fit 60、core_semantics 50、audience_fit 30、risk_boundary 30、growth_opportunity 20、calibration 10。
+- 运行参数：mode=standard、execution=micro_batch(5)、并发 24、120 请求/分、60 万 token/分预算。
+- 生产当前状态：provider 未设 `monthly_budget`、未设 `rate_limit_per_minute`；组织的 `quota_overrides` 只限制**次数**（项目/审计/实验/席位），**不限制 token 与费用**。也就是说现有的预算闸门（`acquireProviderPermit`）与模型路由机制都在代码里，但线上没有启用配置。
 
 ## 5. 检测、响应与止损
 

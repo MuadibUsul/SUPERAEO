@@ -108,7 +108,13 @@ services:
     command: ["npm", "run", "worker"]
     healthcheck:
       disable: true
-    mem_limit: 768m
+    # The post-sampling stages (the report snapshot in particular) parse large
+    # JSON aggregates. At the previous 768m the heap hit its ceiling and the
+    # process died mid-audit; BullMQ answered with a stalled re-delivery, and a
+    # retry re-runs the whole diagnosis — sampling included (2026-09-13).
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=2048"
+    mem_limit: 2560m
     depends_on:
       migrate:
         condition: service_completed_successfully

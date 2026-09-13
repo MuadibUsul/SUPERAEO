@@ -41,37 +41,41 @@ jobs:
 
           COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
 
-          echo "== running analysis job"
+          echo "== analysis jobs for project cmtzw2oc0003601p5m8xdu7r1 (last 2h)"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT id, job_type, status, started_at, attempts, result
-          FROM analysis_jobs WHERE status = 'running' ORDER BY started_at DESC LIMIT 3;
+          SELECT id, job_type, status, attempts, created_at, started_at, completed_at, trace_id, left(error, 200) AS error
+          FROM analysis_jobs
+          WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' AND created_at > now() - interval '2 hours'
+          ORDER BY created_at DESC LIMIT 10;
           SQL
 
-          echo "== recent brand_probe_runs"
+          echo "== brand probe runs with analysis_job_id (last 2h)"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT id, project_id, status, mode, total_probes, completed_probes, failed_probes, current_stage, started_at, finished_at, created_at
-          FROM brand_probe_runs ORDER BY created_at DESC LIMIT 5;
+          SELECT id, analysis_job_id, status, mode, total_probes, completed_probes, failed_probes, current_stage, created_at, started_at, finished_at
+          FROM brand_probe_runs
+          WHERE created_at > now() - interval '2 hours'
+          ORDER BY created_at DESC LIMIT 10;
           SQL
 
-          echo "== brand_probe_responses accounting of latest run"
+          echo "== running job stage"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT run_id, count(*) AS rows, count(total_tokens) AS with_tokens, count(cost_estimate) AS with_cost,
-                 coalesce(sum(total_tokens),0) AS sum_tokens, coalesce(sum(cost_estimate),0) AS sum_cost,
-                 count(*) FILTER (WHERE error_message IS NOT NULL) AS with_error, max(created_at) AS last
-          FROM brand_probe_responses
-          WHERE run_id = (SELECT id FROM brand_probe_runs ORDER BY created_at DESC LIMIT 1)
-          GROUP BY run_id;
+          SELECT id, status, attempts, started_at, result->>'currentStage' AS stage, result->>'stageMessage' AS message, result->'stageHistory' AS history
+          FROM analysis_jobs WHERE status = 'running';
           SQL
 
-          echo "== latest run semantic exploration config"
+          echo "== trace events around the transition (diagnosis trace, last 40)"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT config_json->'semanticExploration' AS exploration
-          FROM brand_probe_runs ORDER BY created_at DESC LIMIT 1;
+          SELECT created_at, event_type, subsystem, operation, status, left(message, 120) AS message, left(error_message, 200) AS error_message, left(metadata_json::text, 200) AS metadata
+          FROM trace_events
+          WHERE trace_id = '0cdbd5c1-3898-46b8-a1b1-b8a69590b5a5'
+          ORDER BY created_at DESC LIMIT 40;
           SQL
 
-          echo "== semantic coverage snapshots (latest run)"
+          echo "== trace events for second probe run (brand_probe_run trace)"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT created_at, evidence->'exploration' AS exploration
-          FROM semantic_coverage_snapshots ORDER BY created_at DESC LIMIT 3;
+          SELECT created_at, event_type, subsystem, operation, status, left(message, 120) AS message, left(metadata_json::text, 160) AS metadata
+          FROM trace_events
+          WHERE trace_id = 'brand_probe_run:cmtzwqtei00030vo60927kzkg'
+          ORDER BY created_at LIMIT 15;
           SQL
           REMOTE

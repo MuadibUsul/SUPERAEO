@@ -58,10 +58,10 @@ jobs:
 
           echo "== 0. Host memory and payload sizes"
           awk '/MemTotal|MemAvailable/ {printf "%s %d MB\n", $1, $2/1024}' /proc/meminfo
-          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL' || true
           SELECT 'nebula_node' AS what, pg_size_pretty(pg_column_size(node_json)::bigint) AS size FROM semantic_nebula_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 1;
           SELECT 'opportunity' AS what, pg_size_pretty(pg_column_size(opportunity_json)::bigint) AS size FROM long_tail_opportunity_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 1;
-          SELECT 'territory' AS what, pg_size_pretty(pg_column_size(snapshot_json)::bigint) AS size FROM question_territory_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 1;
+          SELECT 'territory' AS what, pg_size_pretty(pg_column_size(territory_json)::bigint) AS size FROM question_territory_snapshots WHERE project_id = 'cmtzw2oc0003601p5m8xdu7r1' ORDER BY created_at DESC LIMIT 1;
           SQL
 
           echo "== 1. State: what is active right now"

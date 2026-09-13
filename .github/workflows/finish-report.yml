@@ -208,11 +208,13 @@ jobs:
           elif [ "$FREE_MB" -ge 3000 ]; then HEAP=2560; LIMIT=3g;
           else HEAP=2048; LIMIT=2300m; fi
           echo "  MemAvailable=${FREE_MB}MB -> heap=${HEAP}MB limit=${LIMIT}"
+          WEB_IMAGE=$(docker inspect --format '{{.Image}}' "$("${COMPOSE[@]}" ps -q web)" </dev/null)
+          echo "  using image $WEB_IMAGE"
           docker run --rm --network aeo_internal --memory "$LIMIT" \
             -e NODE_OPTIONS="--max-old-space-size=$HEAP" \
             --env-file deploy/.env \
             -v /tmp/continue-report.ts:/app/scripts/continue-report.ts:ro \
-            "$IMAGE" npx tsx scripts/continue-report.ts "$PROJECT_ID" "$SAMPLING_RUN" "$BRAND_RUN" </dev/null
+            "$WEB_IMAGE" npx tsx scripts/continue-report.ts "$PROJECT_ID" "$SAMPLING_RUN" "$BRAND_RUN" </dev/null
 
           echo "== 5. Verification"
           "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v pid="$PROJECT_ID" <<'SQL'

@@ -61,6 +61,14 @@ jobs:
           GROUP BY 1 ORDER BY 1;
           SQL
 
+          echo "== budget configuration in production"
+          "${PSQL[@]}" <<'SQL'
+          SELECT name, enabled, default_model, monthly_budget, rate_limit_per_minute FROM ai_providers ORDER BY created_at;
+          SELECT slug, plan, quota_overrides FROM organizations ORDER BY created_at;
+          SQL
+          echo "== tuning knobs present in deploy/.env"
+          grep -E '^(SEMANTIC_EXPLORATION|PROBE_|REQUIRE_AI_PROVIDER_BUDGET|HOME_FEATURED)' deploy/.env || echo "(no overrides; built-in defaults apply)"
+
           echo "== probe zones in run #1"
           "${PSQL[@]}" <<'SQL'
           SELECT zone, count(*) AS probes,

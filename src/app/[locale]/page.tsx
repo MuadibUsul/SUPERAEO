@@ -11,6 +11,11 @@ type PageProps = {
   params: Promise<{ locale: string }>;
 };
 
+// The hero renders the featured project's semantic field, which lives in the
+// database and changes as audits materialize — so this page renders per request
+// instead of freezing the field at build time. The read behind it is cached.
+export const dynamic = "force-dynamic";
+
 export default async function HomePage({ params }: PageProps) {
   const { locale: rawLocale } = await params;
   const locale = normalizeLocale(rawLocale);

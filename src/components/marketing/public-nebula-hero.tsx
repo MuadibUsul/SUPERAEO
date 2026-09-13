@@ -2,12 +2,22 @@ import Link from "next/link";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { CognitionUniverse } from "@/components/semantic-intelligence/cognition-universe";
 import { demoUniverseNodes } from "@/components/semantic-intelligence/demo-universe";
+import { adaptNebulaNodes } from "@/components/semantic-intelligence/universe-adapter";
 import { Button } from "@/components/ui/button";
 import type { Locale } from "@/i18n/config";
 import type { getDictionary } from "@/i18n/dictionaries";
+import { getFeaturedNebula } from "@/server/semantic-nebula/featured-nebula";
 
-export function PublicNebulaHero({ locale, hero }: { locale: Locale; hero: ReturnType<typeof getDictionary>["homeHero"] }) {
+/** The full field lives on the project page; the hero keeps enough to read as a field. */
+const HERO_NODE_LIMIT = 600;
+
+export async function PublicNebulaHero({ locale, hero }: { locale: Locale; hero: ReturnType<typeof getDictionary>["homeHero"] }) {
   const zh = locale === "zh-CN";
+  const featured = await getFeaturedNebula();
+  const featuredNodes = featured ? adaptNebulaNodes(featured.nodeJson, HERO_NODE_LIMIT, undefined, false) : [];
+  const showsRealField = featuredNodes.length > 0;
+  const nodes = showsRealField ? featuredNodes : demoUniverseNodes();
+  const subjectName = showsRealField && featured ? featured.subjectName : zh ? "你的品牌" : "Your brand";
   return <section className="mx-auto max-w-[1440px] px-5 pb-12 pt-12 sm:px-8 lg:px-12 lg:pt-20">
     <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
       <div className="py-4 lg:pb-16">
@@ -21,11 +31,12 @@ export function PublicNebulaHero({ locale, hero }: { locale: Locale; hero: Retur
         <p className="mt-5 text-xs text-muted-foreground">{zh ? "品牌 · 人物 · 网站 · 产品" : "Brands · People · Websites · Products"}</p>
       </div>
       <div className="dark relative isolate h-[380px] overflow-hidden rounded-[24px] border border-white/10 bg-[#060911] text-white shadow-[0_24px_70px_-32px_rgba(39,29,85,0.45)] sm:h-[480px] lg:h-[550px]">
-        <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b border-white/10 px-5 py-4 text-[11px]"><span className="font-medium tracking-wide text-slate-200">{zh ? "认知星云" : "COGNITION NEBULA"}</span><span className="rounded-full border border-white/15 px-2 py-1 text-slate-400">{zh ? "演示数据" : "Demo data"}</span></div>
-        <CognitionUniverse variant="ambient" nodes={demoUniverseNodes()} subjectName={zh ? "你的品牌" : "Your brand"} className="absolute inset-0 h-full w-full" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#060911] to-transparent px-5 pb-5 pt-20"><p className="text-sm font-medium">{zh ? "让分散的回答，呈现关系。" : "See the connections in scattered answers."}</p><p className="mt-2 text-[11px] leading-5 text-slate-400">{hero.demoLabel}</p></div>
+        <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between border-b border-white/10 px-5 py-4 text-[11px]"><span className="font-medium tracking-wide text-slate-200">{zh ? "认知星云" : "COGNITION NEBULA"}</span><span className="rounded-full border border-white/15 px-2 py-1 text-slate-400">{showsRealField ? subjectName : zh ? "演示数据" : "Demo data"}</span></div>
+        <CognitionUniverse variant="ambient" nodes={nodes} subjectName={subjectName} className="absolute inset-0 h-full w-full" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#060911] to-transparent px-5 pb-5 pt-20"><p className="text-sm font-medium">{zh ? "让分散的回答，呈现关系。" : "See the connections in scattered answers."}</p><p className="mt-2 text-[11px] leading-5 text-slate-400">{showsRealField ? (zh ? `${subjectName} 的语义场，来自已抽样的 AI 回答。` : `The semantic field of ${subjectName}, read from sampled AI answers.`) : hero.demoLabel}</p></div>
       </div>
     </div>
     <div className="mt-10 grid gap-5 border-y border-border py-5 text-xs text-muted-foreground sm:grid-cols-3"><p><span className="mr-2 font-mono text-primary">01</span>{zh ? "每条判断，可追溯至回答" : "Trace judgments back to answers"}</p><p><span className="mr-2 font-mono text-primary">02</span>{zh ? "模型分歧与样本边界可见" : "Visible disagreement and sample limits"}</p><p><span className="mr-2 font-mono text-primary">03</span>{zh ? "从发现问题，到复测变化" : "From finding gaps to measuring change"}</p></div>
   </section>;
 }
+

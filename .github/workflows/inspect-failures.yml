@@ -72,6 +72,24 @@ jobs:
           GROUP BY 1 ORDER BY probes DESC LIMIT 10;
           SQL
 
+          echo "== which operations failed, and with what zod code"
+          "${PSQL[@]}" <<'SQL'
+          SELECT prompt_name,
+                 count(*) AS failed_runs,
+                 string_agg(DISTINCT left(regexp_replace(error, '\s+', ' ', 'g'), 60), ' || ') AS error_fingerprints
+          FROM prompt_runs
+          WHERE trace_id = '0cdbd5c1-3898-46b8-a1b1-b8a69590b5a5' AND status = 'failed'
+          GROUP BY prompt_name ORDER BY failed_runs DESC;
+          SQL
+
+          echo "== one full too_big error"
+          "${PSQL[@]}" <<'SQL'
+          SELECT prompt_name, left(input::text, 160) AS prompt_head, error
+          FROM prompt_runs
+          WHERE trace_id = '0cdbd5c1-3898-46b8-a1b1-b8a69590b5a5' AND status = 'failed' AND error LIKE '%too_big%'
+          LIMIT 1;
+          SQL
+
           echo "== validation error shape (zod issue paths)"
           "${PSQL[@]}" <<'SQL'
           SELECT left(error, 400) AS error_text

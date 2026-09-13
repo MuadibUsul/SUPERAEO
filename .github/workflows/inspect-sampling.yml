@@ -1,0 +1,86 @@
+name: Inspect sampling state
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Inspect production sampling state
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /home/deploy/aeo
+          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r'; }
+          POSTGRES_USER="$(env_value POSTGRES_USER)"
+          POSTGRES_DB="$(env_value POSTGRES_DB)"
+          : "${POSTGRES_USER:=aeo}"
+          : "${POSTGRES_DB:=aeo}"
+
+          COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
+
+          echo "== active + recent analysis_jobs"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT id, job_type, status, queue_name, attempts, created_at, started_at, completed_at, trace_id, left(error, 250) AS error
+          FROM analysis_jobs
+          WHERE status IN ('queued','running','retrying') OR created_at > now() - interval '2 days'
+          ORDER BY created_at DESC LIMIT 30;
+          SQL
+
+          echo "== token burn per trace (last 3 days)"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT project_id, trace_id, count(*) AS calls, coalesce(sum(total_tokens),0) AS tokens, min(created_at) AS first, max(created_at) AS last
+          FROM ai_usage_logs
+          WHERE created_at > now() - interval '3 days'
+          GROUP BY project_id, trace_id
+          ORDER BY tokens DESC NULLS LAST LIMIT 15;
+          SQL
+
+          echo "== token burn pace (10-minute buckets, last 6 hours)"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT date_trunc('hour', created_at) + (floor(date_part('minute', created_at) / 10) * interval '10 minutes') AS bucket,
+                 count(*) AS calls, coalesce(sum(total_tokens),0) AS tokens, count(*) FILTER (WHERE status = 'failed') AS failed
+          FROM ai_usage_logs
+          WHERE created_at > now() - interval '6 hours'
+          GROUP BY 1 ORDER BY 1 DESC;
+          SQL
+
+          echo "== recent sampling_runs"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT id, project_id, run_type, status, sample_count, sample_count_per_query, started_at, completed_at, created_at, trace_id, left(failure_summary, 200) AS failure_summary
+          FROM sampling_runs ORDER BY created_at DESC LIMIT 15;
+          SQL
+
+          echo "== redis queue depths"
+          for q in sampling.run response.analyze entity.graph.build report.generate semantic.intelligence; do
+            for st in wait active failed delayed; do
+              printf '%s %-8s ' "$q" "$st"
+              "${COMPOSE[@]}" exec -T redis redis-cli LLEN "bull:$q:$st"
+            done
+          done
+
+          echo "== worker logs (tail 120)"
+          "${COMPOSE[@]}" logs --tail 120 --timestamps worker 2>&1 | tail -120
+          REMOTE

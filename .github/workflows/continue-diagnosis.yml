@@ -1,0 +1,237 @@
+name: Continue diagnosis to report
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Project id to finish (report from existing exploration data)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  continue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Keep worker stopped, then finish the audit from existing data
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          PROJECT_ID: ${{ github.event.inputs.project }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "PROJECT_ID='$PROJECT_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /home/deploy/aeo
+          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r'; }
+          POSTGRES_USER="$(env_value POSTGRES_USER)"
+          POSTGRES_DB="$(env_value POSTGRES_DB)"
+          : "${POSTGRES_USER:=aeo}"
+          : "${POSTGRES_DB:=aeo}"
+
+          COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
+
+          echo "== 1. Ensuring worker stays stopped (no new sampling)"
+          "${COMPOSE[@]}" stop worker
+          "${COMPOSE[@]}" ps --format 'table {{.Service}}\t{{.Status}}'
+
+          echo "== 2. Confirm nothing is active and no fresh token burn"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT count(*) AS active_jobs FROM analysis_jobs WHERE status IN ('queued','running','retrying');
+          SELECT count(*) AS calls_last_3min, coalesce(sum(total_tokens),0) AS tokens_last_3min
+          FROM ai_usage_logs WHERE created_at > now() - interval '3 minutes';
+          SQL
+
+          echo "== 3. Writing continuation script on the host"
+          cat > /tmp/continue-diagnosis.ts <<'TSEOF'
+          import "dotenv/config";
+          import type { Prisma } from "@/generated/prisma/client";
+          import { getPrisma } from "@/server/db";
+          import { materializeBrandProbeRunForDiagnosis } from "@/server/brand-probes/diagnosis-adapter";
+          import { buildSemanticNebulaSnapshotsFromExploration } from "@/server/semantic-nebula/nebula-service";
+          import { generateLongTailOpportunitySnapshot } from "@/server/opportunity/opportunity-service";
+          import { buildReportSnapshot } from "@/server/report/report-snapshot";
+          import { createReportEvidence } from "@/server/evidence/evidence-service";
+          import { ensurePrimaryProjectSubject } from "@/server/projects/subject-service";
+          import { getAuditUsageSummary } from "@/server/ai/usage-summary";
+          import { analyzeSiteReadiness } from "@/server/website-audit/site-readiness-service";
+
+          function asRecord(value: unknown): Record<string, unknown> {
+            return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+          }
+
+          function escapeHtml(value: string) {
+            return value
+              .replaceAll("&", "&amp;")
+              .replaceAll("<", "&lt;")
+              .replaceAll(">", "&gt;")
+              .replaceAll('"', "&quot;")
+              .replaceAll("'", "&#039;");
+          }
+
+          function renderReportHtml(title: string, summary: string) {
+            return [
+              `<article class="cip-report">`,
+              `<h1>${escapeHtml(title)}</h1>`,
+              `<p>${escapeHtml(summary)}</p>`,
+              `<p>Scores and recommendations in this report are backed by sampled AI answers and traceable evidence.</p>`,
+              `</article>`,
+            ].join("");
+          }
+
+          function headlineFromSnapshot(snapshot: unknown, subjectName: string) {
+            const briefs = asRecord(asRecord(snapshot).briefs);
+            const en = asRecord(briefs.en);
+            const summary = asRecord(en.summary);
+            return typeof summary.headline === "string" ? summary.headline : `${subjectName} AI cognition report is ready.`;
+          }
+
+          async function main() {
+            const projectId = process.argv[2];
+            if (!projectId) throw new Error("usage: tsx scripts/continue-diagnosis.ts <projectId>");
+            const prisma = getPrisma();
+
+            const project = await prisma.project.findUnique({ where: { id: projectId }, include: { competitors: true } });
+            if (!project) throw new Error(`Project not found: ${projectId}`);
+            const subject = await ensurePrimaryProjectSubject(project);
+            console.log(JSON.stringify({ step: "project", projectId, name: project.name, brand: project.brandName, domain: project.domain, subjectId: subject.id, subjectName: subject.displayName }));
+
+            const brandRun = await prisma.brandProbeRun.findFirst({
+              where: { projectId, status: "completed", completedProbes: { gt: 0 } },
+              orderBy: { createdAt: "desc" },
+            });
+            if (!brandRun) throw new Error("No completed brand probe run found for this project.");
+            console.log(JSON.stringify({ step: "probe_run", brandProbeRunId: brandRun.id, completed: brandRun.completedProbes, failed: brandRun.failedProbes, total: brandRun.totalProbes, finishedAt: brandRun.finishedAt }));
+
+            const recentSamplingRuns = await prisma.samplingRun.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, take: 25 });
+            let samplingRun = recentSamplingRuns.find((run) => asRecord(run.samplingStrategy).brandProbeRunId === brandRun.id) ?? null;
+            if (!samplingRun) {
+              samplingRun = await materializeBrandProbeRunForDiagnosis(brandRun.id);
+              console.log(JSON.stringify({ step: "materialize", samplingRunId: samplingRun.id, responses: samplingRun.sampleCount }));
+            } else {
+              console.log(JSON.stringify({ step: "materialize_skipped", samplingRunId: samplingRun.id, responses: samplingRun.sampleCount }));
+            }
+            const samplingRunId = samplingRun.id;
+
+            const nebula = await buildSemanticNebulaSnapshotsFromExploration({
+              projectId,
+              subjectId: subject.id,
+              brandProbeRunId: brandRun.id,
+              samplingRunId,
+            }).catch((error) => {
+              console.error("nebula step failed:", error instanceof Error ? error.message : error);
+              return [] as Awaited<ReturnType<typeof buildSemanticNebulaSnapshotsFromExploration>>;
+            });
+            console.log(JSON.stringify({ step: "nebula", snapshotIds: nebula.map((snapshot) => snapshot.id) }));
+
+            const opportunityResult = await generateLongTailOpportunitySnapshot({
+              projectId,
+              subjectId: subject.id,
+            }).catch((error) => {
+              console.error("opportunity step failed:", error instanceof Error ? error.message : error);
+              return null;
+            });
+            console.log(JSON.stringify({ step: "opportunity", snapshotId: opportunityResult?.snapshot?.id ?? null, territorySnapshotId: opportunityResult?.territorySnapshot?.id ?? null }));
+
+            const title = `${subject.displayName} AI Cognition Audit`;
+            const snapshot = await buildReportSnapshot({ projectId, subjectId: subject.id, subjectName: subject.displayName });
+            const report = await prisma.report.create({
+              data: {
+                projectId,
+                runId: samplingRunId,
+                title,
+                format: "html",
+                status: "ready",
+                snapshot,
+                html: renderReportHtml(title, headlineFromSnapshot(snapshot, subject.displayName)),
+              },
+            });
+            await createReportEvidence(report.id);
+            console.log(JSON.stringify({ step: "report", reportId: report.id, title: report.title }));
+
+            const siteReadiness = await analyzeSiteReadiness({
+              projectId,
+              entityType: subject.entityType,
+              websiteUrl: subject.websiteUrl ?? project.domain,
+            }).catch(() => null);
+
+            const job = await prisma.analysisJob.findFirst({
+              where: { projectId, jobType: "full_diagnosis" },
+              orderBy: { createdAt: "desc" },
+            });
+            if (job) {
+              const usageSummary = await getAuditUsageSummary(projectId, job.traceId).catch(() => null);
+              const previous = asRecord(job.result);
+              const history = Array.isArray(previous.stageHistory) ? previous.stageHistory : [];
+              const at = new Date().toISOString();
+              const stages = [
+                ["DIAGNOSIS_MAPPING_SEMANTIC_FIELD", "Mapping the entity semantic field directly from structured units, relations, clusters, and evidence."],
+                ["DIAGNOSIS_FINDING_OPPORTUNITIES", "Finding long-tail answer spaces and building question territory."],
+                ["DIAGNOSIS_BUILDING_EVIDENCE_REPORT", "Building a concise evidence-backed AI cognition audit."],
+              ] as const;
+              const result = {
+                ...previous,
+                currentStage: "DIAGNOSIS_BUILDING_EVIDENCE_REPORT",
+                stageMessage: "Building a concise evidence-backed AI cognition audit.",
+                stageHistory: [
+                  ...history,
+                  ...stages.map(([stage, message]) => ({ at, stage, message })),
+                ],
+                output: {
+                  projectId,
+                  siteReadiness,
+                  subjectId: subject.id,
+                  runId: samplingRunId,
+                  brandProbeRunId: brandRun.id,
+                  reportId: report.id,
+                  semanticNebulaSnapshotIds: nebula.map((item) => item.id),
+                  opportunitySnapshotId: opportunityResult?.snapshot?.id ?? null,
+                  territorySnapshotId: opportunityResult?.territorySnapshot?.id ?? null,
+                  usageSummary,
+                  completedFromExistingExploration: true,
+                },
+              };
+              await prisma.analysisJob.update({
+                where: { id: job.id },
+                data: { status: "completed", completedAt: new Date(), error: null, result: result as Prisma.InputJsonValue },
+              });
+              console.log(JSON.stringify({ step: "job_completed", analysisJobId: job.id, traceId: job.traceId }));
+            }
+
+            console.log(JSON.stringify({ step: "done", projectId, reportId: report.id, samplingRunId, brandProbeRunId: brandRun.id }));
+          }
+
+          main()
+            .then(async () => { await getPrisma().$disconnect(); })
+            .catch(async (error) => { console.error(error); await getPrisma().$disconnect(); process.exit(1); });
+          TSEOF
+
+          echo "== 4. Running the continuation inside the web container"
+          "${COMPOSE[@]}" cp /tmp/continue-diagnosis.ts web:/app/scripts/continue-diagnosis.ts
+          "${COMPOSE[@]}" exec -T web npx tsx scripts/continue-diagnosis.ts "$PROJECT_ID"
+
+          echo "== 5. Reports for this project"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v pid="$PROJECT_ID" <<'SQL'
+          SELECT id, title, status, created_at FROM reports WHERE project_id = :'pid' ORDER BY created_at DESC LIMIT 5;
+          SELECT id, status, current_stage, completed_probes, failed_probes FROM brand_probe_runs WHERE project_id = :'pid' ORDER BY created_at DESC LIMIT 3;
+          SQL
+
+          echo "== 6. Worker status (must stay stopped)"
+          "${COMPOSE[@]}" ps --format 'table {{.Service}}\t{{.Status}}'
+          REMOTE

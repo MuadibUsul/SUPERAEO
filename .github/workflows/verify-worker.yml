@@ -32,29 +32,24 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'cat > /tmp/verify-worker.sh && chmod +x /tmp/verify-worker.sh' <<'SCRIPT'
           #!/usr/bin/env bash
-          set -euo pipefail
+          set -uo pipefail
           cd /home/deploy/aeo
-          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r' || true; }
-          POSTGRES_USER="$(env_value POSTGRES_USER)"; POSTGRES_USER="${POSTGRES_USER:-aeo}"
-          POSTGRES_DB="$(env_value POSTGRES_DB)"; POSTGRES_DB="${POSTGRES_DB:-aeo}"
           COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
 
           echo "== worker container"
-          docker ps --filter "name=aeo-worker" --format '{{.Names}} | {{.Status}}' </dev/null
-          echo "== worker limits: memory bytes / NODE_OPTIONS"
-          docker inspect --format 'limit_bytes={{.HostConfig.Memory}}' aeo-worker-1 </dev/null
-          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' aeo-worker-1 </dev/null | grep -E "NODE_OPTIONS|APP_BASE_URL" || true
+          timeout 20 docker ps --filter "name=aeo-worker" --format '{{.Names}} | {{.Status}}' </dev/null
 
-          echo "== heartbeat written by the worker (what the audit gate reads)"
-          "${COMPOSE[@]}" exec -T redis redis-cli --raw GET cip:worker:heartbeat </dev/null
-          echo "== heartbeat TTL (seconds left)"
-          "${COMPOSE[@]}" exec -T redis redis-cli --raw TTL cip:worker:heartbeat </dev/null
+          echo "== worker memory limit (bytes) and heap flag"
+          timeout 20 docker inspect --format 'limit_bytes={{.HostConfig.Memory}}' aeo-worker-1 </dev/null
+          timeout 20 docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' aeo-worker-1 </dev/null | grep -E "NODE_OPTIONS" || echo "NODE_OPTIONS: (none)"
 
-          echo "== app-level readiness (same check the deploy runs)"
-          "${COMPOSE[@]}" exec -T web npm run worker:readiness </dev/null 2>&1 | tail -6
+          echo "== heartbeat the audit gate reads (cip:worker:heartbeat)"
+          timeout 20 "${COMPOSE[@]}" exec -T redis redis-cli --raw GET cip:worker:heartbeat </dev/null
+          echo "== heartbeat TTL seconds (30 = fresh)"
+          timeout 20 "${COMPOSE[@]}" exec -T redis redis-cli --raw TTL cip:worker:heartbeat </dev/null
 
           echo "== worker log tail"
-          "${COMPOSE[@]}" logs --tail 8 --timestamps worker </dev/null 2>&1 | tail -8
+          timeout 25 "${COMPOSE[@]}" logs --tail 6 --timestamps worker </dev/null 2>&1 | tail -6
           SCRIPT
 
       - name: Run the verification

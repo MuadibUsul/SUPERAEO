@@ -1,0 +1,122 @@
+name: Grant quota
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: Account email to raise the quota for
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  grant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload the grant script
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'cat > /tmp/grant-quota.sh && chmod +x /tmp/grant-quota.sh && wc -l /tmp/grant-quota.sh' <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd /home/deploy/aeo
+          : "${TARGET_EMAIL:?}"
+          env_value() { grep -E "^$1=" deploy/.env | tail -n1 | cut -d= -f2- | tr -d '\r' || true; }
+          POSTGRES_USER="$(env_value POSTGRES_USER)"; POSTGRES_USER="${POSTGRES_USER:-aeo}"
+          POSTGRES_DB="$(env_value POSTGRES_DB)"; POSTGRES_DB="${POSTGRES_DB:-aeo}"
+          COMPOSE=(docker compose -p aeo -f deploy/docker-compose.shared.yml)
+
+          echo "== target: $TARGET_EMAIL"
+          echo "== before"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v email="$TARGET_EMAIL" <<'SQL'
+          SELECT u.id AS user_id, u.email, u.name, u.role,
+                 o.id AS organization_id, o.slug, o.plan, o.quota_overrides AS before_override
+          FROM users u
+          JOIN organization_members m ON m.user_id = u.id
+          JOIN organizations o ON o.id = m.organization_id
+          WHERE lower(u.email) = lower(:'email');
+          SQL
+
+          count=$("${COMPOSE[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v email="$TARGET_EMAIL" -tA <<'SQL'
+          SELECT count(*) FROM users WHERE lower(email) = lower(:'email');
+          SQL
+          )
+          if [ -z "$count" ] || [ "$count" -eq 0 ]; then
+            echo "RESULT: no user with email '$TARGET_EMAIL' exists in the production database"
+            exit 1
+          fi
+
+          echo "== granting unlimited quota"
+          "${COMPOSE[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v email="$TARGET_EMAIL" <<'SQL'
+          BEGIN;
+
+          CREATE TEMP TABLE affected_orgs ON COMMIT DROP AS
+          SELECT o.id AS org_id, o.quota_overrides AS previous
+          FROM organizations o
+          JOIN organization_members m ON m.organization_id = o.id
+          JOIN users u ON u.id = m.user_id
+          WHERE lower(u.email) = lower(:'email');
+
+          UPDATE organizations o
+          SET quota_overrides = '{"projects":1000000,"auditsPerMonth":1000000,"experiments":1000000,"seats":1000000}'::jsonb,
+              updated_at = now()
+          FROM affected_orgs a
+          WHERE o.id = a.org_id;
+
+          INSERT INTO audit_logs (id, actor_user_id, organization_id, action, target_type, target_id, metadata, created_at)
+          SELECT gen_random_uuid()::text,
+                 (SELECT id FROM users WHERE email = 'operator@aeo.local'),
+                 a.org_id,
+                 'quota.grant_unlimited',
+                 'organization',
+                 a.org_id,
+                 jsonb_build_object(
+                   'email', lower(:'email'),
+                   'previous', a.previous,
+                   'granted', '{"projects":1000000,"auditsPerMonth":1000000,"experiments":1000000,"seats":1000000}'::jsonb
+                 ),
+                 now()
+          FROM affected_orgs a;
+
+          COMMIT;
+          SQL
+
+          echo "== after"
+          "${COMPOSE[@]}" exec -T postgres psql -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v email="$TARGET_EMAIL" <<'SQL'
+          SELECT u.email, o.id AS organization_id, o.slug, o.plan, o.quota_overrides AS after_override
+          FROM organizations o
+          JOIN organization_members m ON m.organization_id = o.id
+          JOIN users u ON u.id = m.user_id
+          WHERE lower(u.email) = lower(:'email');
+          SQL
+          echo "== done"
+          SCRIPT
+
+      - name: Run the grant
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          TARGET_EMAIL: ${{ github.event.inputs.email }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "TARGET_EMAIL='$TARGET_EMAIL' bash /tmp/grant-quota.sh" </dev/null

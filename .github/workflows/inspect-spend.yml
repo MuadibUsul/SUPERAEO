@@ -51,6 +51,16 @@ jobs:
           GROUP BY operation ORDER BY total_tokens DESC;
           SQL
 
+          echo "== spend by phase"
+          "${PSQL[@]}" <<'SQL'
+          SELECT CASE WHEN created_at < timestamp '2026-09-13 14:26:00' THEN 'A: first 360-probe run' ELSE 'B: retry (cancelled)' END AS phase,
+                 count(*) AS calls, sum(coalesce(prompt_tokens,0)) AS prompt_tokens,
+                 sum(coalesce(completion_tokens,0)) AS completion_tokens,
+                 sum(coalesce(total_tokens,0)) AS total_tokens
+          FROM ai_usage_logs WHERE trace_id = '0cdbd5c1-3898-46b8-a1b1-b8a69590b5a5'
+          GROUP BY 1 ORDER BY 1;
+          SQL
+
           echo "== probe zones in run #1"
           "${PSQL[@]}" <<'SQL'
           SELECT zone, count(*) AS probes,

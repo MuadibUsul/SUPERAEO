@@ -50,9 +50,12 @@ export default function NebulaLabPage() {
   const nodes = useMemo(() => adaptNebulaNodes(makeRows(count), Number.POSITIVE_INFINITY, undefined, false), [count]);
 
   const [fps, setFps] = useState(0);
-  const fpsRef = useRef({ frames: 0, last: performance.now() });
+  // last starts at 0 and is seeded inside the effect — calling performance.now()
+  // in the useRef initializer would be an impure call during render.
+  const fpsRef = useRef({ frames: 0, last: 0 });
   useEffect(() => {
     let raf = 0;
+    fpsRef.current.last = performance.now();
     const tick = () => {
       const s = fpsRef.current;
       s.frames += 1;

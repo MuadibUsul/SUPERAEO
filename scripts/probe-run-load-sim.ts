@@ -20,7 +20,7 @@ const pressure = computeBackpressure({
   rateLimitErrors: 0,
   jsonFailures: 0,
   retryQueueSize: 0,
-  tokensUsedInWindow: Math.min(config.tokensPerMinuteBudget - 1, probeCount * 900),
+  tokensUsedTotal: probeCount * 900,
 }, config);
 
 console.log(JSON.stringify({

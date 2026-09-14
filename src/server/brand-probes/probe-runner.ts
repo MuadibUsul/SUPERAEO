@@ -76,7 +76,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
     rateLimitErrors: 0,
     jsonFailures: 0,
     retryQueueSize: 0,
-    tokensUsedInWindow: 0,
+    tokensUsedTotal: 0,
   };
   const limiter = new RateLimiter({
     requestsPerMinute: config.requestRateLimit,
@@ -148,7 +148,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
       ]);
       const exploration = asRecord(asRecord(freshRun?.configJson).semanticExploration);
       manualStopRequested = typeof exploration.stopRequestedAt === "string";
-      const tracedTokens = tracedUsage?._sum.totalTokens ?? sample.tokensUsedInWindow;
+      const tracedTokens = tracedUsage?._sum.totalTokens ?? sample.tokensUsedTotal;
       const tracedCost = tracedUsage?._sum.costUsd ?? 0;
       tokenBudgetExceeded =
         (explorationConfig.maxTokens > 0 && tracedTokens >= explorationConfig.maxTokens)
@@ -192,9 +192,9 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
           sample.failedProbes += result.failed;
           sample.rateLimitErrors += result.rateLimitErrors;
           sample.jsonFailures += result.jsonFailures;
-          sample.tokensUsedInWindow += result.tokens;
+          sample.tokensUsedTotal += result.tokens;
           if (result.fatalError) fatalError = result.fatalError;
-          if (explorationConfig.maxTokens > 0 && sample.tokensUsedInWindow >= explorationConfig.maxTokens) {
+          if (explorationConfig.maxTokens > 0 && sample.tokensUsedTotal >= explorationConfig.maxTokens) {
             tokenBudgetExceeded = true;
           }
           sample.elapsedMs = Date.now() - startedAt;

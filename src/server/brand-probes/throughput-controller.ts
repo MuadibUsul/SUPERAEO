@@ -8,7 +8,12 @@ export type ThroughputSample = {
   rateLimitErrors: number;
   jsonFailures: number;
   retryQueueSize: number;
-  tokensUsedInWindow: number;
+  // Cumulative tokens spent across the whole run. The per-minute figure the
+  // token budget is expressed in is derived from this and elapsedMs where it is
+  // needed (see computeBackpressure) rather than stored, so this counter never
+  // has to be reset and can double as the total-token fallback for the budget
+  // cap.
+  tokensUsedTotal: number;
 };
 
 export type ThroughputState = {
@@ -70,7 +75,8 @@ export function computeBackpressure(sample: ThroughputSample, config: ProbeRunCo
   const latencyPressure = sample.averageLatencyMs > 12000;
   const jsonPressure = jsonFailureRate > 0.06;
   const retryPressure = sample.retryQueueSize > Math.max(5, config.maxConcurrency);
-  const tokenPressure = sample.tokensUsedInWindow > config.tokensPerMinuteBudget * 0.9;
+  const tokensPerMinute = sample.elapsedMs > 0 ? (sample.tokensUsedTotal / sample.elapsedMs) * 60000 : sample.tokensUsedTotal;
+  const tokenPressure = tokensPerMinute > config.tokensPerMinuteBudget * 0.9;
 
   if (jsonPressure) {
     return {

@@ -26,7 +26,7 @@ test("backpressure lowers concurrency and batch size under JSON failure pressure
     rateLimitErrors: 0,
     jsonFailures: 8,
     retryQueueSize: 1,
-    tokensUsedInWindow: 200000,
+    tokensUsedTotal: 200000,
   }, config);
 
   assert.equal(pressure.level, 3);
@@ -44,10 +44,42 @@ test("backpressure reacts to rate limit and token pressure before provider overl
     rateLimitErrors: 2,
     jsonFailures: 0,
     retryQueueSize: 0,
-    tokensUsedInWindow: 590000,
+    tokensUsedTotal: 590000,
   }, config);
 
   assert.equal(pressure.level, 2);
   assert.equal(pressure.batchSize, 3);
   assert.equal(pressure.requestRateLimit, 45);
+});
+
+test("token pressure follows the per-minute rate, not the cumulative total", () => {
+  const config = getProbeRunConfig();
+  // A long run whose cumulative tokens are many times the per-minute budget but
+  // whose actual rate is well under it must not stay latched in token pressure.
+  const relaxed = computeBackpressure({
+    completedProbes: 3000,
+    failedProbes: 0,
+    elapsedMs: 30 * 60 * 1000,
+    averageLatencyMs: 2000,
+    rateLimitErrors: 0,
+    jsonFailures: 0,
+    retryQueueSize: 0,
+    tokensUsedTotal: 5_000_000,
+  }, config);
+  assert.equal(relaxed.level, 0);
+  assert.equal(relaxed.reason, null);
+
+  // The same budget breached as an actual per-minute rate does apply pressure.
+  const throttled = computeBackpressure({
+    completedProbes: 300,
+    failedProbes: 0,
+    elapsedMs: 30 * 1000,
+    averageLatencyMs: 2000,
+    rateLimitErrors: 0,
+    jsonFailures: 0,
+    retryQueueSize: 0,
+    tokensUsedTotal: 300_000,
+  }, config);
+  assert.equal(throttled.level, 2);
+  assert.equal(throttled.reason, "token_budget_pressure");
 });

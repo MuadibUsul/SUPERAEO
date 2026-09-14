@@ -51,12 +51,18 @@ export async function createSession(userId: string) {
 
 export async function setSessionCookie(token: string, expiresAt: Date) {
   const cookieStore = await cookies();
+  // `maxAge` (seconds) is what makes this a persistent cookie that survives the
+  // browser closing. `expires` alone can silently degrade to a session cookie
+  // when the Date fails to serialize in a route handler, which logs the user out
+  // on every browser restart. Both are set to the same lifetime for good measure.
+  const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
     expires: expiresAt,
+    maxAge,
   });
 }
 

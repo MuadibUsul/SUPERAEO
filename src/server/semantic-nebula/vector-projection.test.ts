@@ -21,14 +21,21 @@ test("anchor point lands exactly at the origin", () => {
   assert.ok(Math.abs(p[0].x) < 1e-9 && Math.abs(p[0].y) < 1e-9 && Math.abs(p[0].z) < 1e-9);
 });
 
-test("coordinates are scaled into ~[-1,1]", () => {
+test("coordinates use robust scaling and remain softly bounded", () => {
   const rnd = seeded(11);
   const vs = Array.from({ length: 40 }, () => Array.from({ length: 16 }, () => rnd() * 10));
   const p = projectTo3D(vs);
   let max = 0;
   for (const q of p) max = Math.max(max, Math.abs(q.x), Math.abs(q.y), Math.abs(q.z));
-  assert.ok(max <= 1.0001, `max ${max}`);
+  assert.ok(max <= 1.3501, `max ${max}`);
   assert.ok(max > 0.5, `expected something near the [-1,1] edge, got ${max}`);
+});
+
+test("one extreme projection does not collapse ordinary coordinates", () => {
+  const ordinary = Array.from({ length: 30 }, (_, i) => [i / 30, Math.sin(i) * 0.2, Math.cos(i) * 0.2, i % 3]);
+  const projected = projectTo3D([[1000, 1000, 1000, 1000], ...ordinary]);
+  const ordinaryMax = Math.max(...projected.slice(1).map((p) => Math.max(Math.abs(p.x), Math.abs(p.y), Math.abs(p.z))));
+  assert.ok(ordinaryMax > 0.25, `ordinary field was collapsed to ${ordinaryMax}`);
 });
 
 test("variance concentrates on x: a dominant axis maps to the first component", () => {

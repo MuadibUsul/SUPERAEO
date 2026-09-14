@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { adaptNebulaNodes } from "@/components/semantic-intelligence/universe-adapter";
+import { adaptNebulaNodes, isLikelyPromptScaffolding } from "@/components/semantic-intelligence/universe-adapter";
 
 const nodes = [
   { term: "AI observability", termType: "POSITIVE", polarity: "POSITIVE", semanticGravity: 90, frequencyScore: 80, context: {} },
@@ -175,4 +175,14 @@ test("evaluation vulnerabilities render as risk even without a legacy risk flag"
     semanticMeta: { domain: "EVALUATION", type: "VULNERABILITY", confidence: 0.9 },
   }]);
   assert.equal(node.type, "risk");
+});
+
+test("removes obvious prompt counters without hiding normal numbered concepts", () => {
+  assert.equal(isLikelyPromptScaffolding("keywords10 competitors5 semantic units12"), true);
+  assert.equal(isLikelyPromptScaffolding("Top 10 competitors"), false);
+  const out = adaptNebulaNodes([
+    { term: "keywords10 competitors5 semantic units12", semanticGravity: 20 },
+    { term: "Top 10 competitors", semanticGravity: 20 },
+  ]);
+  assert.deepEqual(out.map((node) => node.label), ["Top 10 competitors"]);
 });

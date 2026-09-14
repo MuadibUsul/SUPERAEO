@@ -97,6 +97,11 @@ function num(v: unknown, fallback = 0): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
+export function isLikelyPromptScaffolding(label: string) {
+  const counters = label.match(/(?:keywords?|competitors?|semantic[_ ]?units?|models?|probes?)\s*[:=_-]?\s*\d+/gi);
+  return (counters?.length ?? 0) >= 2 || /(?:response[_ ]?format|output[_ ]?schema|max[_ ]?tokens?)\s*[:=_-]/i.test(label);
+}
+
 export function adaptNebulaNodes(
   nodeJson: unknown,
   limit = Number.POSITIVE_INFINITY,
@@ -130,7 +135,7 @@ export function adaptNebulaNodes(
         hasCoords, sx: num(layerPosition.x), sy: num(layerPosition.y), sz: num(layerPosition.z),
       };
     })
-    .filter((n) => n.label.length > 0 && n.inLayer)
+    .filter((n) => n.label.length > 0 && n.inLayer && !isLikelyPromptScaffolding(n.label))
     .sort((a, b) => b.strength - a.strength)
     .slice(0, limit);
 
@@ -163,17 +168,20 @@ export function adaptNebulaNodes(
   });
 }
 
-function balanceDisplayPositions<T extends { hasCoords: boolean; x: number; y: number; z: number }>(nodes: T[]) {
+function balanceDisplayPositions<T extends { label: string; hasCoords: boolean; x: number; y: number; z: number }>(nodes: T[]) {
   const embedded = nodes.filter((node) => node.hasCoords);
   if (embedded.length < 8) return nodes;
 
-  const center = embedded.reduce(
-    (sum, node) => ({ x: sum.x + node.x, y: sum.y + node.y, z: sum.z + node.z }),
-    { x: 0, y: 0, z: 0 },
-  );
-  center.x /= embedded.length;
-  center.y /= embedded.length;
-  center.z /= embedded.length;
+  const median = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+  };
+  const center = {
+    x: median(embedded.map((node) => node.x)),
+    y: median(embedded.map((node) => node.y)),
+    z: median(embedded.map((node) => node.z)),
+  };
 
   const imbalance = Math.max(
     axisImbalance(embedded.map((node) => node.x)),
@@ -181,15 +189,21 @@ function balanceDisplayPositions<T extends { hasCoords: boolean; x: number; y: n
     axisImbalance(embedded.map((node) => node.z)),
   );
   const correction = Math.max(0, Math.min(1, (imbalance - 0.45) / 0.4));
-  if (correction === 0) return nodes;
+  const spread = ([axis, origin]: ["x" | "y" | "z", number]) => {
+    const values = embedded.map((node) => Math.abs(node[axis] - origin)).sort((a, b) => a - b);
+    return values[Math.floor((values.length - 1) * 0.9)] ?? 0;
+  };
+  const spreads = [spread(["x", center.x]), spread(["y", center.y]), spread(["z", center.z])];
+  const target = median(spreads.filter((value) => value > 1e-6));
+  const stretch = spreads.map((value) => Math.max(0.68, Math.min(2.4, target / Math.max(value, 1e-6))));
 
   return nodes.map((node) => {
     if (!node.hasCoords) return node;
     const radius = Math.hypot(node.x, node.y, node.z);
     const shifted = {
-      x: node.x - center.x * correction,
-      y: node.y - center.y * correction,
-      z: node.z - center.z * correction,
+      x: (node.x - center.x * correction) * stretch[0] + (hash01(`${node.label}:x`) - 0.5) * 0.025,
+      y: (node.y - center.y * correction) * stretch[1] + (hash01(`${node.label}:y`) - 0.5) * 0.025,
+      z: (node.z - center.z * correction) * stretch[2] + (hash01(`${node.label}:z`) - 0.5) * 0.025,
     };
     const shiftedRadius = Math.hypot(shifted.x, shifted.y, shifted.z);
     if (radius === 0 || shiftedRadius === 0) return node;

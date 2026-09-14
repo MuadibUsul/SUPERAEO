@@ -5,8 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { UniverseEvidence, UniverseNode, UniverseType } from "@/components/semantic-intelligence/universe-adapter";
 
-const DETAIL_NODE_LIMIT = 320;
-const GLOW_NODE_LIMIT = 96;
+const MAX_DETAIL_NODES = 560;
 const LARGE_NODE_THRESHOLD = 400;
 const THIRTY_FPS_MS = 1000 / 30;
 const TOOLTIP_WIDTH = 220;
@@ -48,6 +47,10 @@ type Copy = {
   exitFullscreen?: string;
   balanced?: string;
   raw?: string;
+  zoomIn?: string;
+  zoomOut?: string;
+  resetView?: string;
+  encoding?: string;
 };
 
 const DEFAULT_COPY: Copy = {
@@ -62,9 +65,18 @@ const DEFAULT_COPY: Copy = {
   exitFullscreen: "Exit fullscreen",
   balanced: "Balanced",
   raw: "Raw space",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
+  resetView: "Fit nebula",
+  encoding: "distance · semantic proximity  /  size · evidence gravity  /  brightness · confidence",
 };
 
 type Star = UniverseNode & { color: string; hue: [number, number, number]; tw: number };
+
+export function nodeVisualRadius(strength: number, projectionScale: number) {
+  const value = 1.15 + Math.sqrt(Math.max(0, Math.min(1, strength))) * 4.85;
+  return Math.max(0.9, Math.min(12, value * projectionScale * 1.15));
+}
 
 export function CognitionUniverse({
   nodes,
@@ -95,6 +107,9 @@ export function CognitionUniverse({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [evidenceByKey, setEvidenceByKey] = useState<Record<string, UniverseEvidence[]>>({});
   const invalidateRef = useRef<() => void>(() => undefined);
+  const cameraControlsRef = useRef<{ zoomIn: () => void; zoomOut: () => void; reset: () => void }>({
+    zoomIn: () => undefined, zoomOut: () => undefined, reset: () => undefined,
+  });
 
   // mirror reactive state into a ref the animation loop can read each frame
   const ui = useRef({ typeOn, paused, selected });
@@ -174,16 +189,6 @@ export function CognitionUniverse({
       color: `rgb(${HUE[node.type].join(",")})`,
       tw: (index * 2.399) % 6.283,
     }));
-    const detailedStars = new Set(
-      [...stars]
-        .sort((left, right) => right.affinity - left.affinity || right.strength - left.strength)
-        .slice(0, DETAIL_NODE_LIMIT),
-    );
-    const glowingStars = new Set(
-      [...detailedStars]
-        .sort((left, right) => right.affinity - left.affinity)
-        .slice(0, GLOW_NODE_LIMIT),
-    );
     const screen = stars.map((star) => ({
       s: star,
       sx: 0,
@@ -191,8 +196,8 @@ export function CognitionUniverse({
       scale: 0,
       depth: 0,
       fog: 0,
-      detailed: detailedStars.has(star),
     }));
+    const priorityScreen = [...screen].sort((left, right) => right.s.strength - left.s.strength || right.s.affinity - left.s.affinity);
     const cam = { yaw: 0.2, pitch: -0.18, dist: 3.4, tdist: 2.6 };
     const look = { x: 0, y: 0, z: 0 };
     const focus = { x: 0, y: 0, z: 0 };
@@ -203,7 +208,6 @@ export function CognitionUniverse({
     let raf = 0, pointerRaf = 0, lastPaint = 0, lastFrame = performance.now();
     let visible = true, destroyed = false;
     let detailOrder: typeof screen = [];
-    let detailOrderKey = " ";
     let cosYaw = 1, sinYaw = 0, cosPitch = 1, sinPitch = 0;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const frameInterval = !interactive || stars.length > LARGE_NODE_THRESHOLD ? THIRTY_FPS_MS : 0;
@@ -262,7 +266,7 @@ export function CognitionUniverse({
       const elapsed = Math.min((now - lastFrame) / 1000, 0.05);
       lastFrame = now; lastPaint = now;
       if (autoRotate) cam.yaw += (interactive ? 0.02 : 0.012) * elapsed;
-      cam.dist += (cam.tdist - cam.dist) * 0.12;
+      cam.dist += (cam.tdist - cam.dist) * (reduceMotion ? 1 : 0.18);
       look.x += (focus.x - look.x) * 0.14; look.y += (focus.y - look.y) * 0.14; look.z += (focus.z - look.z) * 0.14;
       updateProjection();
       projectScreen();
@@ -285,28 +289,30 @@ export function CognitionUniverse({
 
       const brand = project(0, 0, 0);
       ctx.shadowBlur = 0;
+      const zoomLevel = 2.6 / cam.dist;
       for (const item of screen) {
         const { s } = item;
         const isSelected = selected?.evidenceKey === s.evidenceKey;
-        if (item.detailed || hoverStar === s || isSelected || !typeOn[s.type] || item.fog <= 0) continue;
+        if (!typeOn[s.type] || item.fog <= 0) continue;
         const dim = selected && selected.type !== s.type ? 0.2 : 1;
-        const size = Math.max(1, Math.min(2.4, item.scale * 1.45));
-        ctx.globalAlpha = (0.08 + s.affinity * 0.28) * item.fog * dim;
+        const radius = nodeVisualRadius(s.strength, item.scale);
+        ctx.globalAlpha = (0.08 + s.confidence * 0.22 + s.affinity * 0.42) * item.fog * dim;
         ctx.fillStyle = s.color;
-        ctx.fillRect(item.sx - size / 2, item.sy - size / 2, size, size);
+        ctx.beginPath(); ctx.arc(item.sx, item.sy, radius, 0, 6.2832); ctx.fill();
       }
 
-      // Which stars get the detailed treatment only changes when hover or
-      // selection changes, so the membership pass is hoisted out of the frame
-      // loop; only the depth sort has to run per frame. With the node cap raised
-      // to four figures, rebuilding this list 30x a second was the dominant cost.
-      const detailKey = `${hoverStar?.evidenceKey ?? ""}|${selected?.evidenceKey ?? ""}`;
-      if (detailKey !== detailOrderKey) {
-        detailOrderKey = detailKey;
-        detailOrder = screen.filter(
-          (item) => item.detailed || hoverStar === item.s || selected?.evidenceKey === item.s.evidenceKey,
+      // Detail is a camera-dependent layer, not a fixed top-N caste. Every
+      // node uses the same radius above; zooming only adds glow, links and text.
+      const detailThreshold = Math.max(2.15, 4.8 - Math.max(0, zoomLevel - 1) * 1.2);
+      detailOrder = priorityScreen.filter((item) => {
+        const highlighted = hoverStar === item.s || selected?.evidenceKey === item.s.evidenceKey;
+        return highlighted || (
+          typeOn[item.s.type]
+          && item.fog > 0
+          && item.sx > -30 && item.sx < W + 30 && item.sy > -30 && item.sy < H + 30
+          && nodeVisualRadius(item.s.strength, item.scale) >= detailThreshold
         );
-      }
+      }).slice(0, MAX_DETAIL_NODES);
       detailOrder.sort((left, right) => right.depth - left.depth);
       for (const item of detailOrder) {
         const { s } = item;
@@ -325,18 +331,19 @@ export function CognitionUniverse({
         if (!typeOn[s.type] || item.fog <= 0) continue;
         const dim = selected && selected.type !== s.type ? 0.25 : 1;
         const pulse = s.type === "risk" && stars.length <= LARGE_NODE_THRESHOLD ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
-        const radius = (0.75 + s.affinity * 4.8) * item.scale * 1.45 * pulse;
+        const radius = nodeVisualRadius(s.strength, item.scale) * pulse;
         const highlighted = hoverStar === s || isSelected;
         ctx.globalAlpha = (0.12 + s.affinity * 0.88) * item.fog * dim;
         ctx.fillStyle = s.color; ctx.shadowColor = s.color;
-        ctx.shadowBlur = highlighted ? 26 * item.fog : glowingStars.has(s) ? Math.max(0, (s.affinity - 0.5) * 24 * item.fog) : 0;
-        ctx.beginPath(); ctx.arc(item.sx, item.sy, highlighted ? radius + 2.5 : radius, 0, 6.2832); ctx.fill();
+        ctx.shadowBlur = highlighted ? 26 * item.fog : Math.max(0, (s.confidence - 0.58) * 18 * item.fog);
+        ctx.beginPath(); ctx.arc(item.sx, item.sy, highlighted ? radius + 1.8 : radius, 0, 6.2832); ctx.fill();
       }
       ctx.shadowBlur = 0; ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
 
       const labelBoxes: Array<{ left: number; top: number; right: number; bottom: number }> = [];
-      const labelLimit = Math.max(14, Math.min(36, Math.round(Math.sqrt(detailOrder.length) * 1.6)));
-      const labelThreshold = stars.length > LARGE_NODE_THRESHOLD ? 0.78 : stars.length > 180 ? 0.7 : 0.62;
+      const labelLimit = Math.max(14, Math.min(72, Math.round(Math.sqrt(detailOrder.length) * (1.6 + Math.min(1.2, zoomLevel * 0.3)))));
+      const baseLabelThreshold = stars.length > LARGE_NODE_THRESHOLD ? 0.78 : stars.length > 180 ? 0.7 : 0.62;
+      const labelThreshold = Math.max(0.38, baseLabelThreshold - Math.max(0, zoomLevel - 1) * 0.12);
       let visibleLabels = 0;
       for (const item of detailOrder) {
         const { s } = item;
@@ -369,8 +376,8 @@ export function CognitionUniverse({
       if (autoRotate || settling || drag) requestDraw();
     }
 
-    const pick = (px: number, py: number) => {
-      let best: Star | null = null, bestDistance = 15 * 15;
+    const nearest = (px: number, py: number, maxDistance: number) => {
+      let best: Star | null = null, bestDistance = maxDistance * maxDistance;
       for (const item of screen) {
         if (!ui.current.typeOn[item.s.type] || item.fog <= 0) continue;
         const dx = item.sx - px, dy = item.sy - py, distance = dx * dx + dy * dy;
@@ -378,6 +385,7 @@ export function CognitionUniverse({
       }
       return best;
     };
+    const pick = (px: number, py: number) => nearest(px, py, 16);
     const localXY = (event: { clientX: number; clientY: number }) => {
       const rect = canvas.getBoundingClientRect();
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -427,7 +435,7 @@ export function CognitionUniverse({
       if (!wasPinching && drag && !drag.moved) {
         const { x, y } = localXY(event), hit = pick(x, y);
         if (hit) {
-          setSelected(hit); focus.x = hit.x; focus.y = hit.y; focus.z = hit.z; cam.tdist = 1.7;
+          setSelected(hit); focus.x = hit.x; focus.y = hit.y; focus.z = hit.z; cam.tdist = Math.min(cam.tdist, 0.95);
         } else {
           setSelected(null); focus.x = 0; focus.y = 0; focus.z = 0; cam.tdist = 2.6;
         }
@@ -445,7 +453,7 @@ export function CognitionUniverse({
       if (pointers.size >= 2) {
         const span = currentSpan();
         if (pinchSpan > 0 && span > 0) {
-          cam.tdist = Math.max(1.1, Math.min(5.5, cam.tdist * (pinchSpan / span)));
+          cam.tdist = Math.max(0.42, Math.min(5.5, cam.tdist * (pinchSpan / span)));
         }
         pinchSpan = span;
         requestDraw();
@@ -469,9 +477,41 @@ export function CognitionUniverse({
     };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      cam.tdist = Math.max(1.1, Math.min(5.5, cam.tdist * (event.deltaY < 0 ? 0.9 : 1.11)));
+      const zoomingIn = event.deltaY < 0;
+      if (zoomingIn) {
+        const point = localXY(event);
+        const target = nearest(point.x, point.y, 120);
+        if (target) {
+          focus.x += (target.x - focus.x) * 0.28;
+          focus.y += (target.y - focus.y) * 0.28;
+          focus.z += (target.z - focus.z) * 0.28;
+        }
+      } else if (cam.tdist > 2.4) {
+        focus.x *= 0.8; focus.y *= 0.8; focus.z *= 0.8;
+      }
+      cam.tdist = Math.max(0.42, Math.min(5.5, cam.tdist * (zoomingIn ? 0.84 : 1.16)));
       requestDraw();
     };
+    const onDoubleClick = (event: MouseEvent) => {
+      const point = localXY(event), hit = nearest(point.x, point.y, 24);
+      if (!hit) return;
+      setSelected(hit); focus.x = hit.x; focus.y = hit.y; focus.z = hit.z; cam.tdist = 0.48;
+      requestDraw();
+    };
+    const resetView = () => {
+      setSelected(null); focus.x = 0; focus.y = 0; focus.z = 0; cam.tdist = 2.6;
+      requestDraw();
+    };
+    const zoomBy = (factor: number) => {
+      cam.tdist = Math.max(0.42, Math.min(5.5, cam.tdist * factor));
+      requestDraw();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomBy(0.78); }
+      else if (event.key === "-") { event.preventDefault(); zoomBy(1.28); }
+      else if (event.key === "0" || event.key === "Home" || event.key === "Escape") { event.preventDefault(); resetView(); }
+    };
+    cameraControlsRef.current = { zoomIn: () => zoomBy(0.72), zoomOut: () => zoomBy(1.38), reset: resetView };
     const onLeave = () => {
       pendingPointer = null;
       if (hoverStar) { hoverStar = null; setTip(null); requestDraw(); }
@@ -501,6 +541,8 @@ export function CognitionUniverse({
       canvas.addEventListener("pointermove", onMove);
       canvas.addEventListener("pointerleave", onLeave);
       canvas.addEventListener("wheel", onWheel, { passive: false });
+      canvas.addEventListener("dblclick", onDoubleClick);
+      canvas.addEventListener("keydown", onKeyDown);
     }
 
     return () => {
@@ -516,6 +558,9 @@ export function CognitionUniverse({
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("dblclick", onDoubleClick);
+      canvas.removeEventListener("keydown", onKeyDown);
+      cameraControlsRef.current = { zoomIn: () => undefined, zoomOut: () => undefined, reset: () => undefined };
     };
   }, [nodes, subjectName, interactive, layoutMode]);
 
@@ -544,6 +589,8 @@ export function CognitionUniverse({
       <canvas
         ref={canvasRef}
         className={cn("block h-full w-full", !interactive && "pointer-events-none")}
+        aria-label={interactive ? copy.hint : undefined}
+        tabIndex={interactive ? 0 : undefined}
         // touchAction none: without it the browser claims drag and pinch for
         // page scroll and zoom, and the canvas never sees the gesture.
         style={interactive ? { cursor: "grab", touchAction: "none" } : undefined}
@@ -611,23 +658,22 @@ export function CognitionUniverse({
         })}
       </div>
 
-      {/* pause + hint */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setPaused((p) => !p)}
-          className="grid size-7 place-items-center rounded-md border border-border bg-black/40 text-[#c4c8d6] transition-[transform,color] duration-150 ease-out hover:text-white active:scale-[0.97]"
-          aria-label={paused ? "Resume" : "Pause"}
-          aria-pressed={paused}
-        >
-          {paused ? (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z" /></svg>
-          ) : (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" /><rect x="14" y="5" width="4" height="14" /></svg>
-          )}
-        </button>
-        <span className="font-mono text-[10px] leading-tight text-faint">{copy.hint}</span>
+      {/* camera controls + hint */}
+      <div className="absolute bottom-3 left-3 flex items-center gap-2">
+        <div className="flex rounded-lg border border-white/10 bg-black/60 p-0.5 text-[#c4c8d6] backdrop-blur">
+          <button type="button" onClick={() => setPaused((p) => !p)} className="grid size-7 place-items-center rounded-md transition-[transform,color,background-color] duration-150 ease-out hover:bg-white/10 hover:text-white active:scale-[0.97]" aria-label={paused ? "Resume" : "Pause"} aria-pressed={paused}>
+            {paused ? <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z" /></svg> : <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" /><rect x="14" y="5" width="4" height="14" /></svg>}
+          </button>
+          <button type="button" onClick={() => cameraControlsRef.current.zoomIn()} className="grid size-7 place-items-center rounded-md text-base transition-[transform,color,background-color] duration-150 ease-out hover:bg-white/10 hover:text-white active:scale-[0.97]" aria-label={copy.zoomIn ?? DEFAULT_COPY.zoomIn}>+</button>
+          <button type="button" onClick={() => cameraControlsRef.current.zoomOut()} className="grid size-7 place-items-center rounded-md text-base transition-[transform,color,background-color] duration-150 ease-out hover:bg-white/10 hover:text-white active:scale-[0.97]" aria-label={copy.zoomOut ?? DEFAULT_COPY.zoomOut}>−</button>
+          <button type="button" onClick={() => cameraControlsRef.current.reset()} className="grid size-7 place-items-center rounded-md transition-[transform,color,background-color] duration-150 ease-out hover:bg-white/10 hover:text-white active:scale-[0.97]" aria-label={copy.resetView ?? DEFAULT_COPY.resetView}>
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" /></svg>
+          </button>
+        </div>
+        <span className="hidden font-mono text-[10px] leading-tight text-faint sm:inline">{copy.hint}</span>
       </div>
+
+      {!selected ? <div className="absolute bottom-3 right-3 hidden max-w-[44%] rounded-md bg-black/45 px-2 py-1 font-mono text-[9px] leading-4 text-slate-500 backdrop-blur md:block">{copy.encoding ?? DEFAULT_COPY.encoding}</div> : null}
 
       {/* hover tooltip */}
       {tip ? (

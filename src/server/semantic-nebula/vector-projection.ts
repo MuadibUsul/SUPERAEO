@@ -101,9 +101,11 @@ export function projectTo3D(vectors: Vec[], anchorIndex = -1): Array<{ x: number
     coords = coords.map((p) => ({ x: p.x - a.x, y: p.y - a.y, z: p.z - a.z }));
   }
 
-  // scale into ~[-1, 1]
-  let max = 0;
-  for (const p of coords) max = Math.max(max, Math.abs(p.x), Math.abs(p.y), Math.abs(p.z));
-  const s = max > 0 ? 1 / max : 1;
-  return coords.map((p) => ({ x: p.x * s, y: p.y * s, z: p.z * s }));
+  // A single outlier must not compress the remaining semantic field into a
+  // thin patch. Scale by the 95th percentile and softly cap only the tails.
+  const magnitudes = coords.flatMap((p) => [Math.abs(p.x), Math.abs(p.y), Math.abs(p.z)]).sort((a, b) => a - b);
+  const scaleAt = magnitudes[Math.floor((magnitudes.length - 1) * 0.95)] ?? 0;
+  const s = scaleAt > 0 ? 1 / scaleAt : 1;
+  const cap = (value: number) => Math.max(-1.35, Math.min(1.35, value * s));
+  return coords.map((p) => ({ x: cap(p.x), y: cap(p.y), z: cap(p.z) }));
 }

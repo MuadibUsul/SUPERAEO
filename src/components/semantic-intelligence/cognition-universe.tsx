@@ -291,10 +291,11 @@ export function CognitionUniverse({
         const isSelected = selected?.evidenceKey === s.evidenceKey;
         if (!typeOn[s.type] || item.fog <= 0) continue;
         const dim = selected && selected.type !== s.type ? 0.2 : 1;
-        // Overview leads with high-evidence nodes; zooming in re-reveals the
-        // long tail. Below-floor nodes only fade — never removed, so they stay
-        // pickable and present in raw space.
-        const reveal = isSelected || hoverStar === s ? 1 : overviewRevealAlpha(nodeEvidenceScore(s), zoomLevel);
+        // Interactive overview leads with high-evidence nodes; zooming in
+        // re-reveals the long tail. Below-floor nodes only fade — never removed,
+        // so they stay pickable and present in raw space. The ambient marketing
+        // background has no zoom to bring the tail back, so it keeps a full field.
+        const reveal = !interactive || isSelected || hoverStar === s ? 1 : overviewRevealAlpha(nodeEvidenceScore(s), zoomLevel);
         const radius = nodeVisualRadius(s.strength, item.scale);
         ctx.globalAlpha = (0.08 + s.confidence * 0.22 + s.affinity * 0.42) * item.fog * dim * reveal;
         ctx.fillStyle = s.color;

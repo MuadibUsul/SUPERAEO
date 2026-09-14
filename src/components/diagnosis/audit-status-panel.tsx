@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, Play, RefreshCw, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, Play, RefreshCw, Square, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -23,11 +23,12 @@ type DiagnosisJob = {
   status: JobStatus;
   result: unknown;
   error: string | null;
+  attempts?: number;
 };
 
 type DiagnosisStatus = {
   job: DiagnosisJob | null;
-  latestRun: { id: string; status: string; sampleCount: number; failureSummary: string | null } | null;
+  latestRun: { id: string; status: string; sampleCount: number; completedProbes?: number; failedProbes?: number; failureSummary: string | null } | null;
   latestReport: { id: string; title: string } | null;
   usageSummary: {
     promptTokens: number;
@@ -37,6 +38,17 @@ type DiagnosisStatus = {
     requestCount: number;
     failedRequestCount: number;
     repairCount: number;
+    repairTokens: number;
+    repairCostUsd: number;
+    usageBreakdownAvailable: boolean;
+  } | null;
+  executionProgress: {
+    probes: { total: number; completed: number; failed: number; skipped: number; remaining: number };
+    requests: { batch: number; single: number; repairs: number; repairTokens: number; usageBreakdownAvailable: boolean; failed: number; splitBatches: number; actual: number; estimated: number };
+    exploration: { mode: string; iteration: number; maxIterations: number; initialProbeCount: number; addedProbes: number; maxAdditionalProbes: number; stopReason: string | null };
+    budget: { tokensUsed: number; tokenLimit: number; estimatedCostUsd: number; costLimitUsd: number; estimatedFinalCostUsd: number | null };
+    scheduler: { concurrency: number; batchSize: number; throttleReason: string | null };
+    timing: { elapsedSeconds: number; estimatedRemainingSeconds: number | null };
   } | null;
   workerAlive: boolean;
 };
@@ -114,12 +126,13 @@ export function AuditStatusPanel({
 }) {
   const [status, setStatus] = useState<DiagnosisStatus | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [progress, setProgress] = useState(0);
   const [thoughtTick, setThoughtTick] = useState(0);
   const [animating, setAnimating] = useState(true);
-  const stageMetaRef = useRef<{ index: number; startedAt: number; status: string }>({ index: 0, startedAt: 0, status: "" });
+  const stageMetaRef = useRef<{ index: number; startedAt: number; status: string; realProgress: number | null }>({ index: 0, startedAt: 0, status: "", realProgress: null });
   const jobIdRef = useRef<string | null>(null);
   const progressRef = useRef(0);
 
@@ -166,7 +179,11 @@ export function AuditStatusPanel({
     const history = Array.isArray(result.stageHistory) ? result.stageHistory : [];
     const lastEntry = [...history].reverse().find((item) => asRecord(item).stage === currentStage);
     const at = lastEntry ? Date.parse(String(asRecord(lastEntry).at)) : Date.now();
-    stageMetaRef.current = { index, startedAt: Number.isFinite(at) ? at : Date.now(), status: job?.status ?? "" };
+    const probes = status?.executionProgress?.probes;
+    const realProgress = currentStage === "DIAGNOSIS_SAMPLING_AI_ANSWERS" && probes?.total
+      ? Math.min(1, (probes.completed + probes.failed + probes.skipped) / probes.total)
+      : null;
+    stageMetaRef.current = { index, startedAt: Number.isFinite(at) ? at : Date.now(), status: job?.status ?? "", realProgress };
 
     if (job?.id && job.id !== jobIdRef.current && (job.status === "queued" || job.status === "running")) {
       jobIdRef.current = job.id;
@@ -182,7 +199,7 @@ export function AuditStatusPanel({
   useEffect(() => {
     if (!animating) return;
     const id = window.setInterval(() => {
-      const { index, startedAt, status: jobStatus } = stageMetaRef.current;
+      const { index, startedAt, status: jobStatus, realProgress } = stageMetaRef.current;
       let target: number;
       if (jobStatus === "completed") target = 100;
       else if (jobStatus === "failed") target = -1;
@@ -192,7 +209,7 @@ export function AuditStatusPanel({
         const base = index * band;
         const elapsed = (Date.now() - startedAt) / 1000;
         const ease = 1 - Math.exp(-elapsed / 7);
-        target = jobStatus === "queued" ? 4 : base + band * 0.92 * ease;
+        target = jobStatus === "queued" ? 4 : base + band * (realProgress ?? 0.92 * ease);
       }
       setProgress((prev) => {
         if (target < 0 || target <= prev) return prev;
@@ -223,7 +240,9 @@ export function AuditStatusPanel({
   const currentStage = (typeof result.currentStage === "string" ? result.currentStage : null) as StageKey | null;
   const currentThoughts = currentStage ? stageThoughts[currentStage]?.[localeKey] : null;
   const samplingCount =
-    currentStage === "DIAGNOSIS_SAMPLING_AI_ANSWERS" && status?.latestRun?.sampleCount ? status.latestRun.sampleCount : 0;
+    currentStage === "DIAGNOSIS_SAMPLING_AI_ANSWERS" && status?.executionProgress
+      ? `${status.executionProgress.probes.completed}/${status.executionProgress.probes.total}`
+      : "";
   const thought =
     currentThoughts && currentThoughts.length
       ? `${currentThoughts[thoughtTick % currentThoughts.length]}${samplingCount ? ` · ${samplingCount}` : ""}`
@@ -256,6 +275,23 @@ export function AuditStatusPanel({
       <div className="flex min-w-0 items-center gap-2">{active && !workerDelayed ? <Loader2 className="size-4 shrink-0 animate-spin text-primary" /> : <AlertTriangle className="size-4 shrink-0 text-warning" />}<span>{error || (workerDelayed ? copy.delayed : isFailed ? copy.failed : stageLabel)}</span></div>
       <Link href={`/${locale}/app/projects/${projectId}/runs`} className="shrink-0 text-xs font-medium text-primary underline underline-offset-4">{locale === "zh-CN" ? "查看运行详情" : "View run details"}</Link>
     </section>;
+  }
+
+  async function stopSampling() {
+    const confirmed = window.confirm(localeKey === "zh-CN"
+      ? "停止新增采样并继续后续分析？已经获得的有效回答会保留。"
+      : "Stop collecting new samples and continue analysis with the valid answers already collected?");
+    if (!confirmed) return;
+    setIsStopping(true);
+    setError(null);
+    const response = await fetch(`/api/projects/${projectId}/diagnosis/stop-sampling`, { method: "POST" });
+    const payload = await response.json().catch(() => null);
+    setIsStopping(false);
+    if (!response.ok) {
+      setError(payload?.error ?? (localeKey === "zh-CN" ? "停止采样失败。" : "Could not stop sampling."));
+      return;
+    }
+    void loadStatus();
   }
 
   if (isCompleted && !expanded) {
@@ -353,6 +389,12 @@ export function AuditStatusPanel({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          {active && currentStage === "DIAGNOSIS_SAMPLING_AI_ANSWERS" ? (
+            <Button type="button" variant="outline" disabled={isStopping} onClick={stopSampling} className="text-danger hover:text-danger">
+              {isStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
+              {localeKey === "zh-CN" ? (isStopping ? "正在停止…" : "停止采样并继续") : (isStopping ? "Stopping…" : "Stop sampling & continue")}
+            </Button>
+          ) : null}
           {isCompleted ? (
             <Button type="button" variant="outline" onClick={() => setExpanded(false)}>
               <ChevronUp className="h-4 w-4" />
@@ -424,6 +466,10 @@ export function AuditStatusPanel({
         </div>
       ) : null}
 
+      {status?.executionProgress ? (
+        <SamplingExecutionPanel progress={status.executionProgress} locale={localeKey} />
+      ) : null}
+
       {status?.usageSummary ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{usageLabels.title}</p>
@@ -480,6 +526,90 @@ export function AuditStatusPanel({
   );
 }
 
+function SamplingExecutionPanel({ progress, locale }: { progress: NonNullable<DiagnosisStatus["executionProgress"]>; locale: "zh-CN" | "en" }) {
+  const { probes, requests, exploration, budget, scheduler, timing } = progress;
+  const processed = Math.min(probes.total, probes.completed + probes.failed + probes.skipped);
+  const donePercent = probes.total ? probes.completed / probes.total * 100 : 0;
+  const failedPercent = probes.total ? Math.min(probes.failed, probes.total - probes.completed) / probes.total * 100 : 0;
+  const tokenPercent = budget.tokenLimit > 0 ? budget.tokensUsed / budget.tokenLimit * 100 : 0;
+  const overBudget = tokenPercent >= 100 || budget.estimatedCostUsd >= budget.costLimitUsd;
+  const zh = locale === "zh-CN";
+  return (
+    <div className={cn("mt-4 rounded-lg border p-4", overBudget ? "border-warning/35 bg-warning/5" : "border-border bg-background/55")}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-foreground">{zh ? "采样执行明细" : "Sampling execution"}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {zh
+              ? `这是有上限的自适应探索，不是无限穷尽：最多 ${exploration.maxIterations} 轮、追加 ${exploration.maxAdditionalProbes} 个问题，并受 Token 与费用预算约束。`
+              : `Bounded adaptive exploration, not an exhaustive loop: up to ${exploration.maxIterations} iterations and ${exploration.maxAdditionalProbes} added probes, constrained by token and cost budgets.`}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full border border-border bg-muted px-2.5 py-1 font-mono text-xs text-muted-foreground">
+          {processed}/{probes.total}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <UsageMetric
+          label={zh ? "已采集 / 当前计划" : "Collected / planned"}
+          value={`${formatTokens(processed, locale)} / ${formatTokens(probes.total, locale)}`}
+          detail={`${zh ? "硬上限" : "Hard ceiling"} ${formatTokens(exploration.initialProbeCount + exploration.maxAdditionalProbes, locale)}`}
+        />
+        <UsageMetric
+          label={zh ? "模型调用 / 预计调用" : "Model calls / estimated"}
+          value={`${formatTokens(requests.actual, locale)} / ${formatTokens(requests.estimated, locale)}`}
+          detail={zh ? "预计值按剩余批量请求动态更新" : "Estimate updates from remaining batches"}
+        />
+        <UsageMetric
+          label={zh ? "当前花费 / 预计完成" : "Current / estimated cost"}
+          value={`${formatUsd(budget.estimatedCostUsd)} / ${budget.estimatedFinalCostUsd === null ? "–" : formatUsd(budget.estimatedFinalCostUsd)}`}
+          detail={`${zh ? "费用封顶" : "Cost ceiling"} ${formatUsd(budget.costLimitUsd)}`}
+        />
+        <UsageMetric
+          label={zh ? "已用时间 / 预计剩余" : "Elapsed / estimated remaining"}
+          value={`${formatDuration(timing.elapsedSeconds, zh)} / ${timing.estimatedRemainingSeconds === null ? "–" : formatDuration(timing.estimatedRemainingSeconds, zh)}`}
+          detail={zh ? "根据实时吞吐动态估算" : "Estimated from live throughput"}
+        />
+      </div>
+
+      <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-muted" aria-label={zh ? "采样完成比例" : "Sampling completion"}>
+        <span className="bg-success transition-[width] duration-200 ease-out" style={{ width: `${donePercent}%` }} />
+        <span className="bg-danger/75 transition-[width] duration-200 ease-out" style={{ width: `${failedPercent}%` }} />
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <UsageMetric label={zh ? "有效回答" : "Valid answers"} value={formatTokens(probes.completed, locale)} />
+        <UsageMetric label={zh ? "失败" : "Failed"} value={formatTokens(probes.failed, locale)} />
+        <UsageMetric label={zh ? "剩余 / 跳过" : "Remaining / skipped"} value={`${formatTokens(probes.remaining, locale)} / ${formatTokens(probes.skipped, locale)}`} />
+        <UsageMetric label={zh ? "探索轮次" : "Exploration iteration"} value={`${exploration.iteration} / ${exploration.maxIterations}`} detail={exploration.addedProbes ? `${zh ? "已追加" : "Added"} ${exploration.addedProbes}` : undefined} />
+        <UsageMetric label={zh ? "并发 / 批大小" : "Concurrency / batch"} value={`${scheduler.concurrency || "–"} / ${scheduler.batchSize || "–"}`} detail={scheduler.throttleReason ?? undefined} />
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <UsageMetric label={zh ? "批量请求" : "Batch requests"} value={formatTokens(requests.batch, locale)} />
+        <UsageMetric label={zh ? "拆单请求" : "Single fallbacks"} value={formatTokens(requests.single, locale)} detail={`${requests.splitBatches} ${zh ? "批触发拆单" : "split batches"}`} />
+        <UsageMetric label={zh ? "自动修复" : "Repairs"} value={formatTokens(requests.repairs, locale)} detail={requests.usageBreakdownAvailable ? `${formatTokens(requests.repairTokens, locale)} Token` : (zh ? "旧记录未拆分 Token" : "Legacy token split unavailable")} />
+        <UsageMetric label={zh ? "失败调用" : "Failed calls"} value={formatTokens(requests.failed, locale)} />
+        <UsageMetric label={zh ? "停止原因" : "Stop reason"} value={exploration.stopReason ?? (zh ? "运行中" : "Running")} />
+      </div>
+
+      <div className="mt-4 border-t border-border/70 pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className={cn("font-medium", overBudget ? "text-warning" : "text-muted-foreground")}>
+            {zh ? "Token 安全预算" : "Token safety budget"} · {Math.round(tokenPercent)}%
+          </span>
+          <span className="font-mono text-faint">
+            {formatTokens(budget.tokensUsed, locale)} / {formatTokens(budget.tokenLimit, locale)} · {formatUsd(budget.estimatedCostUsd)} / {formatUsd(budget.costLimitUsd)}
+          </span>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className={cn("h-full rounded-full transition-[width] duration-200 ease-out", overBudget ? "bg-warning" : "bg-primary")} style={{ width: `${Math.min(100, tokenPercent)}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UsageMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="rounded-md border border-border/70 bg-background/70 px-3 py-2.5">
@@ -496,6 +626,15 @@ function formatTokens(value: number, locale: "zh-CN" | "en") {
 
 function formatUsd(value: number) {
   return `$${value.toFixed(value < 1 ? 4 : 2)}`;
+}
+
+function formatDuration(seconds: number, zh: boolean) {
+  if (seconds < 60) return zh ? `${seconds}秒` : `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return zh ? `${minutes}分钟` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return zh ? `${hours}小时${rest ? `${rest}分钟` : ""}` : `${hours}h${rest ? ` ${rest}m` : ""}`;
 }
 
 function buildStageState(job: DiagnosisJob | null | undefined) {

@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Worker } from "bullmq";
+import { UnrecoverableError, Worker } from "bullmq";
 import IORedis from "ioredis";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -103,6 +103,9 @@ const samplingWorker = new Worker(
         analysisJobId: analysisJob?.id,
         metadata: { queueName: job.queueName, queueJobId: job.id },
       });
+      if (error instanceof Error && error.message.startsWith("NON_RETRYABLE_PROVIDER_ERROR:")) {
+        throw new UnrecoverableError(error.message);
+      }
       throw error;
     }
   },
@@ -221,6 +224,9 @@ const semanticWorker = new Worker(
         analysisJobId: analysisJob?.id,
         metadata: { queueName: job.queueName, queueJobId: job.id },
       });
+      if (error instanceof Error && error.message.startsWith("NON_RETRYABLE_PROVIDER_ERROR:")) {
+        throw new UnrecoverableError(error.message);
+      }
       throw error;
     }
   },

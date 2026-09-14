@@ -65,26 +65,33 @@ export async function runFullDiagnosis(input: {
     metadata: { existingKeywordCount },
   });
 
-  const createdProbeRun = await createBrandProbeRunForProject({
-    projectId: input.projectId,
-    semanticExploration: true,
-    analysisJobId: input.analysisJobId,
-  });
-  if (createdProbeRun.run.totalProbes === 0) throw new Error("No structured seed probes were generated.");
+  const completedProbeRun = input.analysisJobId
+    ? await prisma.brandProbeRun.findFirst({
+        where: { analysisJobId: input.analysisJobId, status: "completed" },
+        orderBy: { finishedAt: "desc" },
+      })
+    : null;
+  const createdProbeRun = completedProbeRun
+    ? null
+    : await createBrandProbeRunForProject({
+        projectId: input.projectId,
+        semanticExploration: true,
+        analysisJobId: input.analysisJobId,
+      });
+  const probeRun = completedProbeRun ?? createdProbeRun?.run;
+  if (!probeRun || probeRun.totalProbes === 0) throw new Error("No structured seed probes were generated.");
 
   await setStage(input.analysisJobId, "DIAGNOSIS_SAMPLING_AI_ANSWERS", {
     message: "Executing seed probes, measuring coverage gaps, and adding adaptive probes until saturation or budget stop.",
     metadata: {
-      brandProbeRunId: createdProbeRun.run.id,
-      seedProbeCount: createdProbeRun.run.totalProbes,
+      brandProbeRunId: probeRun.id,
+      seedProbeCount: probeRun.totalProbes,
       algorithm: "seed_execute_gap_adapt_repeat",
+      resumedFromCompletedSampling: Boolean(completedProbeRun),
     },
   });
 
-  const brandProbeRun = await runBrandProbeRun({
-    runId: createdProbeRun.run.id,
-    analysisJobId: input.analysisJobId,
-  });
+  const brandProbeRun = completedProbeRun ?? await runBrandProbeRun({ runId: probeRun.id, analysisJobId: input.analysisJobId });
   if (brandProbeRun.status === "failed") throw new Error("Structured semantic exploration failed.");
   const executedRun = await materializeBrandProbeRunForDiagnosis(brandProbeRun.id);
 

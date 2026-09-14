@@ -75,7 +75,7 @@ export function computeBackpressure(sample: ThroughputSample, config: ProbeRunCo
   if (jsonPressure) {
     return {
       level: 3,
-      requestRateLimit: Math.max(60, Math.min(90, config.requestRateLimitMin)),
+      requestRateLimit: Math.max(1, Math.min(config.requestRateLimit, config.requestRateLimitMin)),
       concurrency: Math.max(1, config.maxConcurrencyMin),
       batchSize: 1,
       reason: jsonPressure ? "json_failure_pressure" : "token_and_rate_limit_pressure",
@@ -84,8 +84,8 @@ export function computeBackpressure(sample: ThroughputSample, config: ProbeRunCo
   if (tokenPressure || rateLimitPressure || retryPressure) {
     return {
       level: 2,
-      requestRateLimit: 90,
-      concurrency: Math.max(config.maxConcurrencyMin, 15),
+      requestRateLimit: Math.max(config.requestRateLimitMin, Math.min(config.requestRateLimit, 45)),
+      concurrency: Math.max(config.maxConcurrencyMin, Math.min(config.maxConcurrency, 6)),
       batchSize: Math.min(3, config.microBatchSize),
       reason: tokenPressure ? "token_budget_pressure" : rateLimitPressure ? "provider_rate_limit" : "retry_queue_pressure",
     };
@@ -93,8 +93,8 @@ export function computeBackpressure(sample: ThroughputSample, config: ProbeRunCo
   if (latencyPressure) {
     return {
       level: 1,
-      requestRateLimit: Math.max(config.requestRateLimitMin, 100),
-      concurrency: Math.max(config.maxConcurrencyMin, Math.min(18, config.maxConcurrency)),
+      requestRateLimit: Math.max(config.requestRateLimitMin, Math.min(config.requestRateLimit, 50)),
+      concurrency: Math.max(config.maxConcurrencyMin, Math.min(6, config.maxConcurrency)),
       batchSize: config.microBatchSize,
       reason: "latency_pressure",
     };

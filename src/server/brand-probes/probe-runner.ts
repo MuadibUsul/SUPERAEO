@@ -59,10 +59,18 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
     tokensPerMinuteBudget: runRecord.tokensPerMinuteBudget,
   });
   const controller = new ThroughputController(config);
+  const explorationConfig = getSemanticExplorationConfig(semanticExplorationEnabled);
+  const analysisJob = input.analysisJobId
+    ? await prisma.analysisJob.findUnique({ where: { id: input.analysisJobId }, select: { traceId: true } })
+    : null;
   const startedAt = Date.now();
+  const [completedProbeCount, failedProbeCount] = await Promise.all([
+    prisma.brandProbe.count({ where: { runId: runRecord.id, status: "completed" } }),
+    prisma.brandProbe.count({ where: { runId: runRecord.id, status: "failed" } }),
+  ]);
   const sample: ThroughputSample = {
-    completedProbes: runRecord.completedProbes,
-    failedProbes: runRecord.failedProbes,
+    completedProbes: completedProbeCount,
+    failedProbes: failedProbeCount,
     elapsedMs: 0,
     averageLatencyMs: 0,
     rateLimitErrors: 0,
@@ -105,7 +113,7 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
   });
 
   const probes = await prisma.brandProbe.findMany({
-    where: { runId: runRecord.id, status: { in: ["pending", "failed", "retrying"] } },
+    where: { runId: runRecord.id, status: { in: ["pending", "queued", "running", "retrying"] } },
     orderBy: [{ zone: "asc" }, { createdAt: "asc" }],
   });
   await prisma.brandProbe.updateMany({ where: { runId: runRecord.id, id: { in: probes.map((probe) => probe.id) } }, data: { status: "queued" } });
@@ -120,10 +128,43 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
     config.batchMaxOutputTokens,
   );
   let cursor = 0;
+  let fatalError: string | null = null;
+  let tokenBudgetExceeded = false;
+  let manualStopRequested = false;
+  let lastControlCheck = 0;
+  let controlCheck: Promise<void> | null = null;
   const latencies: number[] = [];
+
+  async function refreshControlState() {
+    if (Date.now() - lastControlCheck < 1000) return;
+    if (controlCheck) return controlCheck;
+    lastControlCheck = Date.now();
+    controlCheck = (async () => {
+      const [freshRun, tracedUsage] = await Promise.all([
+        prisma.brandProbeRun.findUnique({ where: { id: runRecord.id }, select: { configJson: true } }),
+        analysisJob?.traceId
+          ? prisma.aIUsageLog.aggregate({ where: { projectId: runRecord.projectId, traceId: analysisJob.traceId }, _sum: { totalTokens: true, costUsd: true } })
+          : null,
+      ]);
+      const exploration = asRecord(asRecord(freshRun?.configJson).semanticExploration);
+      manualStopRequested = typeof exploration.stopRequestedAt === "string";
+      const tracedTokens = tracedUsage?._sum.totalTokens ?? sample.tokensUsedInWindow;
+      const tracedCost = tracedUsage?._sum.costUsd ?? 0;
+      tokenBudgetExceeded =
+        (explorationConfig.maxTokens > 0 && tracedTokens >= explorationConfig.maxTokens)
+        || (explorationConfig.maxCost > 0 && tracedCost >= explorationConfig.maxCost);
+    })();
+    try {
+      await controlCheck;
+    } finally {
+      controlCheck = null;
+    }
+  }
 
   async function worker(workerIndex: number) {
     for (;;) {
+      await refreshControlState();
+      if (fatalError || tokenBudgetExceeded || manualStopRequested) return;
       const batch = batches[cursor++];
       if (!batch) return;
       const batchProbes = probes.filter((probe) => batch.probeIds.includes(probe.id));
@@ -152,6 +193,10 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
           sample.rateLimitErrors += result.rateLimitErrors;
           sample.jsonFailures += result.jsonFailures;
           sample.tokensUsedInWindow += result.tokens;
+          if (result.fatalError) fatalError = result.fatalError;
+          if (explorationConfig.maxTokens > 0 && sample.tokensUsedInWindow >= explorationConfig.maxTokens) {
+            tokenBudgetExceeded = true;
+          }
           sample.elapsedMs = Date.now() - startedAt;
           sample.averageLatencyMs = Math.round(latencies.reduce((total, item) => total + item, 0) / Math.max(1, latencies.length));
           const state = controller.update(sample, runRecord.totalProbes);
@@ -181,6 +226,20 @@ export async function runBrandProbeRun(input: { runId: string; analysisJobId?: s
   }
 
   await Promise.all(Array.from({ length: config.maxConcurrency }, (_, index) => worker(index)));
+
+  if (fatalError || tokenBudgetExceeded || manualStopRequested) {
+    await prisma.brandProbe.updateMany({
+      where: { runId: runRecord.id, status: { in: ["pending", "queued", "running", "retrying"] } },
+      data: { status: "skipped" },
+    });
+  }
+  if (fatalError) {
+    await prisma.brandProbeRun.update({
+      where: { id: runRecord.id },
+      data: { status: "failed", currentStage: "PROBE_FAILED", errorMessage: fatalError, finishedAt: new Date() },
+    });
+    throw new Error(`NON_RETRYABLE_PROVIDER_ERROR: ${fatalError}`);
+  }
 
   const exploration = await advanceSemanticExploration({ runId: runRecord.id, analysisJobId: input.analysisJobId, enabled: semanticExplorationEnabled });
   if (exploration.enabled && exploration.continue) {
@@ -363,7 +422,14 @@ async function executeMicroBatch(input: {
           await persistProbeSuccess({ probe, batchId: input.batch.id, data: item, result, usage: responseUsage, latencyMs: Date.now() - started, brandAliases: input.brandAliases });
         }
       }
-      return { completed, failed, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, jsonFailures: failed, rateLimitErrors, error: null, splitReason: null };
+      return { completed, failed, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, jsonFailures: failed, rateLimitErrors, error: null, splitReason: null, fatalError: null };
+    }
+
+    if (isFatalProviderError(result.error)) {
+      for (const probe of input.probes) {
+        await markProbeFailed(probe, input.batch.id, input.model, result.error, result.rawOutput, responseUsage, Date.now() - started);
+      }
+      return { completed: 0, failed: input.probes.length, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, jsonFailures: 0, rateLimitErrors, error: result.error, splitReason: "fatal_provider_error", fatalError: result.error };
     }
 
     if (isRateLimitError(result.error)) {
@@ -391,7 +457,7 @@ async function executeMicroBatch(input: {
       for (const probe of input.probes) {
         await markProbeFailed(probe, input.batch.id, input.model, result.error, result.rawOutput, responseUsage, Date.now() - started);
       }
-      return { completed: 0, failed: input.probes.length, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, jsonFailures: 0, rateLimitErrors, error: result.error, splitReason: "batch_rate_limited_exhausted" };
+      return { completed: 0, failed: input.probes.length, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, jsonFailures: 0, rateLimitErrors, error: result.error, splitReason: "batch_rate_limited_exhausted", fatalError: null };
     }
 
     // Non-rate-limit structured error: fall back to per-probe execution.
@@ -411,13 +477,18 @@ async function executeMicroBatch(input: {
     let completed = 0;
     let failed = 0;
     let tokens = usage.totalTokens ?? 0;
+    let fatalError: string | null = null;
     for (const probe of input.probes) {
-      const single = await executeSingleProbe({ ...input, probe, retryCount: 1 });
+      const single = await executeSingleProbe({ ...input, probe, retryCount: 1, maxOutputTokens: getProbeRunConfig().singleMaxOutputTokens });
       completed += single.completed;
       failed += single.failed;
       tokens += single.tokens;
+      if (single.fatalError) {
+        fatalError = single.fatalError;
+        break;
+      }
     }
-    return { completed, failed, tokens, latencyMs: Date.now() - started, jsonFailures: 1, rateLimitErrors, error: result.error, splitReason: "batch_json_failed_split_to_single" };
+    return { completed, failed, tokens, latencyMs: Date.now() - started, jsonFailures: 1, rateLimitErrors, error: result.error, splitReason: "batch_json_failed_split_to_single", fatalError };
   }
 }
 
@@ -455,20 +526,20 @@ async function executeSingleProbe(input: {
     const usage = usageNumbers(result.usage, result.model ?? input.model);
     if (result.ok) {
       await persistProbeSuccess({ probe: input.probe, batchId: input.batch.id, data: { ...result.data, probe_id: input.probe.id }, result, usage, latencyMs: Date.now() - started, brandAliases: input.brandAliases, retryCount: attempt });
-      return { completed: 1, failed: 0, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started };
+      return { completed: 1, failed: 0, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, fatalError: null };
     }
     lastError = result.error;
     if (!isRetryableError(result.error) || attempt === input.maxRetries) {
       await markProbeFailed(input.probe, input.batch.id, input.model, result.error, result.rawOutput, usage, Date.now() - started, attempt);
-      return { completed: 0, failed: 1, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started };
+      return { completed: 0, failed: 1, tokens: usage.totalTokens ?? 0, latencyMs: Date.now() - started, fatalError: isFatalProviderError(result.error) ? result.error : null };
     }
     await sleep(backoffMs(attempt));
   }
   await markProbeFailed(input.probe, input.batch.id, input.model, lastError ?? "Probe failed.", undefined, usageNumbers(undefined), Date.now() - started, input.maxRetries);
-  return { completed: 0, failed: 1, tokens: 0, latencyMs: Date.now() - started };
+  return { completed: 0, failed: 1, tokens: 0, latencyMs: Date.now() - started, fatalError: lastError && isFatalProviderError(lastError) ? lastError : null };
 }
 
-function normalizeSingleResult(result: { completed: number; failed: number; tokens: number; latencyMs: number }) {
+function normalizeSingleResult(result: { completed: number; failed: number; tokens: number; latencyMs: number; fatalError: string | null }) {
   return {
     ...result,
     jsonFailures: result.failed,
@@ -606,6 +677,10 @@ async function markProbeFailed(
 
 function isRateLimitError(error: string) {
   return /429|rate.?limit|too many requests/i.test(error);
+}
+
+function isFatalProviderError(error: string) {
+  return /insufficient balance|insufficient quota|billing|payment required|invalid api key|authentication/i.test(error);
 }
 
 function isRetryableError(error: string) {

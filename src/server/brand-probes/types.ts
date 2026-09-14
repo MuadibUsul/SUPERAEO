@@ -132,7 +132,7 @@ const strictProbeResponseSchema = z.object({
   sentiment_score: z.number().min(-1).max(1).nullable().optional(),
   recommendation_score: z.number().min(0).max(100).nullable().optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),
-  semantic_units: z.array(probeSemanticUnitSchema).max(12).default([]),
+  semantic_units: z.array(probeSemanticUnitSchema).max(4).default([]),
 });
 
 export const probeResponseSchema = z.preprocess(normalizeProbeResponse, strictProbeResponseSchema);
@@ -191,7 +191,7 @@ export const probeResponseJsonSchema = {
     confidence: { type: ["number", "null"] },
     semantic_units: {
       type: "array",
-      maxItems: 12,
+      maxItems: 4,
       items: {
         type: "object",
         additionalProperties: false,
@@ -272,6 +272,9 @@ function normalizeProbeResponse(value: unknown) {
     risk_words: stringArray(source.risk_words),
     opportunity_words: stringArray(source.opportunity_words),
     semantic_units: arrayValue(source.semantic_units),
+    sentiment_score: boundedNumberOrNull(source.sentiment_score, -1, 1),
+    recommendation_score: boundedNumberOrNull(source.recommendation_score, 0, 100),
+    confidence: boundedNumberOrNull(source.confidence, 0, 1),
   };
 }
 
@@ -295,7 +298,25 @@ function normalizeSemanticUnit(value: unknown) {
     ...source,
     domain,
     type: stringValue(source.type) || domain,
+    polarity: normalizePolarity(source.polarity),
+    uncertainty: normalizeUncertainty(source.uncertainty),
+    confidence: boundedNumberOrNull(source.confidence, 0, 1) ?? 0.5,
+    intensity: boundedNumberOrNull(source.intensity, 0, 1),
+    temporal: asRecord(source.temporal) ?? null,
   };
+}
+
+function normalizePolarity(value: unknown) {
+  const normalized = stringValue(value).toLowerCase();
+  return normalized === "positive" || normalized === "negative" || normalized === "neutral" ? normalized : null;
+}
+
+function normalizeUncertainty(value: unknown) {
+  const normalized = stringValue(value).toLowerCase();
+  if (["certain", "possible", "likely", "expected", "rumored", "estimated", "unknown"].includes(normalized)) return normalized;
+  if (["verified", "confirmed", "definite", "事实", "确定"].includes(normalized)) return "certain";
+  if (["probable", "probably", "可能", "推测"].includes(normalized)) return "possible";
+  return "unknown";
 }
 
 function normalizeSemanticDomain(value: unknown): (typeof semanticDomains)[number] {
@@ -332,6 +353,11 @@ function numberOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function boundedNumberOrNull(value: unknown, minimum: number, maximum: number) {
+  const number = numberOrNull(value);
+  return number === null ? null : Math.min(maximum, Math.max(minimum, number));
 }
 
 function booleanOrNull(value: unknown) {

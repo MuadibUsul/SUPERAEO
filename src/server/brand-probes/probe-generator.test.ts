@@ -60,9 +60,9 @@ test("undefined optional overrides preserve probe defaults", () => {
   const config = getProbeRunConfig({ mode: undefined, maxConcurrency: undefined });
 
   assert.equal(config.mode, "standard");
-  assert.equal(config.maxConcurrency, 24);
-  assert.equal(config.singleMaxOutputTokens, 2000);
-  assert.equal(config.batchMaxOutputTokens, 8000);
+  assert.equal(config.maxConcurrency, 8);
+  assert.equal(config.singleMaxOutputTokens, 1200);
+  assert.equal(config.batchMaxOutputTokens, 5000);
 });
 
 test("max500 mode stays around 480 probes", () => {
@@ -119,7 +119,7 @@ test("full diagnosis can require structured semantic units without an environmen
   const [probe] = generateBrandProbes({ project: enProject, subject: enSubject, seedPool, config, semanticExploration: true });
 
   assert.ok(probe.prompt.includes("semantic_units"));
-  assert.ok(probe.prompt.includes("subject/predicate/object"));
+  assert.ok(probe.prompt.includes("max 4"));
   assert.ok("semantic_units" in (probe.expectedOutputSchema.properties as Record<string, unknown>));
 });
 

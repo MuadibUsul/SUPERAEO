@@ -13,7 +13,9 @@ test("accepts object-wrapped batches and normalizes common provider drift", () =
       probe_id: "p1",
       mentioned_brand: [],
       recommended_brands: [{ name: "Coca-Cola", reason: "classic" }],
-      semantic_units: [{ domain: "brand", type: "COMPANY", canonicalLabel: "Coca-Cola" }],
+      sentiment_score: 80,
+      confidence: 9,
+      semantic_units: [{ domain: "brand", type: "COMPANY", canonicalLabel: "Coca-Cola", uncertainty: "verified", temporal: "today" }],
     }],
   });
 
@@ -23,6 +25,10 @@ test("accepts object-wrapped batches and normalizes common provider drift", () =
   assert.equal(parsed.data[0]?.recommended_entities[0]?.entity, "Coca-Cola");
   assert.deepEqual(parsed.data[0]?.recommended_entities[0]?.reason_tags, ["classic"]);
   assert.equal(parsed.data[0]?.semantic_units[0]?.domain, "ENTITY");
+  assert.equal(parsed.data[0]?.semantic_units[0]?.uncertainty, "certain");
+  assert.equal(parsed.data[0]?.semantic_units[0]?.temporal, undefined);
+  assert.equal(parsed.data[0]?.sentiment_score, 1);
+  assert.equal(parsed.data[0]?.confidence, 1);
   assert.equal(inferMentionedBrand(parsed.data[0]!, ["Coca-Cola", "可口可乐"]), true);
 });
 

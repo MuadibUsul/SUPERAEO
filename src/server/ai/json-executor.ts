@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 import { getProviderRuntimeContext, logAIUsage } from "@/server/ai/provider-registry";
-import { mergeUsageNumbers } from "@/server/brand-probes/token-cost";
+import { mergeUsageNumbers, usageNumbers } from "@/server/brand-probes/token-cost";
 import { getPrisma } from "@/server/db";
 import { recordTraceEvent } from "@/server/observability/event-log";
 import { getTraceContext } from "@/server/observability/trace-context";
@@ -70,6 +70,8 @@ export async function runJsonPrompt<T>({
   let rawOutput: string | undefined;
   let repairAttempted = false;
   let usage: unknown;
+  let initialUsage: unknown;
+  let repairUsage: unknown;
   const traceContext = getTraceContext();
   const promptMetadata = {
     ...metadata,
@@ -104,6 +106,7 @@ export async function runJsonPrompt<T>({
     });
     rawOutput = result.text;
     usage = result.usage;
+    initialUsage = result.usage;
 
     let validation = parseAndValidate(rawOutput, schema);
 
@@ -126,11 +129,12 @@ export async function runJsonPrompt<T>({
         schemaName,
         jsonSchema: jsonSchema ?? { type: "object" },
         operation: `${promptName}_repair`,
-        maxOutputTokens,
+        maxOutputTokens: repairOutputLimit(promptName, maxOutputTokens),
         temperature,
       });
       rawOutput = repair.text;
-      usage = mergeUsageNumbers(usage, repair.usage);
+      repairUsage = repair.usage;
+      usage = mergeUsageNumbers(initialUsage, repairUsage);
       validation = parseAndValidate(rawOutput, schema);
     }
 
@@ -151,7 +155,7 @@ export async function runJsonPrompt<T>({
           error: validationError,
           repairAttempted,
           usage: usage as never,
-          metadata: promptMetadata as never,
+          metadata: withUsageBreakdown(promptMetadata, initialUsage, repairUsage) as never,
         },
       });
 
@@ -166,7 +170,7 @@ export async function runJsonPrompt<T>({
         usage: usage as never,
         latencyMs: Date.now() - started,
         error: validationError,
-        metadata: promptMetadata,
+        metadata: withUsageBreakdown(promptMetadata, initialUsage, repairUsage),
       });
       await recordTraceEvent({
         severity: "error",
@@ -212,7 +216,7 @@ export async function runJsonPrompt<T>({
         status: repairAttempted ? "repaired" : "success",
         repairAttempted,
         usage: usage as never,
-        metadata: promptMetadata as never,
+        metadata: withUsageBreakdown(promptMetadata, initialUsage, repairUsage) as never,
       },
     });
 
@@ -226,7 +230,7 @@ export async function runJsonPrompt<T>({
       status: "success",
       usage: usage as never,
       latencyMs: Date.now() - started,
-      metadata: promptMetadata,
+      metadata: withUsageBreakdown(promptMetadata, initialUsage, repairUsage),
     });
     await recordTraceEvent({
       severity: "info",
@@ -270,7 +274,7 @@ export async function runJsonPrompt<T>({
         error: message,
         repairAttempted,
         usage: usage as never,
-        metadata: promptMetadata as never,
+        metadata: withUsageBreakdown(promptMetadata, initialUsage, repairUsage) as never,
       },
     });
 
@@ -285,7 +289,7 @@ export async function runJsonPrompt<T>({
       usage: usage as never,
       latencyMs: Date.now() - started,
       error: message,
-      metadata: promptMetadata,
+      metadata: withUsageBreakdown(promptMetadata, initialUsage, repairUsage),
     });
     await recordTraceEvent({
       severity: "error",
@@ -314,4 +318,19 @@ export async function runJsonPrompt<T>({
       repairAttempted,
     };
   }
+}
+
+function withUsageBreakdown(metadata: Record<string, unknown>, initialUsage: unknown, repairUsage: unknown) {
+  return {
+    ...metadata,
+    usageBreakdown: {
+      initial: usageNumbers(initialUsage),
+      repair: repairUsage ? usageNumbers(repairUsage) : null,
+    },
+  };
+}
+
+function repairOutputLimit(promptName: string, requested: number | undefined) {
+  const safeLimit = promptName.includes("_batch") ? 3000 : 800;
+  return Math.min(requested ?? safeLimit, safeLimit);
 }

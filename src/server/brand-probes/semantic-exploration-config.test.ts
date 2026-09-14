@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { getSemanticExplorationConfig } from "@/server/brand-probes/semantic-exploration-service";
 
-test("defaults to 360 seed plus at most 640 adaptive probes with finite budgets", () => {
+test("keeps adaptive exploration bounded by a small iteration and probe budget", () => {
   const names = [
     "SEMANTIC_EXPLORATION_MAX_ITERATIONS",
     "SEMANTIC_EXPLORATION_MAX_ADDITIONAL_PROBES",
@@ -16,8 +16,8 @@ test("defaults to 360 seed plus at most 640 adaptive probes with finite budgets"
   names.forEach((name) => delete process.env[name]);
   try {
     const config = getSemanticExplorationConfig(true);
-    assert.equal(config.maxIterations, 41);
-    assert.equal(config.maxAdditionalProbes, 640);
+    assert.equal(config.maxIterations, 5);
+    assert.equal(config.maxAdditionalProbes, 64);
     assert.equal(config.probesPerIteration, 16);
     assert.equal(config.maxTokens, 1_000_000);
     assert.equal(config.maxCost, 2);

@@ -42,8 +42,8 @@ const embeddingCache = new Map<string, number[]>();
 export function getSemanticExplorationConfig(enabledOverride?: boolean): SemanticExplorationConfig {
   return {
     enabled: enabledOverride ?? process.env.SEMANTIC_EXPLORATION_ENABLED === "true",
-    maxIterations: intEnv("SEMANTIC_EXPLORATION_MAX_ITERATIONS", 41),
-    maxAdditionalProbes: intEnv("SEMANTIC_EXPLORATION_MAX_ADDITIONAL_PROBES", 640),
+    maxIterations: intEnv("SEMANTIC_EXPLORATION_MAX_ITERATIONS", 5),
+    maxAdditionalProbes: intEnv("SEMANTIC_EXPLORATION_MAX_ADDITIONAL_PROBES", 64),
     probesPerIteration: intEnv("SEMANTIC_EXPLORATION_PROBES_PER_ITERATION", 16),
     maxSemanticDepth: intEnv("SEMANTIC_EXPLORATION_MAX_DEPTH", 2),
     duplicateThreshold: floatEnv("SEMANTIC_EXPLORATION_PROBE_DUPLICATE_THRESHOLD", 0.9),
@@ -105,12 +105,26 @@ export async function advanceSemanticExploration(input: { runId: string; analysi
   });
   const nextHistory = [...history, metrics];
   const saturation = evaluateSaturation(nextHistory);
-  const usage = run.probes.flatMap((probe) => probe.responses).reduce((total, response) => ({
+  const responseUsage = run.probes.flatMap((probe) => probe.responses).reduce((total, response) => ({
     tokens: total.tokens + (response.totalTokens ?? 0),
     cost: total.cost + (response.costEstimate ?? 0),
   }), { tokens: 0, cost: 0 });
+  const analysisJob = input.analysisJobId
+    ? await prisma.analysisJob.findUnique({ where: { id: input.analysisJobId }, select: { traceId: true } })
+    : null;
+  const tracedUsage = analysisJob
+    ? await prisma.aIUsageLog.aggregate({
+        where: { projectId: run.projectId, traceId: analysisJob.traceId },
+        _sum: { totalTokens: true, costUsd: true },
+      })
+    : null;
+  const usage = tracedUsage
+    ? { tokens: tracedUsage._sum.totalTokens ?? 0, cost: tracedUsage._sum.costUsd ?? 0 }
+    : responseUsage;
   const elapsedMs = run.startedAt ? Date.now() - run.startedAt.getTime() : 0;
-  const stopReason = budgetStopReason({ config, iteration, totalProbes: run.totalProbes, initialProbeCount, usage, elapsedMs }) ?? (saturation.saturated ? "SEMANTIC_SATURATION" : undefined);
+  const stopReason = typeof previousExploration.stopRequestedAt === "string"
+    ? "MANUAL_CANCEL"
+    : budgetStopReason({ config, iteration, totalProbes: run.totalProbes, initialProbeCount, usage, elapsedMs }) ?? (saturation.saturated ? "SEMANTIC_SATURATION" : undefined);
   const gaps = coverageGaps(metrics);
 
   const perModel = Object.fromEntries(Array.from(new Set(units.map((unit) => unit.source.modelId).filter(Boolean))).map((modelId) => {

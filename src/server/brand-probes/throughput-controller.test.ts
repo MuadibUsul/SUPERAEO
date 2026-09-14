@@ -4,7 +4,7 @@ import test from "node:test";
 import { getProbeRunConfig } from "@/server/brand-probes/config";
 import { computeBackpressure, ThroughputController } from "@/server/brand-probes/throughput-controller";
 
-test("throughput controller maps 500 probes/minute to 100 requests/minute with batch size 5", () => {
+test("throughput controller keeps the planned request rate and concurrency inside safe defaults", () => {
   const config = getProbeRunConfig();
   const state = new ThroughputController(config).initialState(500);
 
@@ -12,8 +12,8 @@ test("throughput controller maps 500 probes/minute to 100 requests/minute with b
   assert.equal(config.executionMode, "micro_batch");
   assert.equal(config.microBatchSize, 5);
   assert.equal(state.targetRequestsPerMinute, 100);
-  assert.equal(state.requestRateLimit, 120);
-  assert.equal(state.concurrency, 24);
+  assert.equal(state.requestRateLimit, 60);
+  assert.equal(state.concurrency, 8);
 });
 
 test("backpressure lowers concurrency and batch size under JSON failure pressure", () => {
@@ -49,5 +49,5 @@ test("backpressure reacts to rate limit and token pressure before provider overl
 
   assert.equal(pressure.level, 2);
   assert.equal(pressure.batchSize, 3);
-  assert.equal(pressure.requestRateLimit, 90);
+  assert.equal(pressure.requestRateLimit, 45);
 });

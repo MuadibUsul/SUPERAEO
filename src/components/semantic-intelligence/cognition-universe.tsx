@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import type { UniverseEvidence, UniverseNode, UniverseType } from "@/components/semantic-intelligence/universe-adapter";
+import { nodeEvidenceScore, nodeVisualRadius, overviewRevealAlpha } from "@/components/semantic-intelligence/nebula-visual";
 
 const MAX_DETAIL_NODES = 560;
 const LARGE_NODE_THRESHOLD = 400;
@@ -72,11 +73,6 @@ const DEFAULT_COPY: Copy = {
 };
 
 type Star = UniverseNode & { color: string; hue: [number, number, number]; tw: number };
-
-export function nodeVisualRadius(strength: number, projectionScale: number) {
-  const value = 1.15 + Math.sqrt(Math.max(0, Math.min(1, strength))) * 4.85;
-  return Math.max(0.9, Math.min(12, value * projectionScale * 1.15));
-}
 
 export function CognitionUniverse({
   nodes,
@@ -295,8 +291,13 @@ export function CognitionUniverse({
         const isSelected = selected?.evidenceKey === s.evidenceKey;
         if (!typeOn[s.type] || item.fog <= 0) continue;
         const dim = selected && selected.type !== s.type ? 0.2 : 1;
+        // Interactive overview leads with high-evidence nodes; zooming in
+        // re-reveals the long tail. Below-floor nodes only fade — never removed,
+        // so they stay pickable and present in raw space. The ambient marketing
+        // background has no zoom to bring the tail back, so it keeps a full field.
+        const reveal = !interactive || isSelected || hoverStar === s ? 1 : overviewRevealAlpha(nodeEvidenceScore(s), zoomLevel);
         const radius = nodeVisualRadius(s.strength, item.scale);
-        ctx.globalAlpha = (0.08 + s.confidence * 0.22 + s.affinity * 0.42) * item.fog * dim;
+        ctx.globalAlpha = (0.08 + s.confidence * 0.22 + s.affinity * 0.42) * item.fog * dim * reveal;
         ctx.fillStyle = s.color;
         ctx.beginPath(); ctx.arc(item.sx, item.sy, radius, 0, 6.2832); ctx.fill();
       }

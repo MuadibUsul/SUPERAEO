@@ -65,20 +65,28 @@ export async function runFullDiagnosis(input: {
     metadata: { existingKeywordCount },
   });
 
-  const completedProbeRun = input.analysisJobId
+  // Reuse an earlier probe run for this analysis job so a retry (e.g. the job
+  // was re-delivered after an out-of-memory death in a later stage) does not
+  // regenerate the seed probes and pay for the whole sampling run again. A
+  // completed run is consumed as-is; an interrupted one is resumed on its own
+  // id so only its remaining probes execute. A run that never produced probes
+  // is discarded and a fresh one is created.
+  const existingProbeRun = input.analysisJobId
     ? await prisma.brandProbeRun.findFirst({
-        where: { analysisJobId: input.analysisJobId, status: "completed" },
-        orderBy: { finishedAt: "desc" },
+        where: { analysisJobId: input.analysisJobId },
+        orderBy: { createdAt: "desc" },
       })
     : null;
-  const createdProbeRun = completedProbeRun
+  const reusableProbeRun = existingProbeRun && existingProbeRun.totalProbes > 0 ? existingProbeRun : null;
+  const completedProbeRun = reusableProbeRun?.status === "completed" ? reusableProbeRun : null;
+  const createdProbeRun = reusableProbeRun
     ? null
     : await createBrandProbeRunForProject({
         projectId: input.projectId,
         semanticExploration: true,
         analysisJobId: input.analysisJobId,
       });
-  const probeRun = completedProbeRun ?? createdProbeRun?.run;
+  const probeRun = reusableProbeRun ?? createdProbeRun?.run;
   if (!probeRun || probeRun.totalProbes === 0) throw new Error("No structured seed probes were generated.");
 
   await setStage(input.analysisJobId, "DIAGNOSIS_SAMPLING_AI_ANSWERS", {
@@ -88,6 +96,7 @@ export async function runFullDiagnosis(input: {
       seedProbeCount: probeRun.totalProbes,
       algorithm: "seed_execute_gap_adapt_repeat",
       resumedFromCompletedSampling: Boolean(completedProbeRun),
+      resumedInterruptedSampling: Boolean(reusableProbeRun && !completedProbeRun),
     },
   });
 

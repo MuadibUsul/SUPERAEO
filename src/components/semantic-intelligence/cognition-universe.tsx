@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { UniverseEvidence, UniverseNode, UniverseType } from "@/components/semantic-intelligence/universe-adapter";
 import { nodeEvidenceScore, nodeVisualRadius, overviewRevealAlpha } from "@/components/semantic-intelligence/nebula-visual";
+import { buildClusterTree, clusterExpansion, LOD_ACTIVATION, LOD_MIN_EXTENT } from "@/components/semantic-intelligence/semantic-cluster-tree";
+import { drawClusterGlow } from "@/components/semantic-intelligence/nebula-field-renderer";
 
 const MAX_DETAIL_NODES = 560;
 const LARGE_NODE_THRESHOLD = 400;
@@ -192,8 +194,43 @@ export function CognitionUniverse({
       scale: 0,
       depth: 0,
       fog: 0,
+      // LOD cross-fade weight for this frame, and the frame it was last marked
+      // live — so the cluster expansion can build the draw set without a per-frame
+      // allocation or a full-array scan.
+      ct: 1,
+      liveFrame: 0,
     }));
-    const priorityScreen = [...screen].sort((left, right) => right.s.strength - left.s.strength || right.s.affinity - left.s.affinity);
+
+    // Semantic level-of-detail. Small fields render every node the classic way
+    // (fast enough, pixel-identical); large fields collapse into cluster glows
+    // that expand only where the camera is close. Nothing is ever removed.
+    const useLod = stars.length > LOD_ACTIVATION;
+    const tree = useLod ? buildClusterTree(stars) : { clusters: [] };
+    const indexByKey = new Map(stars.map((star, index) => [star.evidenceKey, index]));
+    const clusterSlots = tree.clusters.map((cluster) => ({
+      cluster,
+      sx: 0,
+      sy: 0,
+      scale: 0,
+      depth: 0,
+      fog: 0,
+      screenR: 0,
+      t: 0,
+    }));
+    const liveBuffer: typeof screen = [];
+    let live: typeof screen = screen;
+    let frameSeq = 0;
+    const addLive = (index: number | undefined, weight: number) => {
+      if (index === undefined || index < 0) return;
+      const slot = screen[index];
+      if (slot.liveFrame === frameSeq) {
+        if (weight > slot.ct) slot.ct = weight;
+        return;
+      }
+      slot.liveFrame = frameSeq;
+      slot.ct = weight;
+      liveBuffer.push(slot);
+    };
     const cam = { yaw: 0.2, pitch: -0.18, dist: 3.4, tdist: 2.6 };
     const look = { x: 0, y: 0, z: 0 };
     const focus = { x: 0, y: 0, z: 0 };
@@ -265,7 +302,41 @@ export function CognitionUniverse({
       cam.dist += (cam.tdist - cam.dist) * (reduceMotion ? 1 : 0.18);
       look.x += (focus.x - look.x) * 0.14; look.y += (focus.y - look.y) * 0.14; look.z += (focus.z - look.z) * 0.14;
       updateProjection();
-      projectScreen();
+
+      if (!useLod) {
+        for (const item of screen) item.ct = 1;
+        projectScreen();
+        live = screen;
+      } else {
+        // Project the cluster centroids (a few dozen), decide each cluster's
+        // expansion, then project only the nodes that will actually be drawn:
+        // members of clusters the camera has opened, plus a few bright stars from
+        // the collapsed ones, plus whatever is hovered or selected.
+        for (const cs of clusterSlots) {
+          const point = project(cs.cluster.cx, cs.cluster.cy, cs.cluster.cz);
+          cs.sx = point.sx; cs.sy = point.sy; cs.scale = point.scale; cs.depth = point.depth;
+          cs.fog = Math.max(0, Math.min(1, (4.6 - point.depth) / 3.4));
+          cs.screenR = Math.max(cs.cluster.extent, LOD_MIN_EXTENT) * point.scale * base;
+          cs.t = cs.fog <= 0 ? 0 : clusterExpansion(cs.screenR);
+        }
+        frameSeq += 1;
+        liveBuffer.length = 0;
+        for (const cs of clusterSlots) {
+          if (cs.fog <= 0) continue;
+          if (cs.t > 0) for (const index of cs.cluster.members) addLive(index, cs.t);
+          // Sparse representative stars keep the collapsed glow reading as a star
+          // cloud rather than a plain blob.
+          if (cs.t < 1) for (const index of cs.cluster.reps) addLive(index, 0.8 * (1 - cs.t));
+        }
+        if (selected) addLive(indexByKey.get(selected.evidenceKey), 1);
+        if (hoverStar) addLive(indexByKey.get(hoverStar.evidenceKey), 1);
+        for (const item of liveBuffer) {
+          const point = project(item.s.x, item.s.y, item.s.z);
+          item.sx = point.sx; item.sy = point.sy; item.scale = point.scale; item.depth = point.depth;
+          item.fog = Math.max(0, Math.min(1, (4.6 - point.depth) / 3.4));
+        }
+        live = liveBuffer;
+      }
 
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
       ctx.drawImage(backgroundCanvas, 0, 0, backgroundCanvas.width, backgroundCanvas.height, 0, 0, W, H);
@@ -283,10 +354,20 @@ export function CognitionUniverse({
         ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(point.sx, point.sy, radius, 0, 6.2832); ctx.fill();
       }
 
+      // Far-view cluster glows: a few dozen additive blooms standing in for the
+      // thousands of nodes they contain, fading out as the camera opens them.
+      if (useLod) {
+        for (const cs of clusterSlots) {
+          if (cs.fog <= 0 || cs.t >= 1 || !typeOn[cs.cluster.type]) continue;
+          drawClusterGlow(ctx, cs.sx, cs.sy, cs.screenR * 1.9 + 26, HUE[cs.cluster.type], cs.cluster.intensity * cs.fog, 1 - cs.t);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       const brand = project(0, 0, 0);
       ctx.shadowBlur = 0;
       const zoomLevel = 2.6 / cam.dist;
-      for (const item of screen) {
+      for (const item of live) {
         const { s } = item;
         const isSelected = selected?.evidenceKey === s.evidenceKey;
         if (!typeOn[s.type] || item.fog <= 0) continue;
@@ -297,7 +378,7 @@ export function CognitionUniverse({
         // background has no zoom to bring the tail back, so it keeps a full field.
         const reveal = !interactive || isSelected || hoverStar === s ? 1 : overviewRevealAlpha(nodeEvidenceScore(s), zoomLevel);
         const radius = nodeVisualRadius(s.strength, item.scale);
-        ctx.globalAlpha = (0.08 + s.confidence * 0.22 + s.affinity * 0.42) * item.fog * dim * reveal;
+        ctx.globalAlpha = (0.08 + s.confidence * 0.22 + s.affinity * 0.42) * item.fog * dim * reveal * item.ct;
         ctx.fillStyle = s.color;
         ctx.beginPath(); ctx.arc(item.sx, item.sy, radius, 0, 6.2832); ctx.fill();
       }
@@ -305,15 +386,16 @@ export function CognitionUniverse({
       // Detail is a camera-dependent layer, not a fixed top-N caste. Every
       // node uses the same radius above; zooming only adds glow, links and text.
       const detailThreshold = Math.max(2.15, 4.8 - Math.max(0, zoomLevel - 1) * 1.2);
-      detailOrder = priorityScreen.filter((item) => {
+      detailOrder = live.filter((item) => {
         const highlighted = hoverStar === item.s || selected?.evidenceKey === item.s.evidenceKey;
         return highlighted || (
           typeOn[item.s.type]
           && item.fog > 0
+          && item.ct > 0.2
           && item.sx > -30 && item.sx < W + 30 && item.sy > -30 && item.sy < H + 30
           && nodeVisualRadius(item.s.strength, item.scale) >= detailThreshold
         );
-      }).slice(0, MAX_DETAIL_NODES);
+      }).sort((left, right) => right.s.strength - left.s.strength || right.s.affinity - left.s.affinity).slice(0, MAX_DETAIL_NODES);
       detailOrder.sort((left, right) => right.depth - left.depth);
       for (const item of detailOrder) {
         const { s } = item;
@@ -322,7 +404,7 @@ export function CognitionUniverse({
         if (selected && s.type !== selected.type) continue;
         const gradient = ctx.createLinearGradient(brand.sx, brand.sy, item.sx, item.sy);
         gradient.addColorStop(0, "rgba(41,211,236,0)");
-        gradient.addColorStop(1, `rgba(${s.hue[0]},${s.hue[1]},${s.hue[2]},${0.24 * item.fog})`);
+        gradient.addColorStop(1, `rgba(${s.hue[0]},${s.hue[1]},${s.hue[2]},${0.24 * item.fog * item.ct})`);
         ctx.strokeStyle = gradient; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(brand.sx, brand.sy); ctx.lineTo(item.sx, item.sy); ctx.stroke();
       }
 
@@ -334,7 +416,7 @@ export function CognitionUniverse({
         const pulse = s.type === "risk" && stars.length <= LARGE_NODE_THRESHOLD ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
         const radius = nodeVisualRadius(s.strength, item.scale) * pulse;
         const highlighted = hoverStar === s || isSelected;
-        ctx.globalAlpha = (0.12 + s.affinity * 0.88) * item.fog * dim;
+        ctx.globalAlpha = (0.12 + s.affinity * 0.88) * item.fog * dim * item.ct;
         ctx.fillStyle = s.color; ctx.shadowColor = s.color;
         ctx.shadowBlur = highlighted ? 26 * item.fog : Math.max(0, (s.confidence - 0.58) * 18 * item.fog);
         ctx.beginPath(); ctx.arc(item.sx, item.sy, highlighted ? radius + 1.8 : radius, 0, 6.2832); ctx.fill();
@@ -356,8 +438,26 @@ export function CognitionUniverse({
         const box = { left: item.sx + 6, top: item.sy - 7, right: item.sx + width + 12, bottom: item.sy + 7 };
         if (!highlighted && labelBoxes.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) continue;
         labelBoxes.push(box); visibleLabels += 1;
-        ctx.globalAlpha = highlighted ? 1 : 0.78 * item.fog; ctx.fillStyle = highlighted ? "#fff" : "#c4c8d6";
+        ctx.globalAlpha = highlighted ? 1 : 0.78 * item.fog * item.ct; ctx.fillStyle = highlighted ? "#fff" : "#c4c8d6";
         ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(s.label, item.sx + 8, item.sy);
+      }
+
+      // Far view names the galaxies, not the stars: one label per collapsed
+      // cluster, sharing the same collision boxes so it never sits on a node label.
+      if (useLod) {
+        const clusterLabels = clusterSlots
+          .filter((cs) => cs.fog > 0.4 && cs.t < 0.85 && typeOn[cs.cluster.type])
+          .sort((a, b) => b.cluster.count - a.cluster.count)
+          .slice(0, 18);
+        ctx.font = "600 11px Inter, system-ui, sans-serif";
+        for (const cs of clusterLabels) {
+          const width = ctx.measureText(cs.cluster.label).width;
+          const box = { left: cs.sx + 6, top: cs.sy - 7, right: cs.sx + width + 12, bottom: cs.sy + 7 };
+          if (labelBoxes.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) continue;
+          labelBoxes.push(box);
+          ctx.globalAlpha = 0.9 * cs.fog * (1 - cs.t); ctx.fillStyle = "#dfe4f2";
+          ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(cs.cluster.label, cs.sx + 8, cs.sy);
+        }
       }
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = "lighter";
 
@@ -379,14 +479,28 @@ export function CognitionUniverse({
 
     const nearest = (px: number, py: number, maxDistance: number) => {
       let best: Star | null = null, bestDistance = maxDistance * maxDistance;
-      for (const item of screen) {
-        if (!ui.current.typeOn[item.s.type] || item.fog <= 0) continue;
+      // Only nodes that were actually projected this frame are pickable; under LOD
+      // that is the live set, otherwise the whole field.
+      for (const item of live) {
+        if (!ui.current.typeOn[item.s.type] || item.fog <= 0 || item.ct <= 0.15) continue;
         const dx = item.sx - px, dy = item.sy - py, distance = dx * dx + dy * dy;
         if (distance < bestDistance) { bestDistance = distance; best = item.s; }
       }
       return best;
     };
     const pick = (px: number, py: number) => nearest(px, py, 16);
+    // A collapsed cluster has no pickable nodes; clicking its glow flies the
+    // camera in until it opens. Returns null when LOD is off or nothing is near.
+    const pickCluster = (px: number, py: number, maxDistance: number) => {
+      if (!useLod) return null;
+      let best: (typeof clusterSlots)[number] | null = null, bestDistance = maxDistance * maxDistance;
+      for (const cs of clusterSlots) {
+        if (cs.fog <= 0 || cs.t >= 1 || !ui.current.typeOn[cs.cluster.type]) continue;
+        const dx = cs.sx - px, dy = cs.sy - py, distance = dx * dx + dy * dy;
+        if (distance < bestDistance) { bestDistance = distance; best = cs; }
+      }
+      return best;
+    };
     const localXY = (event: { clientX: number; clientY: number }) => {
       const rect = canvas.getBoundingClientRect();
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -438,7 +552,14 @@ export function CognitionUniverse({
         if (hit) {
           setSelected(hit); focus.x = hit.x; focus.y = hit.y; focus.z = hit.z; cam.tdist = Math.min(cam.tdist, 0.95);
         } else {
-          setSelected(null); focus.x = 0; focus.y = 0; focus.z = 0; cam.tdist = 2.6;
+          const cluster = pickCluster(x, y, 90);
+          if (cluster) {
+            // Fly into the galaxy: recentre on it and close in until it expands.
+            focus.x = cluster.cluster.cx; focus.y = cluster.cluster.cy; focus.z = cluster.cluster.cz;
+            cam.tdist = Math.max(0.6, cam.tdist * 0.62);
+          } else {
+            setSelected(null); focus.x = 0; focus.y = 0; focus.z = 0; cam.tdist = 2.6;
+          }
         }
       }
       drag = null;
@@ -481,7 +602,9 @@ export function CognitionUniverse({
       const zoomingIn = event.deltaY < 0;
       if (zoomingIn) {
         const point = localXY(event);
-        const target = nearest(point.x, point.y, 120);
+        const node = nearest(point.x, point.y, 120);
+        const cluster = node ? null : pickCluster(point.x, point.y, 160);
+        const target = node ?? (cluster ? { x: cluster.cluster.cx, y: cluster.cluster.cy, z: cluster.cluster.cz } : null);
         if (target) {
           focus.x += (target.x - focus.x) * 0.28;
           focus.y += (target.y - focus.y) * 0.28;

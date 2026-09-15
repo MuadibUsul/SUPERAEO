@@ -3,9 +3,7 @@ import { notFound } from "next/navigation";
 import { ProjectPageShell } from "@/components/layout/project-page-shell";
 import { SemanticJobAction } from "@/components/semantic-intelligence/semantic-job-action";
 import { CognitionUniverse } from "@/components/semantic-intelligence/cognition-universe";
-import { NebulaChangePanel } from "@/components/semantic-intelligence/nebula-change-panel";
 import { adaptNebulaNodes } from "@/components/semantic-intelligence/universe-adapter";
-import { diffNebulaNodes, diffSummaries } from "@/components/semantic-intelligence/nebula-diff";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusCallout } from "@/components/ui/status-callout";
 import { normalizeLocale } from "@/i18n/config";
@@ -39,39 +37,20 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
 
   const runsReady = state.data._count.runs > 0;
   const subject = state.data.subjects[0];
-  const [snapshots, latestJob] = await Promise.all([
+  const [overall, latestJob] = await Promise.all([
     subject
-      ? getPrisma().semanticNebulaSnapshot.findMany({
+      ? getPrisma().semanticNebulaSnapshot.findFirst({
           where: { projectId, subjectId: subject.id, scope: "OVERALL" },
           orderBy: { createdAt: "desc" },
-          take: 2,
-          select: { id: true, nodeJson: true, summaryJson: true, createdAt: true },
+          select: { id: true, nodeJson: true, summaryJson: true },
         })
-      : [],
+      : null,
     getPrisma().analysisJob.findFirst({
       where: { projectId, jobType: "semantic_nebula_build" },
       orderBy: { createdAt: "desc" },
     }),
   ]);
-  const overall = snapshots[0] ?? null;
-  const previous = snapshots[1] ?? null;
   const summary = asRecord(overall?.summaryJson);
-
-  // Time comparison: what moved between the two most recent runs.
-  const currentNodes = adaptNebulaNodes(overall?.nodeJson, Number.POSITIVE_INFINITY, undefined, false);
-  const previousNodes = previous ? adaptNebulaNodes(previous.nodeJson, Number.POSITIVE_INFINITY, undefined, false) : [];
-  const nebulaDiff = diffNebulaNodes(previousNodes, currentNodes);
-  const metricKeys = ["totalTerms", "positiveGravity", "negativeGravity", "missingDesiredTerms", "competitorGravity", "incorrectAssociationRisk"];
-  const metricDeltas = previous ? diffSummaries(asRecord(previous.summaryJson), summary, metricKeys) : [];
-  const fmtDate = (d: Date) => new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-US", { month: "short", day: "numeric" }).format(d);
-  const metricLabels: Record<string, string> = {
-    totalTerms: dictionary.semanticIntelligence.nebula.totalTerms,
-    positiveGravity: dictionary.semanticIntelligence.nebula.positiveGravity,
-    negativeGravity: dictionary.semanticIntelligence.nebula.negativeGravity,
-    missingDesiredTerms: dictionary.semanticIntelligence.concepts.missingDesiredTerms,
-    competitorGravity: dictionary.semanticIntelligence.nebula.competitorGravity,
-    incorrectAssociationRisk: dictionary.semanticIntelligence.concepts.incorrectAssociationRisk,
-  };
 
   return (
     <ProjectPageShell
@@ -98,18 +77,6 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
         <MetricTile label={dictionary.semanticIntelligence.concepts.incorrectAssociationRisk} value={summary.incorrectAssociationRisk} />
       </div>
 
-      {overall && runsReady ? (
-        <NebulaChangePanel
-          diff={nebulaDiff}
-          metrics={metricDeltas}
-          metricLabels={metricLabels}
-          hasPrevious={Boolean(previous)}
-          previousAt={previous ? fmtDate(previous.createdAt) : undefined}
-          currentAt={fmtDate(overall.createdAt)}
-          copy={locale === "zh-CN" ? { title: "自上次运行的变化", since: "对比上次运行", appeared: "新增关联", disappeared: "淡出 / 消失", rose: "关联增强", fell: "关联减弱", empty: "还没有可对比的上一次运行。", more: "更多" } : undefined}
-        />
-      ) : null}
-
       <Card className="dark border-border bg-[#03050b] text-foreground shadow-[0_24px_80px_-36px_rgba(30,180,220,0.24)]">
         <CardHeader className="flex flex-col gap-3 border-b border-white/8 sm:flex-row sm:items-center sm:justify-between">
           <div><div className="eyebrow text-primary">Cognition field</div><CardTitle className="mt-1 text-white">{dictionary.semanticIntelligence.concepts.observableAnswerSpace}</CardTitle></div>
@@ -127,7 +94,7 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
         <CardContent className="px-0 pb-0">
           <CognitionUniverse
             subjectName={subject?.displayName ?? state.data.brandName}
-            nodes={currentNodes}
+            nodes={adaptNebulaNodes(overall?.nodeJson, Number.POSITIVE_INFINITY, undefined, false)}
             evidenceEndpoint={overall ? `/api/projects/${projectId}/semantic-nebula/evidence?snapshotId=${overall.id}` : undefined}
             className="h-[620px] lg:h-[720px]"
             copy={{

@@ -8,9 +8,13 @@ import { nodeEvidenceScore, nodeVisualRadius, overviewRevealAlpha } from "@/comp
 import { buildClusterTree, clusterExpansion, LOD_ACTIVATION, LOD_MIN_EXTENT } from "@/components/semantic-intelligence/semantic-cluster-tree";
 import { drawClusterGlow } from "@/components/semantic-intelligence/nebula-field-renderer";
 
-const MAX_DETAIL_NODES = 560;
+const MAX_DETAIL_NODES = 320;
 const LARGE_NODE_THRESHOLD = 400;
 const THIRTY_FPS_MS = 1000 / 30;
+// Hard ceiling on base dots drawn per frame. The canvas is fill-rate bound, so
+// this — not the node total — is what keeps a frame cheap when the camera opens
+// many clusters at once (e.g. a spread-out real-embedding field).
+const MAX_LIVE_NODES = 900;
 const TOOLTIP_WIDTH = 220;
 
 const HUE: Record<UniverseType, [number, number, number]> = {
@@ -216,6 +220,9 @@ export function CognitionUniverse({
       fog: 0,
       screenR: 0,
       t: 0,
+      // Fraction of this cluster's members actually drawn as nodes this frame
+      // (0 = pure glow, 1 = fully opened). The glow fills in the rest.
+      materialized: 0,
     }));
     const liveBuffer: typeof screen = [];
     let live: typeof screen = screen;
@@ -244,6 +251,14 @@ export function CognitionUniverse({
     let cosYaw = 1, sinYaw = 0, cosPitch = 1, sinPitch = 0;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const frameInterval = !interactive || stars.length > LARGE_NODE_THRESHOLD ? THIRTY_FPS_MS : 0;
+    // Adaptive quality. The render cost of a soft nebula is dominated by canvas
+    // fill-rate, which varies wildly across machines (device pixel ratio, GPU,
+    // window size). Rather than guess a fixed budget, we measure the real draw
+    // time on THIS machine and scale the backing-store resolution and the live
+    // node budget to hold a smooth frame. renderScale 1 = full quality.
+    const capDpr = stars.length > LARGE_NODE_THRESHOLD ? 1.5 : 1.9;
+    let renderScale = 1, workEma = 0, lastQualityChange = 0;
+    const liveBudget = () => Math.round(260 + (MAX_LIVE_NODES - 260) * renderScale);
 
     const updateProjection = () => {
       cosYaw = Math.cos(cam.yaw); sinYaw = Math.sin(cam.yaw);
@@ -278,7 +293,10 @@ export function CognitionUniverse({
     };
     const resize = () => {
       const rect = wrap.getBoundingClientRect();
-      W = rect.width; H = rect.height; dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // Canvas cost scales with the backing-store pixel count (dpr²). A soft,
+      // glowy nebula survives a lower cap almost invisibly, so large fields are
+      // capped harder — this is one of the biggest wins on hi-DPI screens.
+      W = rect.width; H = rect.height; dpr = Math.max(0.6, Math.min(window.devicePixelRatio || 1, capDpr) * renderScale);
       canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       backgroundCanvas.width = W * dpr; backgroundCanvas.height = H * dpr;
       cx = W / 2; cy = H / 2; base = Math.min(W, H) * 0.6;
@@ -295,6 +313,11 @@ export function CognitionUniverse({
         requestDraw();
         return;
       }
+      const drawStart = performance.now();
+      // Real delivered frame time since the last paint (captured before lastFrame
+      // is advanced). While dragging the loop is uncapped, so this reflects true
+      // on-screen FPS including GPU raster — the signal the governor trusts most.
+      const frameMs = lastFrame ? now - lastFrame : 16.7;
 
       const elapsed = Math.min((now - lastFrame) / 1000, 0.05);
       lastFrame = now; lastPaint = now;
@@ -321,12 +344,28 @@ export function CognitionUniverse({
         }
         frameSeq += 1;
         liveBuffer.length = 0;
+        // Spend a fixed per-frame node budget on the clusters the camera has
+        // opened most, closest first. Members are strongest-first, so a cluster
+        // that can only be partly afforded still shows its most important nodes;
+        // whatever isn't materialised stays covered by the glow.
+        let budget = liveBudget();
+        const opened = clusterSlots
+          .filter((cs) => cs.fog > 0 && cs.t > 0)
+          .sort((a, b) => b.t - a.t || b.screenR - a.screenR);
+        for (const cs of clusterSlots) cs.materialized = 0;
+        for (const cs of opened) {
+          if (budget <= 0) break;
+          const members = cs.cluster.members;
+          const take = Math.min(members.length, budget);
+          for (let k = 0; k < take; k++) addLive(members[k], cs.t);
+          cs.materialized = members.length ? take / members.length : 1;
+          budget -= take;
+        }
+        // Sparse representative stars over every cluster that is not fully
+        // opened, so a collapsed or budget-capped glow still reads as a star cloud.
         for (const cs of clusterSlots) {
-          if (cs.fog <= 0) continue;
-          if (cs.t > 0) for (const index of cs.cluster.members) addLive(index, cs.t);
-          // Sparse representative stars keep the collapsed glow reading as a star
-          // cloud rather than a plain blob.
-          if (cs.t < 1) for (const index of cs.cluster.reps) addLive(index, 0.8 * (1 - cs.t));
+          if (cs.fog <= 0 || cs.materialized >= 1) continue;
+          for (const index of cs.cluster.reps) addLive(index, 0.8 * (1 - cs.t));
         }
         if (selected) addLive(indexByKey.get(selected.evidenceKey), 1);
         if (hoverStar) addLive(indexByKey.get(hoverStar.evidenceKey), 1);
@@ -358,8 +397,10 @@ export function CognitionUniverse({
       // thousands of nodes they contain, fading out as the camera opens them.
       if (useLod) {
         for (const cs of clusterSlots) {
-          if (cs.fog <= 0 || cs.t >= 1 || !typeOn[cs.cluster.type]) continue;
-          drawClusterGlow(ctx, cs.sx, cs.sy, cs.screenR * 1.9 + 26, HUE[cs.cluster.type], cs.cluster.intensity * cs.fog, 1 - cs.t);
+          // Glow covers whatever the node budget did not materialise — a fully
+          // opened cluster shows none, a collapsed or capped one shows it in full.
+          if (cs.fog <= 0 || cs.materialized >= 1 || !typeOn[cs.cluster.type]) continue;
+          drawClusterGlow(ctx, cs.sx, cs.sy, cs.screenR * 1.9 + 26, HUE[cs.cluster.type], cs.cluster.intensity * cs.fog, 1 - cs.materialized);
         }
         ctx.globalAlpha = 1;
       }
@@ -417,8 +458,12 @@ export function CognitionUniverse({
         const radius = nodeVisualRadius(s.strength, item.scale) * pulse;
         const highlighted = hoverStar === s || isSelected;
         ctx.globalAlpha = (0.12 + s.affinity * 0.88) * item.fog * dim * item.ct;
-        ctx.fillStyle = s.color; ctx.shadowColor = s.color;
-        ctx.shadowBlur = highlighted ? 26 * item.fog : Math.max(0, (s.confidence - 0.58) * 18 * item.fog);
+        ctx.fillStyle = s.color;
+        // shadowBlur is the single most expensive per-node canvas op, so it is
+        // reserved for the one hovered/selected node. Confident nodes still read
+        // as bright from the additive `lighter` blend and the cluster glow behind
+        // them — no per-node blur needed.
+        if (highlighted) { ctx.shadowColor = s.color; ctx.shadowBlur = 22 * item.fog; } else { ctx.shadowBlur = 0; }
         ctx.beginPath(); ctx.arc(item.sx, item.sy, highlighted ? radius + 1.8 : radius, 0, 6.2832); ctx.fill();
       }
       ctx.shadowBlur = 0; ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
@@ -471,6 +516,22 @@ export function CognitionUniverse({
       ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#eafcff";
       ctx.font = "700 14px Inter, system-ui, sans-serif"; ctx.textAlign = "center";
       ctx.fillText(subjectName, brand.sx, brand.sy - coreRadius - 12);
+
+      // Governor: keep the measured draw cost inside a smooth band by scaling the
+      // backing-store resolution (biggest lever) and the node budget. Hysteresis
+      // + a cooldown stop it from oscillating; drops react fast, recovery is slow.
+      const workMs = performance.now() - drawStart;
+      // During a drag, trust the true frame time (GPU included); otherwise the JS
+      // work time, since an idle frame's interval is throttled and meaningless.
+      const signal = drag ? Math.max(frameMs, workMs) : workMs;
+      workEma = workEma ? workEma * 0.85 + signal * 0.15 : signal;
+      if (useLod && drawStart - lastQualityChange > 400) {
+        if (workEma > 20 && renderScale > 0.55) {
+          renderScale = Math.max(0.55, renderScale - 0.12); lastQualityChange = drawStart; resize();
+        } else if (workEma < 10 && renderScale < 1 && drawStart - lastQualityChange > 1000) {
+          renderScale = Math.min(1, renderScale + 0.08); lastQualityChange = drawStart; resize();
+        }
+      }
 
       const settling = Math.abs(cam.tdist - cam.dist) > 0.002
         || Math.abs(focus.x - look.x) + Math.abs(focus.y - look.y) + Math.abs(focus.z - look.z) > 0.002;

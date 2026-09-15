@@ -103,14 +103,17 @@ export function buildClusterTree(nodes: UniverseNode[]): ClusterTree {
       const d = Math.hypot(n.x - cx, n.y - cy, n.z - cz);
       if (d > extent) extent = d;
     }
-    const reps = [...members].sort((a, b) => nodes[b].strength - nodes[a].strength).slice(0, REPS_PER_CLUSTER);
+    // Strongest-first so a budget-limited partial expansion materialises the
+    // most important nodes, and reps are simply the top of that order.
+    const sorted = [...members].sort((a, b) => nodes[b].strength - nodes[a].strength);
+    const reps = sorted.slice(0, REPS_PER_CLUSTER);
     clusters.push({
       id,
       type: nodes[members[0]].type,
       cx, cy, cz,
       extent: Math.max(extent, 0.05),
-      count: members.length,
-      members,
+      count: sorted.length,
+      members: sorted,
       reps,
       label: nodes[reps[0]].label,
       // Denser buckets glow brighter, on a log curve so one huge cluster does not

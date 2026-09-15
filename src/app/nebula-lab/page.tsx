@@ -9,7 +9,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CognitionUniverse } from "@/components/semantic-intelligence/cognition-universe";
+import { NebulaChangePanel } from "@/components/semantic-intelligence/nebula-change-panel";
 import { adaptNebulaNodes } from "@/components/semantic-intelligence/universe-adapter";
+import { diffNebulaNodes } from "@/components/semantic-intelligence/nebula-diff";
 
 // A spread of archetypes so the field shows every semantic colour and clusters
 // land in different sectors.
@@ -28,18 +30,22 @@ const ARCHETYPES: Array<Record<string, unknown>> = [
 
 const WORDS = ["利率", "黄金", "通胀", "美债", "政策", "avalanche", "signal", "yield", "hedge", "momentum", "spread", "carry", "beta", "flow", "risk", "regime"];
 
-function makeRows(count: number) {
+function makeRows(count: number, previous = false) {
   return Array.from({ length: count }, (_, i) => {
     const arch = ARCHETYPES[i % ARCHETYPES.length];
     const w1 = WORDS[(i * 7) % WORDS.length];
     const w2 = WORDS[(i * 13 + 3) % WORDS.length];
+    // In the synthetic "previous" run the first 24 terms are different words (so
+    // the current run reads them as newly appeared and the old ones as fallen
+    // away), and everyone's proximity/confidence is shifted so relevance moves.
+    const term = previous && i < 24 ? `legacy-${w2}-${i}` : `${w1}-${w2}-${i}`;
     return {
       ...arch,
-      term: `${w1}-${w2}-${i}`,
+      term,
       semanticGravity: 8 + ((i * 37) % 92),
       frequencyScore: (i * 13) % 100,
-      proximityScore: (i * 19) % 100,
-      evidenceConfidence: 20 + ((i * 29) % 80),
+      proximityScore: previous ? ((i * 19 + 45) % 100) : (i * 19) % 100,
+      evidenceConfidence: previous ? Math.max(10, 20 + ((i * 29) % 80) - 22) : 20 + ((i * 29) % 80),
       context: arch.context ?? {},
     };
   });
@@ -48,6 +54,8 @@ function makeRows(count: number) {
 export default function NebulaLabPage() {
   const [count, setCount] = useState(5000);
   const nodes = useMemo(() => adaptNebulaNodes(makeRows(count), Number.POSITIVE_INFINITY, undefined, false), [count]);
+  const previousNodes = useMemo(() => adaptNebulaNodes(makeRows(count, true), Number.POSITIVE_INFINITY, undefined, false), [count]);
+  const diff = useMemo(() => diffNebulaNodes(previousNodes, nodes), [previousNodes, nodes]);
 
   const [fps, setFps] = useState(0);
   // last starts at 0 and is seeded inside the effect — calling performance.now()
@@ -93,7 +101,14 @@ export default function NebulaLabPage() {
         ))}
         <span style={{ fontSize: 11, opacity: 0.6 }}>drag to orbit · scroll / click a glow to fly in · double-click to dive</span>
       </div>
-      <CognitionUniverse subjectName="LOD Lab" nodes={nodes} className="h-[78vh]" />
+      <CognitionUniverse subjectName="LOD Lab" nodes={nodes} className="h-[62vh]" />
+
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8, fontFamily: "monospace" }}>
+          time-comparison prototype (synthetic previous run)
+        </div>
+        <NebulaChangePanel diff={diff} hasPrevious previousAt="Sep 8" currentAt="Sep 15" />
+      </div>
     </div>
   );
 }

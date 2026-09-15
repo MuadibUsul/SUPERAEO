@@ -381,6 +381,16 @@ export function CognitionUniverse({
       ctx.drawImage(backgroundCanvas, 0, 0, backgroundCanvas.width, backgroundCanvas.height, 0, 0, W, H);
       ctx.globalCompositeOperation = "lighter";
 
+      // The additive glow that makes a good far-view nebula is exactly what
+      // whites out a close-up, where the point is to READ individual nodes. So as
+      // the camera closes in, `farness` fades the glow layers out and the node
+      // pass switches to solid compositing. 1 = far (full nebula), 0 = deep dive.
+      const zoomLevel = 2.6 / cam.dist;
+      // Fades to 0 by the time the camera reaches click-to-focus depth
+      // (zoomLevel ~2.6), so focusing a node lands on a clean, readable field
+      // rather than a bloom; full nebula glow is kept while browsing far out.
+      const farness = 1 - Math.max(0, Math.min(1, (zoomLevel - 1.12) / 0.4));
+
       for (const type of Object.keys(SECTOR_DIR) as UniverseType[]) {
         if (!typeOn[type]) continue;
         const dir = SECTOR_DIR[type], point = project(dir[0] * 0.7, dir[1] * 0.7, dir[2] * 0.7);
@@ -388,7 +398,7 @@ export function CognitionUniverse({
         if (amount <= 0) continue;
         const radius = 0.4 * point.scale * base, hue = HUE[type];
         const glow = ctx.createRadialGradient(point.sx, point.sy, 0, point.sx, point.sy, radius);
-        glow.addColorStop(0, `rgba(${hue[0]},${hue[1]},${hue[2]},${0.08 * amount})`);
+        glow.addColorStop(0, `rgba(${hue[0]},${hue[1]},${hue[2]},${0.08 * amount * farness})`);
         glow.addColorStop(1, `rgba(${hue[0]},${hue[1]},${hue[2]},0)`);
         ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(point.sx, point.sy, radius, 0, 6.2832); ctx.fill();
       }
@@ -403,14 +413,18 @@ export function CognitionUniverse({
           // near cluster simply shows fewer nodes rather than a giant orb.
           if (cs.fog <= 0 || cs.t >= 0.85 || !typeOn[cs.cluster.type]) continue;
           const radius = Math.min(cs.screenR * 1.1 + 12, 150);
-          drawClusterGlow(ctx, cs.sx, cs.sy, radius, HUE[cs.cluster.type], cs.cluster.intensity * cs.fog * 0.6, 1 - cs.t);
+          drawClusterGlow(ctx, cs.sx, cs.sy, radius, HUE[cs.cluster.type], cs.cluster.intensity * cs.fog * 0.6 * farness, 1 - cs.t);
         }
         ctx.globalAlpha = 1;
       }
 
       const brand = project(0, 0, 0);
       ctx.shadowBlur = 0;
-      const zoomLevel = 2.6 / cam.dist;
+      // Up close, paint nodes solid (source-over) so overlaps read as distinct
+      // discs instead of summing to white; far out, keep them additive for glow.
+      const solidNodes = farness < 0.5;
+      const nodeBoost = Math.min(1.8, 1 + (1 - farness) * 1.1);
+      ctx.globalCompositeOperation = solidNodes ? "source-over" : "lighter";
       for (const item of live) {
         const { s } = item;
         const isSelected = selected?.evidenceKey === s.evidenceKey;
@@ -422,7 +436,7 @@ export function CognitionUniverse({
         // background has no zoom to bring the tail back, so it keeps a full field.
         const reveal = !interactive || isSelected || hoverStar === s ? 1 : overviewRevealAlpha(nodeEvidenceScore(s), zoomLevel);
         const radius = nodeVisualRadius(s.strength, item.scale);
-        ctx.globalAlpha = (0.05 + s.confidence * 0.14 + s.affinity * 0.28) * item.fog * dim * reveal * item.ct;
+        ctx.globalAlpha = Math.min(1, (0.05 + s.confidence * 0.14 + s.affinity * 0.28) * item.fog * dim * reveal * item.ct * nodeBoost);
         ctx.fillStyle = s.color;
         ctx.beginPath(); ctx.arc(item.sx, item.sy, radius, 0, 6.2832); ctx.fill();
       }
@@ -448,7 +462,7 @@ export function CognitionUniverse({
         if (selected && s.type !== selected.type) continue;
         const gradient = ctx.createLinearGradient(brand.sx, brand.sy, item.sx, item.sy);
         gradient.addColorStop(0, "rgba(41,211,236,0)");
-        gradient.addColorStop(1, `rgba(${s.hue[0]},${s.hue[1]},${s.hue[2]},${0.24 * item.fog * item.ct})`);
+        gradient.addColorStop(1, `rgba(${s.hue[0]},${s.hue[1]},${s.hue[2]},${0.24 * item.fog * item.ct * farness})`);
         ctx.strokeStyle = gradient; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(brand.sx, brand.sy); ctx.lineTo(item.sx, item.sy); ctx.stroke();
       }
 
@@ -460,7 +474,7 @@ export function CognitionUniverse({
         const pulse = s.type === "risk" && stars.length <= LARGE_NODE_THRESHOLD ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
         const radius = nodeVisualRadius(s.strength, item.scale) * pulse;
         const highlighted = hoverStar === s || isSelected;
-        ctx.globalAlpha = (0.08 + s.affinity * 0.42) * item.fog * dim * item.ct;
+        ctx.globalAlpha = Math.min(1, (0.08 + s.affinity * 0.42) * item.fog * dim * item.ct * nodeBoost);
         ctx.fillStyle = s.color;
         // shadowBlur is the single most expensive per-node canvas op, so it is
         // reserved for the one hovered/selected node. Confident nodes still read
@@ -513,7 +527,7 @@ export function CognitionUniverse({
       // screen-filling white sun.
       const coreRadius = Math.min(15 * brand.scale + 7, 46);
       const halo = ctx.createRadialGradient(brand.sx, brand.sy, 0, brand.sx, brand.sy, coreRadius * 3.2);
-      halo.addColorStop(0, "rgba(180,245,255,0.5)"); halo.addColorStop(0.4, "rgba(41,211,236,0.28)"); halo.addColorStop(1, "rgba(41,211,236,0)");
+      halo.addColorStop(0, `rgba(180,245,255,${0.5 * farness})`); halo.addColorStop(0.4, `rgba(41,211,236,${0.28 * farness})`); halo.addColorStop(1, "rgba(41,211,236,0)");
       ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(brand.sx, brand.sy, coreRadius * 3.2, 0, 6.2832); ctx.fill();
       const core = ctx.createRadialGradient(brand.sx, brand.sy, 0, brand.sx, brand.sy, coreRadius);
       core.addColorStop(0, "#ffffff"); core.addColorStop(0.4, "#c9f7ff"); core.addColorStop(1, "rgba(41,211,236,0)");

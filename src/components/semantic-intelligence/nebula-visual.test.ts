@@ -30,9 +30,17 @@ test("node radius grows continuously with strength — no size cliff between ran
 });
 
 test("node radius is softly bounded and scales with projection", () => {
-  assert.ok(nodeVisualRadius(1, 100) <= 12, "radius is capped for very close nodes");
+  assert.ok(nodeVisualRadius(1, 100) <= 16, "radius is capped for very close nodes");
   assert.ok(nodeVisualRadius(0, 0.0001) >= 0.9, "radius has a visible floor");
   assert.ok(nodeVisualRadius(0.9, 2) > nodeVisualRadius(0.9, 1), "closer projection reads larger");
+});
+
+test("size keeps a relevance hierarchy even at deep zoom", () => {
+  // A single flat cap would clamp every node to the same disc up close; the
+  // relevance-scaled ceiling keeps low-relevance nodes smaller than high ones
+  // no matter how far the camera dives.
+  assert.ok(nodeVisualRadius(0.2, 100) < nodeVisualRadius(0.9, 100), "low relevance stays smaller than high, zoomed in");
+  assert.ok(nodeVisualRadius(0.5, 100) < nodeVisualRadius(0.9, 100), "mid relevance stays smaller than high, zoomed in");
 });
 
 test("evidence score is confidence-led and stays within 0..1", () => {

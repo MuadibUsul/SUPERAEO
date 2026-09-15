@@ -75,7 +75,7 @@ const DEFAULT_COPY: Copy = {
   zoomIn: "Zoom in",
   zoomOut: "Zoom out",
   resetView: "Fit nebula",
-  encoding: "distance · semantic proximity  /  size · evidence gravity  /  brightness · confidence",
+  encoding: "distance · semantic proximity  /  size · relevance to subject  /  brightness · confidence",
 };
 
 type Star = UniverseNode & { color: string; hue: [number, number, number]; tw: number };
@@ -437,7 +437,7 @@ export function CognitionUniverse({
         // so they stay pickable and present in raw space. The ambient marketing
         // background has no zoom to bring the tail back, so it keeps a full field.
         const reveal = !interactive || isSelected || hoverStar === s ? 1 : overviewRevealAlpha(nodeEvidenceScore(s), zoomLevel);
-        const radius = nodeVisualRadius(s.strength, item.scale);
+        const radius = nodeVisualRadius(s.affinity, item.scale);
         ctx.globalAlpha = Math.min(1, (0.05 + s.confidence * 0.14 + s.affinity * 0.28) * item.fog * dim * reveal * item.ct * nodeBoost);
         ctx.fillStyle = s.color;
         ctx.beginPath(); ctx.arc(item.sx, item.sy, radius, 0, 6.2832); ctx.fill();
@@ -453,7 +453,7 @@ export function CognitionUniverse({
           && item.fog > 0
           && item.ct > 0.2
           && item.sx > -30 && item.sx < W + 30 && item.sy > -30 && item.sy < H + 30
-          && nodeVisualRadius(item.s.strength, item.scale) >= detailThreshold
+          && nodeVisualRadius(item.s.affinity, item.scale) >= detailThreshold
         );
       }).sort((left, right) => right.s.strength - left.s.strength || right.s.affinity - left.s.affinity).slice(0, MAX_DETAIL_NODES);
       detailOrder.sort((left, right) => right.depth - left.depth);
@@ -474,7 +474,7 @@ export function CognitionUniverse({
         if (!typeOn[s.type] || item.fog <= 0) continue;
         const dim = selected && selected.type !== s.type ? 0.25 + 0.75 * (1 - farness) : 1;
         const pulse = s.type === "risk" && stars.length <= LARGE_NODE_THRESHOLD ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
-        const radius = nodeVisualRadius(s.strength, item.scale) * pulse;
+        const radius = nodeVisualRadius(s.affinity, item.scale) * pulse;
         const highlighted = hoverStar === s || isSelected;
         ctx.globalAlpha = Math.min(1, (0.08 + s.affinity * 0.42) * item.fog * dim * item.ct * nodeBoost);
         ctx.fillStyle = s.color;

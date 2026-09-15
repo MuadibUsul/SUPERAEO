@@ -8,13 +8,18 @@
  */
 
 /**
- * Continuous node radius — one sqrt curve of evidence strength, softly bounded.
- * There is no fixed top-N caste: size only ever encodes semantic gravity, and
- * two adjacent-strength nodes never jump across a size threshold.
+ * Continuous node radius — one sqrt curve of the node's RELEVANCE to the subject
+ * (how strongly the model's answers tie the term to it), softly bounded. There is
+ * no fixed top-N caste; two adjacent-relevance nodes never jump across a size
+ * threshold. The ceiling is itself relevance-scaled, so the size hierarchy
+ * survives even at deep zoom — a single flat cap would clamp every node to the
+ * same disc up close and erase the encoding.
  */
-export function nodeVisualRadius(strength: number, projectionScale: number) {
-  const value = 1.15 + Math.sqrt(Math.max(0, Math.min(1, strength))) * 4.85;
-  return Math.max(0.9, Math.min(12, value * projectionScale * 1.15));
+export function nodeVisualRadius(relevance: number, projectionScale: number) {
+  const shape = Math.sqrt(Math.max(0, Math.min(1, relevance)));
+  const base = 1.0 + shape * 5.0;
+  const cap = 3 + shape * 13; // low-relevance nodes stay small; only strong ones grow large
+  return Math.max(0.9, Math.min(cap, base * projectionScale * 1.15));
 }
 
 /**

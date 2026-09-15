@@ -113,7 +113,7 @@ export default async function SemanticNebulaPage({ params }: PageProps) {
               zoomIn: locale === "zh-CN" ? "放大" : "Zoom in",
               zoomOut: locale === "zh-CN" ? "缩小" : "Zoom out",
               resetView: locale === "zh-CN" ? "适配全图" : "Fit nebula",
-              encoding: locale === "zh-CN" ? "距离：语义接近度　/　大小：证据重力　/　亮度：置信度" : "distance: semantic proximity  /  size: evidence gravity  /  brightness: confidence",
+              encoding: locale === "zh-CN" ? "距离：语义接近度　/　大小：与对象相关性　/　亮度：置信度" : "distance: semantic proximity  /  size: relevance to subject  /  brightness: confidence",
               empty: dictionary.semanticIntelligence.states.noData,
               evidence: locale === "zh-CN" ? "AI 为何把它放在这" : "Why AI placed it here",
             }}

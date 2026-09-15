@@ -105,7 +105,6 @@ export function CognitionUniverse({
   // `flip` is decided at hover time, where the canvas width is already measured;
   // reading it during render would mean touching a ref mid-render.
   const [tip, setTip] = useState<{ x: number; y: number; flip: boolean; node: UniverseNode } | null>(null);
-  const [layoutMode, setLayoutMode] = useState<"balanced" | "raw">("balanced");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [evidenceByKey, setEvidenceByKey] = useState<Record<string, UniverseEvidence[]>>({});
   const invalidateRef = useRef<() => void>(() => undefined);
@@ -184,9 +183,9 @@ export function CognitionUniverse({
 
     const stars: Star[] = nodes.map((node, index) => ({
       ...node,
-      x: layoutMode === "raw" ? node.rawX : node.x,
-      y: layoutMode === "raw" ? node.rawY : node.y,
-      z: layoutMode === "raw" ? node.rawZ : node.z,
+      x: node.x,
+      y: node.y,
+      z: node.z,
       hue: HUE[node.type],
       color: `rgb(${HUE[node.type].join(",")})`,
       tw: (index * 2.399) % 6.283,
@@ -769,14 +768,9 @@ export function CognitionUniverse({
       canvas.removeEventListener("keydown", onKeyDown);
       cameraControlsRef.current = { zoomIn: () => undefined, zoomOut: () => undefined, reset: () => undefined };
     };
-  }, [nodes, subjectName, interactive, layoutMode]);
+  }, [nodes, subjectName, interactive]);
 
   const toggle = (t: UniverseType) => setTypeOn((s) => ({ ...s, [t]: !s[t] }));
-  const changeLayout = (mode: "balanced" | "raw") => {
-    setSelected(null);
-    setTip(null);
-    setLayoutMode(mode);
-  };
   const toggleFullscreen = async () => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -825,22 +819,6 @@ export function CognitionUniverse({
           )}
           <span>{isFullscreen ? copy.exitFullscreen ?? DEFAULT_COPY.exitFullscreen : copy.fullscreen ?? DEFAULT_COPY.fullscreen}</span>
         </button>
-        <div className="flex rounded-lg border border-white/10 bg-black/60 p-0.5 backdrop-blur" aria-label="Nebula layout">
-          {(["balanced", "raw"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => changeLayout(mode)}
-              className={cn(
-                "h-7 rounded-md px-2.5 text-[11px] transition-[transform,background-color,color] duration-150 ease-out active:scale-[0.97]",
-                layoutMode === mode ? "bg-white/12 text-white" : "text-[#8f95a6] hover:text-[#d8dbe5]",
-              )}
-              aria-pressed={layoutMode === mode}
-            >
-              {mode === "balanced" ? copy.balanced ?? DEFAULT_COPY.balanced : copy.raw ?? DEFAULT_COPY.raw}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* type filters */}

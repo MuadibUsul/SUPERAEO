@@ -389,7 +389,7 @@ export function CognitionUniverse({
       // Fades to 0 by the time the camera reaches click-to-focus depth
       // (zoomLevel ~2.6), so focusing a node lands on a clean, readable field
       // rather than a bloom; full nebula glow is kept while browsing far out.
-      const farness = 1 - Math.max(0, Math.min(1, (zoomLevel - 1.12) / 0.4));
+      const farness = 1 - Math.max(0, Math.min(1, (zoomLevel - 1.35) / 0.95));
 
       for (const type of Object.keys(SECTOR_DIR) as UniverseType[]) {
         if (!typeOn[type]) continue;
@@ -423,7 +423,7 @@ export function CognitionUniverse({
       // Up close, paint nodes solid (source-over) so overlaps read as distinct
       // discs instead of summing to white; far out, keep them additive for glow.
       const solidNodes = farness < 0.5;
-      const nodeBoost = Math.min(1.8, 1 + (1 - farness) * 1.1);
+      const nodeBoost = Math.min(1.35, 1 + (1 - farness) * 0.7);
       ctx.globalCompositeOperation = solidNodes ? "source-over" : "lighter";
       for (const item of live) {
         const { s } = item;
@@ -525,12 +525,12 @@ export function CognitionUniverse({
 
       // Clamped so diving toward the centre doesn't turn the core into a
       // screen-filling white sun.
-      const coreRadius = Math.min(15 * brand.scale + 7, 46);
+      const coreRadius = Math.min(15 * brand.scale + 7, 34);
       const halo = ctx.createRadialGradient(brand.sx, brand.sy, 0, brand.sx, brand.sy, coreRadius * 3.2);
       halo.addColorStop(0, `rgba(180,245,255,${0.5 * farness})`); halo.addColorStop(0.4, `rgba(41,211,236,${0.28 * farness})`); halo.addColorStop(1, "rgba(41,211,236,0)");
       ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(brand.sx, brand.sy, coreRadius * 3.2, 0, 6.2832); ctx.fill();
       const core = ctx.createRadialGradient(brand.sx, brand.sy, 0, brand.sx, brand.sy, coreRadius);
-      core.addColorStop(0, "#ffffff"); core.addColorStop(0.4, "#c9f7ff"); core.addColorStop(1, "rgba(41,211,236,0)");
+      core.addColorStop(0, "rgba(255,255,255,0.62)"); core.addColorStop(0.4, "rgba(201,247,255,0.34)"); core.addColorStop(1, "rgba(41,211,236,0)");
       ctx.fillStyle = core; ctx.beginPath(); ctx.arc(brand.sx, brand.sy, coreRadius, 0, 6.2832); ctx.fill();
       ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#eafcff";
       ctx.font = "700 14px Inter, system-ui, sans-serif"; ctx.textAlign = "center";

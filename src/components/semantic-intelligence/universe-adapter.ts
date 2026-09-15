@@ -83,6 +83,39 @@ function classify(termType: string, polarity: string, context: Record<string, un
   return "attribute";
 }
 
+/**
+ * Deterministic gravity-fallback position for a node with no embedding.
+ *
+ * The old fallback placed every node of a type on the same `SECTOR_DIR` ray with
+ * a tiny axis jitter, so each type collapsed into a thin radial spike — the field
+ * read as flat arms, not a cloud. This spreads nodes through a 3D cone around the
+ * sector direction (a perpendicular basis + a random angle), so each type fills a
+ * volumetric lobe. Radius still tracks strength (strong near the core), so the
+ * "strong sits closer to the origin" ordering is preserved.
+ */
+function sectorBlobPosition(type: UniverseType, strength: number, label: string) {
+  const raw = SECTOR_DIR[type];
+  const length = Math.hypot(raw[0], raw[1], raw[2]) || 1;
+  const dx = raw[0] / length, dy = raw[1] / length, dz = raw[2] / length;
+  // Orthonormal basis (u, v) spanning the plane perpendicular to the direction.
+  const ref: [number, number, number] = Math.abs(dx) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  let ux = dy * ref[2] - dz * ref[1], uy = dz * ref[0] - dx * ref[2], uz = dx * ref[1] - dy * ref[0];
+  const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+  const vx = dy * uz - dz * uy, vy = dz * ux - dx * uz, vz = dx * uy - dy * ux;
+
+  const dist = 0.28 + (1 - strength) * 0.72;
+  const along = dist * (0.9 + hash01(label + "d") * 0.2);
+  // sqrt keeps the cone's cross-section evenly filled rather than centre-heavy.
+  const perp = Math.sqrt(hash01(label + "e")) * 0.4 * dist;
+  const theta = hash01(label + "f") * 6.283185;
+  const a = Math.cos(theta) * perp, b = Math.sin(theta) * perp;
+  return {
+    x: dx * along + ux * a + vx * b,
+    y: dy * along + uy * a + vy * b,
+    z: dz * along + uz * a + vz * b,
+  };
+}
+
 /** Deterministic hash → [0,1) for stable jitter. */
 function hash01(s: string): number {
   let h = 2166136261;
@@ -146,12 +179,8 @@ export function adaptNebulaNodes(
     if (n.hasCoords) {
       x = n.sx; y = n.sy; z = n.sz;
     } else {
-      const dir = SECTOR_DIR[n.type];
-      const dist = 0.28 + (1 - n.strength) * 0.72;
-      const j = (seed: number) => (hash01(n.label + seed) - 0.5) * 0.28;
-      x = dir[0] * dist + j(1);
-      y = dir[1] * dist + j(2);
-      z = dir[2] * dist + j(3);
+      const p = sectorBlobPosition(n.type, n.strength, n.label);
+      x = p.x; y = p.y; z = p.z;
     }
     return { ...n, x, y, z };
   });

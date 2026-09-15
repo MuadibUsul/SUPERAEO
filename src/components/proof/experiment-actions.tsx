@@ -49,6 +49,8 @@ function copyFor(locale: string) {
     recompute: zh ? "重新计算" : "Recompute",
     working: zh ? "处理中..." : "Working...",
     sampleCount: zh ? "每题样本" : "Samples per question",
+    needTwo: zh ? "至少选择 2 个问题" : "Select at least 2 questions",
+    needBothArms: zh ? "手动分配时，处理组和对照组各需至少 1 个问题" : "Manual mode needs at least one treatment and one control question",
   };
 }
 
@@ -80,11 +82,11 @@ export function ProofExperimentBuilder({
   const [error, setError] = useState<string | null>(null);
 
   const selectedQueries = queries.filter((query) => selectedIds.includes(query.id));
-  const canCreate =
-    selectedQueries.length >= 2 &&
-    (mode === "auto" ||
-      (selectedQueries.some((query) => arms[query.id] === "treatment") &&
-        selectedQueries.some((query) => arms[query.id] === "control")));
+  const hasBothArms =
+    selectedQueries.some((query) => arms[query.id] === "treatment") &&
+    selectedQueries.some((query) => arms[query.id] === "control");
+  const canCreate = selectedQueries.length >= 2 && (mode === "auto" || hasBothArms);
+  const disabledReason = selectedQueries.length < 2 ? copy.needTwo : mode === "manual" && !hasBothArms ? copy.needBothArms : null;
 
   function toggleQuery(queryId: string) {
     setSelectedIds((current) =>
@@ -240,10 +242,13 @@ export function ProofExperimentBuilder({
         <span className="text-xs text-faint">
           {copy.selected}: {selectedQueries.length}
         </span>
-        <Button type="button" onClick={createExperiment} disabled={!canCreate || isPending}>
-          <FlaskConical className="h-4 w-4" />
-          {isPending ? copy.creating : copy.create}
-        </Button>
+        <div className="flex items-center gap-3">
+          {disabledReason ? <span className="text-xs text-faint">{disabledReason}</span> : null}
+          <Button type="button" onClick={createExperiment} disabled={!canCreate || isPending}>
+            <FlaskConical className="h-4 w-4" />
+            {isPending ? copy.creating : copy.create}
+          </Button>
+        </div>
       </div>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

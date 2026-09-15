@@ -10,6 +10,7 @@ import { normalizeLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { getProofCopy } from "@/i18n/proof-copy";
 import { requirePageSession } from "@/server/auth/session";
+import { cleanQuestionText } from "@/server/brand-probes/question-text";
 import { getProject } from "@/server/data/projects";
 import { getPrisma } from "@/server/db";
 import {
@@ -79,7 +80,7 @@ export default async function ProofPage({ params }: PageProps) {
           <ProofExperimentBuilder
             projectId={projectId}
             locale={locale}
-            queries={queries.map((query) => ({ ...query, queryType: String(query.queryType) }))}
+            queries={queries.map((query) => ({ ...query, queryType: String(query.queryType), queryText: cleanQuestionText(query.queryText) }))}
             defaultMetric={defaultExperimentMetricForEntity(subject?.entityType)}
           />
           {experiments.length === 0 ? (

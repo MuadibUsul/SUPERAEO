@@ -24,8 +24,10 @@ function glowSprite(hue: RGB): HTMLCanvasElement {
   if (sctx) {
     const half = SPRITE_SIZE / 2;
     const gradient = sctx.createRadialGradient(half, half, 0, half, half, half);
-    gradient.addColorStop(0, `rgba(${hue[0]},${hue[1]},${hue[2]},0.9)`);
-    gradient.addColorStop(0.35, `rgba(${hue[0]},${hue[1]},${hue[2]},0.35)`);
+    // Soft and low-alpha: many glows overlap under `lighter`, so a high core
+    // blows the whole field out to white. Keep each one a faint density hint.
+    gradient.addColorStop(0, `rgba(${hue[0]},${hue[1]},${hue[2]},0.4)`);
+    gradient.addColorStop(0.3, `rgba(${hue[0]},${hue[1]},${hue[2]},0.13)`);
     gradient.addColorStop(1, `rgba(${hue[0]},${hue[1]},${hue[2]},0)`);
     sctx.fillStyle = gradient;
     sctx.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);

@@ -388,7 +388,7 @@ export function CognitionUniverse({
         if (amount <= 0) continue;
         const radius = 0.4 * point.scale * base, hue = HUE[type];
         const glow = ctx.createRadialGradient(point.sx, point.sy, 0, point.sx, point.sy, radius);
-        glow.addColorStop(0, `rgba(${hue[0]},${hue[1]},${hue[2]},${0.14 * amount})`);
+        glow.addColorStop(0, `rgba(${hue[0]},${hue[1]},${hue[2]},${0.08 * amount})`);
         glow.addColorStop(1, `rgba(${hue[0]},${hue[1]},${hue[2]},0)`);
         ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(point.sx, point.sy, radius, 0, 6.2832); ctx.fill();
       }
@@ -397,10 +397,13 @@ export function CognitionUniverse({
       // thousands of nodes they contain, fading out as the camera opens them.
       if (useLod) {
         for (const cs of clusterSlots) {
-          // Glow covers whatever the node budget did not materialise — a fully
-          // opened cluster shows none, a collapsed or capped one shows it in full.
-          if (cs.fog <= 0 || cs.materialized >= 1 || !typeOn[cs.cluster.type]) continue;
-          drawClusterGlow(ctx, cs.sx, cs.sy, cs.screenR * 1.9 + 26, HUE[cs.cluster.type], cs.cluster.intensity * cs.fog, 1 - cs.materialized);
+          // Glow fades by DISTANCE (t), not by budget: a near cluster shows its
+          // nodes, a far one shows a soft glow. Radius is hard-clamped so a close
+          // cluster can never bloom into a screen-filling wash, and a budget-capped
+          // near cluster simply shows fewer nodes rather than a giant orb.
+          if (cs.fog <= 0 || cs.t >= 0.85 || !typeOn[cs.cluster.type]) continue;
+          const radius = Math.min(cs.screenR * 1.1 + 12, 150);
+          drawClusterGlow(ctx, cs.sx, cs.sy, radius, HUE[cs.cluster.type], cs.cluster.intensity * cs.fog * 0.6, 1 - cs.t);
         }
         ctx.globalAlpha = 1;
       }
@@ -419,7 +422,7 @@ export function CognitionUniverse({
         // background has no zoom to bring the tail back, so it keeps a full field.
         const reveal = !interactive || isSelected || hoverStar === s ? 1 : overviewRevealAlpha(nodeEvidenceScore(s), zoomLevel);
         const radius = nodeVisualRadius(s.strength, item.scale);
-        ctx.globalAlpha = (0.08 + s.confidence * 0.22 + s.affinity * 0.42) * item.fog * dim * reveal * item.ct;
+        ctx.globalAlpha = (0.05 + s.confidence * 0.14 + s.affinity * 0.28) * item.fog * dim * reveal * item.ct;
         ctx.fillStyle = s.color;
         ctx.beginPath(); ctx.arc(item.sx, item.sy, radius, 0, 6.2832); ctx.fill();
       }
@@ -457,7 +460,7 @@ export function CognitionUniverse({
         const pulse = s.type === "risk" && stars.length <= LARGE_NODE_THRESHOLD ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
         const radius = nodeVisualRadius(s.strength, item.scale) * pulse;
         const highlighted = hoverStar === s || isSelected;
-        ctx.globalAlpha = (0.12 + s.affinity * 0.88) * item.fog * dim * item.ct;
+        ctx.globalAlpha = (0.08 + s.affinity * 0.42) * item.fog * dim * item.ct;
         ctx.fillStyle = s.color;
         // shadowBlur is the single most expensive per-node canvas op, so it is
         // reserved for the one hovered/selected node. Confident nodes still read
@@ -506,7 +509,9 @@ export function CognitionUniverse({
       }
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = "lighter";
 
-      const coreRadius = 15 * brand.scale + 7;
+      // Clamped so diving toward the centre doesn't turn the core into a
+      // screen-filling white sun.
+      const coreRadius = Math.min(15 * brand.scale + 7, 46);
       const halo = ctx.createRadialGradient(brand.sx, brand.sy, 0, brand.sx, brand.sy, coreRadius * 3.2);
       halo.addColorStop(0, "rgba(180,245,255,0.5)"); halo.addColorStop(0.4, "rgba(41,211,236,0.28)"); halo.addColorStop(1, "rgba(41,211,236,0)");
       ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(brand.sx, brand.sy, coreRadius * 3.2, 0, 6.2832); ctx.fill();

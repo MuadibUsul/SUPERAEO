@@ -429,7 +429,10 @@ export function CognitionUniverse({
         const { s } = item;
         const isSelected = selected?.evidenceKey === s.evidenceKey;
         if (!typeOn[s.type] || item.fog <= 0) continue;
-        const dim = selected && selected.type !== s.type ? 0.2 : 1;
+        // Dimming other-type nodes highlights the selected type's constellation
+        // in the OVERVIEW, but once zoomed in to inspect a node the user wants to
+        // read its neighbours regardless of type — so the dim relaxes with farness.
+        const dim = selected && selected.type !== s.type ? 0.2 + 0.8 * (1 - farness) : 1;
         // Interactive overview leads with high-evidence nodes; zooming in
         // re-reveals the long tail. Below-floor nodes only fade — never removed,
         // so they stay pickable and present in raw space. The ambient marketing
@@ -470,7 +473,7 @@ export function CognitionUniverse({
         const { s } = item;
         const isSelected = selected?.evidenceKey === s.evidenceKey;
         if (!typeOn[s.type] || item.fog <= 0) continue;
-        const dim = selected && selected.type !== s.type ? 0.25 : 1;
+        const dim = selected && selected.type !== s.type ? 0.25 + 0.75 * (1 - farness) : 1;
         const pulse = s.type === "risk" && stars.length <= LARGE_NODE_THRESHOLD ? 0.7 + 0.3 * Math.sin(now * 0.004 + s.tw) : 1;
         const radius = nodeVisualRadius(s.strength, item.scale) * pulse;
         const highlighted = hoverStar === s || isSelected;
